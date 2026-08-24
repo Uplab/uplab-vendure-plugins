@@ -1,0 +1,14 @@
+packages:
+  - 'packages/*'
+
+# Dependencies whose install scripts are allowed to run (pnpm >= 11).
+allowBuilds:
+  '@apollo/protobufjs': true
+  '@swc/core': true
+  '@tailwindcss/oxide': true
+  bcrypt: true
+  better-sqlite3: true
+  esbuild: true
+  msw: true
+  sharp: true
+  unrs-resolver: true

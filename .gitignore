@@ -1,0 +1,25 @@
+node_modules/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+
+# local databases / generated artefacts
+*.sqlite
+__sqlite-data__/
+__data__/
+packages/dev-server/vendure.sqlite
+packages/dev-server/static/
+packages/dev-server/dist/
+packages/dev-server/src/gql/
+
+# env
+.env
+.env.*
+!.env.example
+
+# editors / OS
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
