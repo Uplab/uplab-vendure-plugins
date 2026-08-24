@@ -24,7 +24,7 @@
     "dev": "pnpm --filter dev-server dev",
     "changeset": "changeset",
     "version": "changeset version && pnpm install --lockfile-only",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build && node scripts/release.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7",

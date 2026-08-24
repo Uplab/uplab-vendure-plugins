@@ -90,9 +90,39 @@ independent versions per package.
 3. Merging that PR publishes the changed packages to npm
 
 Publishing uses [npm trusted publishing](https://docs.npmjs.com/trusted-publishers)
-(OIDC, `--provenance`) — there is no `NPM_TOKEN` secret. Each package must have a
-trusted publisher configured on npmjs.com pointing at `Uplab/vendure-plugins` and the
-`release.yml` workflow before its first automated publish.
+(OIDC + provenance) — there is no `NPM_TOKEN` secret. The workflow publishes through
+`scripts/release.mjs` (plain `npm publish` per package, then `changeset tag`) rather than
+`changeset publish`, because the latter shells out to `pnpm publish`, which does not reliably
+support OIDC ([pnpm/pnpm#9812](https://github.com/pnpm/pnpm/issues/9812)).
+
+### Bootstrapping a new package
+
+OIDC cannot create a package: npm only lets you attach a trusted publisher to a package that
+already exists. So the **first version of every package is published by hand**, once:
+
+1. `pnpm changeset version` (or merge the version PR) so the package has its release version,
+   commit the result.
+2. `pnpm build`, then in the package directory `npm publish --access public` (you need
+   `npm login` and a 2FA code; this first publish carries no provenance — that is expected).
+3. On npmjs.com open `https://www.npmjs.com/package/<name>/access` → _Trusted Publisher_ →
+   _GitHub Actions_: organization `Uplab`, repository `vendure-plugins`, workflow filename
+   `release.yml`, environment empty. npm does not validate these fields — a typo only shows
+   up as a failed publish.
+4. Same page → _Publishing access_: choose _Require two-factor authentication and disallow
+   tokens_ so OIDC is the only way to publish.
+5. `pnpm exec changeset tag && git push --tags`.
+
+From then on every release of that package is automated.
+
+### One-time repository setup
+
+- The GitHub repository must be **public** — npm does not generate provenance for private
+  repositories, even for public packages.
+- Repository → Settings → Actions → General → _Workflow permissions_: enable
+  **Allow GitHub Actions to create and approve pull requests**, otherwise
+  `changesets/action` cannot open the version PR with `GITHUB_TOKEN`.
+- Every package's `repository.url` must match the repository (case-sensitive) — provenance
+  verification compares them.
 
 ## Contributing
 
