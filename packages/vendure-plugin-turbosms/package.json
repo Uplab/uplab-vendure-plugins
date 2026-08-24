@@ -1,0 +1,64 @@
+{
+  "name": "@uplab/vendure-plugin-turbosms",
+  "version": "0.0.0",
+  "description": "Vendure plugin for sending transactional SMS through TurboSMS (turbosms.ua)",
+  "license": "MIT",
+  "author": "Uplab <hello@uplab.io>",
+  "homepage": "https://github.com/Uplab/vendure-plugins/tree/main/packages/vendure-plugin-turbosms#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Uplab/vendure-plugins.git",
+    "directory": "packages/vendure-plugin-turbosms"
+  },
+  "bugs": {
+    "url": "https://github.com/Uplab/vendure-plugins/issues"
+  },
+  "keywords": [
+    "vendure",
+    "vendure-plugin",
+    "turbosms",
+    "sms",
+    "otp",
+    "ukraine"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "rimraf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "axios": "^1.7.0"
+  },
+  "peerDependencies": {
+    "@vendure/core": "^3.7.0"
+  },
+  "devDependencies": {
+    "@nestjs/common": "^11.0.12",
+    "@vendure/core": "3.7.2",
+    "@vendure/testing": "3.7.2",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.8.3",
+    "unplugin-swc": "^1.5.7",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
