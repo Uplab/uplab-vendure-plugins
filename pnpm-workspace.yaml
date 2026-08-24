@@ -12,3 +12,17 @@ allowBuilds:
   msw: true
   sharp: true
   unrs-resolver: true
+
+# Security overrides for transitive dependencies of @vendure/*, which we cannot
+# bump directly. Each key is narrowed to the vulnerable range so unaffected
+# versions in the tree are left alone — ws@7, for one, is not affected.
+# Drop an entry once the framework ships a release that resolves it itself.
+overrides:
+  # GHSA: code injection via _.template, prototype pollution in _.unset/_.omit.
+  'lodash@<4.18.0': '^4.18.1'
+  # GHSA: memory-exhaustion DoS from tiny fragments. Only the 8.x line is affected.
+  'ws@>=8.0.0 <8.21.0': '^8.21.0'
+  # GHSA: inherited libvips CVEs (CVE-2026-33327/33328/35590/35591).
+  'sharp@<0.35.0': '^0.35.0'
+  # GHSA: missing buffer bounds check in v3/v5/v6 when buf is provided.
+  'uuid@<11.1.1': '^11.1.1'
