@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs", ".claude/hooks/*.mjs"],
+      "project": ["scripts/**", ".claude/hooks/**"],
+      "ignoreDependencies": [
+        "@arethetypeswrong/cli",
+        "publint",
+        "rimraf",
+        "ts-node",
+        "@swc/core",
+        "unplugin-swc",
+        "sql.js",
+        "@vendure/core",
+        "@vendure/testing"
+      ]
+    },
+    "packages/vendure-plugin-*": {
+      "entry": ["src/index.ts", "e2e/**/*.e2e-spec.ts"],
+      "project": ["src/**", "e2e/**"]
+    },
+    "packages/dev-server": {
+      "ignoreDependencies": ["better-sqlite3"]
+    }
+  }
+}

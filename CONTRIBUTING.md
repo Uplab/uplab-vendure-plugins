@@ -25,18 +25,17 @@ docs: describe the release flow
   or the Vendure config. Unit tests cover pure logic; an `e2e/*.e2e-spec.ts` using
   `@vendure/testing` (sql.js) proves the plugin actually boots. Tests must never make a
   real network call — mock the vendor HTTP client.
-- Run `pnpm lint && pnpm typecheck && pnpm build && pnpm test` before pushing.
+- Run the gate before pushing (build first — typecheck resolves workspace types
+  from `dist/`): `pnpm build && pnpm typecheck && pnpm lint && pnpm test`.
+  CI additionally runs `pnpm format:check`, coverage thresholds, `pnpm knip` and
+  tarball checks (`pnpm check:packages`).
 
 ## Adding a new plugin package
 
-1. Copy the shape of `packages/vendure-plugin-turbosms`.
-2. Name it `@uplab/vendure-plugin-<x>`, MIT, `publishConfig.access: public`,
-   `files: ["dist", "README.md", "CHANGELOG.md"]`.
-3. Keep `@vendure/*` in `peerDependencies`, never in `dependencies`.
-4. Set `compatibility: '^3.7.0'` on the `@VendurePlugin()` decorator.
-5. Register it in `packages/dev-server/src/vendure-config.ts` and in the package table
-   in the root `README.md`.
-6. Before its first release, configure the npm trusted publisher for the package.
+Follow [docs/PLUGIN-AUTHORING.md](./docs/PLUGIN-AUTHORING.md) — package contract,
+code conventions and the full checklist. Before the first release, the package is
+published by hand once and gets an npm trusted publisher
+([docs/RELEASING.md](./docs/RELEASING.md#bootstrapping-a-new-package)).
 
 ## Code style
 

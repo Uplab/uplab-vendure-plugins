@@ -1,0 +1,33 @@
+name: Bug report
+description: Something in one of the plugins does not work as documented
+labels: [bug]
+body:
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      options:
+        - '@uplab/vendure-plugin-turbosms'
+        - other / repo-wide
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Plugin version, Vendure version, Node version
+      placeholder: 'turbosms 0.1.0, @vendure/core 3.7.2, node 22.14'
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, what happened instead. Include plugin `init()` options (redact secrets) and relevant logs.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimal steps or a repo/gist that reproduces it.

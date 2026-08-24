@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose a new capability for an existing plugin, or a new plugin
+labels: [enhancement]
+body:
+  - type: input
+    id: package
+    attributes:
+      label: Package (existing or proposed)
+      placeholder: '@uplab/vendure-plugin-nova-poshta'
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, in which store scenario?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: API sketch welcome — e.g. new `init()` options or exported services.

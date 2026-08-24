@@ -1,5 +1,8 @@
 # Uplab Vendure plugins
 
+[![CI](https://github.com/Uplab/uplab-vendure-plugins/actions/workflows/ci.yml/badge.svg)](https://github.com/Uplab/uplab-vendure-plugins/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Uplab/uplab-vendure-plugins/branch/main/graph/badge.svg)](https://codecov.io/gh/Uplab/uplab-vendure-plugins)
+
 A monorepo of open-source [Vendure](https://www.vendure.io/) plugins maintained by
 [Uplab](https://uplab.io), focused on the Ukrainian market: SMS, delivery, payments,
 fiscalization and exchange rates.
@@ -24,12 +27,20 @@ Checkbox fiscalization, Monobank acquiring.
 
 ```bash
 pnpm install
-pnpm build        # tsc build of every publishable package
+pnpm build          # tsc build of every package — run FIRST (typecheck needs dist/)
 pnpm typecheck
-pnpm test         # unit + e2e (sql.js, no external database needed)
 pnpm lint
-pnpm format
+pnpm format:check
+pnpm test           # unit + e2e (sql.js, no external database needed)
+pnpm test:coverage  # same, with merged coverage + thresholds
+pnpm knip           # unused files/exports/dependencies
+pnpm check:packages # publint + attw against the packed tarballs
 ```
+
+More detail: [docs/TESTING.md](./docs/TESTING.md) ·
+[docs/PLUGIN-AUTHORING.md](./docs/PLUGIN-AUTHORING.md) ·
+[docs/RELEASING.md](./docs/RELEASING.md). Agent-readable repo guide:
+[AGENTS.md](./AGENTS.md).
 
 ### Dev server
 
@@ -56,47 +67,26 @@ packages/
   dev-server/                  # private: Vendure config + dashboard Vite config
   vendure-plugin-<name>/       # one publishable package per plugin
     src/                       # server code, compiled to dist/ by tsc
-    dashboard/                 # optional React dashboard extension, copied to dist/dashboard
+    dashboard/                 # optional React dashboard extension
     e2e/                       # @vendure/testing e2e specs (sql.js)
     README.md CHANGELOG.md
+docs/                          # releasing, testing, plugin authoring
 ```
 
-### Anatomy of a plugin package
-
-Every publishable package follows the same contract:
-
-- `name: @uplab/vendure-plugin-<x>`, `license: MIT`, `publishConfig.access: public`
-- `files: ["dist", "README.md", "CHANGELOG.md"]` — nothing else ends up in the tarball
-- `main` / `types` / `exports` point into `dist`
-- `peerDependencies: { "@vendure/core": "^3.7.0" }` (plus `@vendure/dashboard` when the
-  package ships a dashboard extension) — Vendure packages are never direct dependencies
-- `compatibility: '^3.7.0'` on the `@VendurePlugin()` decorator
-- `build` = `tsc -p tsconfig.build.json`. A package that ships a dashboard extension adds
-  a `copyfiles` step that copies `dashboard/**` into `dist/dashboard`, so the plugin's
-  `dashboard: './dashboard/index.tsx'` path resolves from the published `dist`. The
-  dashboard source is shipped as `.tsx` on purpose: the host application's Vite plugin
-  compiles it.
-- unit tests with vitest next to the source, e2e tests in `e2e/` using `@vendure/testing`
-  with the sql.js initializer
+The package contract every plugin follows lives in
+[docs/PLUGIN-AUTHORING.md](./docs/PLUGIN-AUTHORING.md).
 
 ## Releasing
 
-Releases are driven by [changesets](https://github.com/changesets/changesets) with
-independent versions per package.
-
-1. Add a changeset in the PR that makes the change: `pnpm changeset`
-2. Merging to `main` makes the release workflow open (or update) a
-   `chore(release): version packages` PR
-3. Merging that PR publishes the changed packages to npm
-
-Publishing uses [npm trusted publishing](https://docs.npmjs.com/trusted-publishers)
-(OIDC, `--provenance`) — there is no `NPM_TOKEN` secret. Each package must have a
-trusted publisher configured on npmjs.com pointing at `Uplab/vendure-plugins` and the
-`release.yml` workflow before its first automated publish.
+Fully automated: a changeset per PR → merging to `main` opens a version PR →
+merging that publishes to npm (trusted publishing / OIDC, no tokens), pushes tags
+and creates GitHub Releases. Details, one-time setup and the new-package bootstrap:
+[docs/RELEASING.md](./docs/RELEASING.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+See [CONTRIBUTING.md](./CONTRIBUTING.md). Every PR gets installable preview builds
+via [pkg.pr.new](https://pkg.pr.new).
 
 ## License
 
