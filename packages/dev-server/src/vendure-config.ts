@@ -1,12 +1,7 @@
 import 'dotenv/config';
 import path from 'path';
 import { AssetServerPlugin } from '@vendure/asset-server-plugin';
-import {
-  DefaultJobQueuePlugin,
-  DefaultSchedulerPlugin,
-  DefaultSearchPlugin,
-  type VendureConfig,
-} from '@vendure/core';
+import { DefaultJobQueuePlugin, DefaultSchedulerPlugin, DefaultSearchPlugin, type VendureConfig } from '@vendure/core';
 import { TurboSmsPlugin } from '@uplab/vendure-plugin-turbosms';
 
 const port = +(process.env.APP_PORT ?? 3000);

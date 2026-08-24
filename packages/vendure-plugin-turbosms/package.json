@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "description": "Vendure plugin for sending transactional SMS through TurboSMS (turbosms.ua)",
   "license": "MIT",
-  "author": "Uplab <hello@uplab.io>",
+  "author": "Uplab",
   "homepage": "https://github.com/Uplab/vendure-plugins/tree/main/packages/vendure-plugin-turbosms#readme",
   "repository": {
     "type": "git",
