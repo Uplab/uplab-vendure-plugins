@@ -4,21 +4,20 @@
   "description": "Vendure plugin for sending transactional SMS through TurboSMS (turbosms.ua)",
   "license": "MIT",
   "author": "Uplab",
-  "homepage": "https://github.com/Uplab/vendure-plugins/tree/main/packages/vendure-plugin-turbosms#readme",
+  "homepage": "https://github.com/Uplab/uplab-vendure-plugins/tree/main/packages/vendure-plugin-turbosms#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Uplab/vendure-plugins.git",
+    "url": "git+https://github.com/Uplab/uplab-vendure-plugins.git",
     "directory": "packages/vendure-plugin-turbosms"
   },
   "bugs": {
-    "url": "https://github.com/Uplab/vendure-plugins/issues"
+    "url": "https://github.com/Uplab/uplab-vendure-plugins/issues"
   },
   "keywords": [
     "vendure",
     "vendure-plugin",
     "turbosms",
     "sms",
-    "otp",
     "ukraine"
   ],
   "publishConfig": {
@@ -43,10 +42,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
-  "dependencies": {
-    "axios": "^1.7.0"
-  },
   "peerDependencies": {
+    "@nestjs/common": "^11.0.0",
     "@vendure/core": "^3.7.0"
   },
   "devDependencies": {

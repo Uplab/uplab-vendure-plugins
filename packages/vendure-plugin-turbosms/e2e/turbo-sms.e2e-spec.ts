@@ -1,23 +1,9 @@
 import path from 'path';
-import { LanguageCode, mergeConfig, RequestContextService } from '@vendure/core';
+import { mergeConfig } from '@vendure/core';
 import { createTestEnvironment, registerInitializer, SqljsInitializer, testConfig } from '@vendure/testing';
-import type axios from 'axios';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { SmsService, TurboSmsApiService, TurboSmsPlugin } from '../src';
+import { DEFAULT_TURBOSMS_API_URL, DEFAULT_TURBOSMS_TIMEOUT, TurboSmsPlugin, TurboSmsService } from '../src';
 import { initialData } from './fixtures/initial-data';
-
-/**
- * Every axios instance the plugin creates is this stub, so a real HTTP call would show up
- * here. Nothing in dry-run mode should ever reach it.
- */
-const post = vi.fn();
-vi.mock('axios', async () => {
-  const actual = await vi.importActual<{ default: typeof axios }>('axios');
-  return {
-    ...actual,
-    default: { ...actual.default, create: vi.fn(() => ({ post })) },
-  };
-});
 
 registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__sqlite-data__')));
 
@@ -42,32 +28,41 @@ describe('TurboSmsPlugin', () => {
     await server.destroy();
   });
 
-  it('resolves the exported services from the injector', () => {
-    expect(server.app.get(SmsService)).toBeInstanceOf(SmsService);
-    expect(server.app.get(TurboSmsApiService)).toBeInstanceOf(TurboSmsApiService);
+  it('resolves the exported service from the injector', () => {
+    expect(server.app.get(TurboSmsService)).toBeInstanceOf(TurboSmsService);
   });
 
   it('applies the option defaults', () => {
-    expect(TurboSmsPlugin.options).toMatchObject({
+    expect(TurboSmsPlugin.options).toEqual({
       apiKey: 'x',
       sender: 'Test',
       dryRun: true,
-      apiUrl: 'https://api.turbosms.ua/',
-      defaultLanguageCode: LanguageCode.en,
+      apiUrl: DEFAULT_TURBOSMS_API_URL,
+      timeout: DEFAULT_TURBOSMS_TIMEOUT,
     });
-    expect(server.app.get(TurboSmsApiService).isDryRun).toBe(true);
+    expect(server.app.get(TurboSmsService).isDryRun).toBe(true);
   });
 
-  it('sends an OTP code without making any HTTP request in dryRun mode', async () => {
-    const ctx = await server.app.get(RequestContextService).create({ apiType: 'shop', languageCode: LanguageCode.uk });
+  it('sends without making any HTTP request in dryRun mode', async () => {
+    // The plugin talks to TurboSMS with the global `fetch`, so a real call would land
+    // here. Only stubbed for this test, since the test server itself boots on `fetch`.
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
 
-    const result = await server.app.get(SmsService).sendOtpCode(ctx, '380501234567', '1234');
+    try {
+      const result = await server.app.get(TurboSmsService).send('+38 (050) 123-45-67', 'Your code is 1234');
 
-    expect(result).toEqual({ isCodeSent: true });
-    expect(post).not.toHaveBeenCalled();
-  });
-
-  it('renders the Ukrainian template for a Ukrainian number', () => {
-    expect(server.app.get(SmsService).template(LanguageCode.uk).otpCode).toBe('Ваш код входу {sender} – {code}');
+      expect(result).toEqual({
+        dryRun: true,
+        recipients: ['380501234567'],
+        text: 'Your code is 1234',
+        sender: 'Test',
+        accepted: ['380501234567'],
+        refused: [],
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
