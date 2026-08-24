@@ -79,14 +79,15 @@ services, since Vendure plugins are Nest modules.
 
 `TurboSmsPlugin.init(options)`:
 
-| Option                | Type                                                           | Default                      | Description                                                                          |
-| --------------------- | -------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------ |
-| `apiKey`              | `string`                                                       | _required_                   | The TurboSMS API key (the bearer token from your TurboSMS account).                  |
-| `sender`              | `string`                                                       | _required_                   | The registered alphanumeric sender name ("alpha name").                              |
-| `dryRun`              | `boolean`                                                      | `false`                      | When `true`, nothing is sent: the message is written to the Vendure log instead.     |
-| `apiUrl`              | `string`                                                       | `'https://api.turbosms.ua/'` | Base URL of the TurboSMS REST API. Point it at a mock server in tests.               |
-| `defaultLanguageCode` | `LanguageCode`                                                 | `LanguageCode.en`            | Language used when no template exists for the request's language.                    |
-| `translations`        | `Partial<Record<LanguageCode, Partial<TurboSmsTranslations>>>` | `{}`                         | Overrides for the built-in message templates, merged over the defaults per language. |
+| Option                | Type                                                           | Default                      | Description                                                                                |
+| --------------------- | -------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------ |
+| `apiKey`              | `string`                                                       | _required_                   | The TurboSMS API key (the bearer token from your TurboSMS account).                        |
+| `sender`              | `string`                                                       | _required_                   | The registered alphanumeric sender name ("alpha name").                                    |
+| `dryRun`              | `boolean`                                                      | `false`                      | When `true`, nothing is sent: the message is written to the Vendure log instead.           |
+| `apiUrl`              | `string`                                                       | `'https://api.turbosms.ua/'` | Base URL of the TurboSMS REST API. Point it at a mock server in tests.                     |
+| `defaultLanguageCode` | `LanguageCode`                                                 | `LanguageCode.en`            | Language used when no template exists for the request's language.                          |
+| `resolveLanguage`     | `(recipient: string) => LanguageCode`                          | built-in rule (see below)    | Decides a recipient's language from their phone number alone, replacing the built-in rule. |
+| `translations`        | `Partial<Record<LanguageCode, Partial<TurboSmsTranslations>>>` | `{}`                         | Overrides for the built-in message templates, merged over the defaults per language.       |
 
 ## Messages and localization
 
@@ -100,12 +101,29 @@ The plugin ships templates for `en`, `uk` and `pl`:
 
 `{sender}` and `{code}` are interpolated; unknown placeholders are left as-is.
 
-Language resolution for `sendOtpCode()`:
+Language resolution for `sendOtpCode()` happens in two steps. First the language is
+chosen — `SmsService.resolveLanguage(ctx, recipient)`:
 
-1. Recipients starting with `380` (Ukraine) always get the Ukrainian template — a
-   Ukrainian phone number is a stronger signal than the storefront's current language.
-2. Otherwise `ctx.languageCode` is used.
-3. Then `defaultLanguageCode`, then `en`.
+1. If you configured `resolveLanguage`, it decides, full stop.
+2. Otherwise the built-in rule applies: a recipient whose dialling prefix pins them to a
+   language gets that language. Only `380` (Ukraine) is mapped, since a Ukrainian mobile
+   number is a stronger signal about what its owner reads than the storefront's current
+   locale. The mapping is exported as `languageByDiallingPrefix`.
+3. Everyone else gets `ctx.languageCode`.
+
+Then a template is looked up for that language, falling back to `defaultLanguageCode`
+and finally to `en`.
+
+Replace the rule when it does not fit your customers:
+
+```ts
+TurboSmsPlugin.init({
+  apiKey: '...',
+  sender: 'MyShop',
+  // Route by country, ignoring the storefront locale entirely.
+  resolveLanguage: (recipient) => (recipient.startsWith('48') ? LanguageCode.pl : LanguageCode.en),
+});
+```
 
 Override or add a language:
 
@@ -154,15 +172,15 @@ checks when there is no real account behind the plugin.
 
 If you are moving off a locally vendored version of this plugin, the option names changed:
 
-| Before                                                          | Now                                                          |
-| --------------------------------------------------------------- | ------------------------------------------------------------ |
-| `SmsPlugin`                                                     | `TurboSmsPlugin`                                             |
-| `brandName`                                                     | `sender`                                                     |
-| `isDev`                                                         | `dryRun`                                                     |
-| —                                                               | `apiUrl` (new, defaults to the TurboSMS production endpoint) |
-| —                                                               | `defaultLanguageCode`, `translations` (new)                  |
-| `TurboSmsApiService.isDevMode`                                  | `TurboSmsApiService.isDryRun`                                |
-| `i18n` via `I18nService` + `i18next`, `{brandName}` placeholder | `translations` option, `{sender}` placeholder                |
+| Before                                                          | Now                                                            |
+| --------------------------------------------------------------- | -------------------------------------------------------------- |
+| `SmsPlugin`                                                     | `TurboSmsPlugin`                                               |
+| `brandName`                                                     | `sender`                                                       |
+| `isDev`                                                         | `dryRun`                                                       |
+| —                                                               | `apiUrl` (new, defaults to the TurboSMS production endpoint)   |
+| —                                                               | `defaultLanguageCode`, `resolveLanguage`, `translations` (new) |
+| `TurboSmsApiService.isDevMode`                                  | `TurboSmsApiService.isDryRun`                                  |
+| `i18n` via `I18nService` + `i18next`, `{brandName}` placeholder | `translations` option, `{sender}` placeholder                  |
 
 Service class names (`SmsService`, `TurboSmsApiService`) and the `sendOtpCode()` /
 `sendMessage()` / `getBalance()` signatures are unchanged.

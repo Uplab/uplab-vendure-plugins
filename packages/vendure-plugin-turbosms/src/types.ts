@@ -47,6 +47,19 @@ export interface TurboSmsPluginOptions {
   defaultLanguageCode?: LanguageCode;
   /**
    * @description
+   * Decides which language a recipient's message is rendered in, from their phone number
+   * alone. Replaces the built-in rule (Ukrainian numbers get Ukrainian, everyone else
+   * gets the language of the request context).
+   *
+   * @example
+   * ```ts
+   * resolveLanguage: (recipient) =>
+   *   recipient.startsWith('48') ? LanguageCode.pl : LanguageCode.en,
+   * ```
+   */
+  resolveLanguage?: (recipient: string) => LanguageCode;
+  /**
+   * @description
    * Overrides for the built-in message templates, merged over the defaults per language.
    * Add a language that the plugin does not ship, or reword an existing one.
    *

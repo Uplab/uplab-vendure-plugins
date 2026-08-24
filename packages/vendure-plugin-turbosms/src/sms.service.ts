@@ -3,6 +3,7 @@ import { LanguageCode, Logger, type RequestContext } from '@vendure/core';
 import { TurboSmsError } from './classes';
 import { loggerCtx, TURBOSMS_PLUGIN_OPTIONS } from './constants';
 import { defaultTranslations, interpolate } from './i18n';
+import { defaultResolveLanguage } from './language';
 import { TurboSmsApiService } from './turbo-sms-api.service';
 import { type ResolvedTurboSmsPluginOptions, type TurboSmsTranslations } from './types';
 
@@ -29,12 +30,11 @@ export class SmsService {
    * Sends a one-time-password message to `recipient` (international format, no leading
    * `+`, e.g. `380501234567`).
    *
-   * The language is taken from the request context, except for Ukrainian numbers
-   * (`380…`), which always get the Ukrainian template. Errors are logged and returned
-   * rather than thrown, so a caller can fall back to another channel.
+   * The language is chosen by {@link SmsService.resolveLanguage}. Errors are logged and
+   * returned rather than thrown, so a caller can fall back to another channel.
    */
   async sendOtpCode(ctx: RequestContext, recipient: string, code: string): Promise<SendOtpCodeResult> {
-    const languageCode = recipient.startsWith('380') ? LanguageCode.uk : ctx.languageCode;
+    const languageCode = this.resolveLanguage(ctx, recipient);
     const message = interpolate(this.template(languageCode).otpCode, {
       code,
       sender: this.options.sender,
@@ -51,6 +51,22 @@ export class SmsService {
     }
 
     return { isCodeSent: true };
+  }
+
+  /**
+   * @description
+   * Decides which language a message to `recipient` is rendered in.
+   *
+   * The `resolveLanguage` plugin option wins outright when it is configured. Otherwise
+   * the built-in rule applies: a recipient whose dialling prefix pins them to a language
+   * (see `languageByDiallingPrefix`) gets that language, and everyone else gets the
+   * language of the request context.
+   */
+  resolveLanguage(ctx: RequestContext, recipient: string): LanguageCode {
+    if (this.options.resolveLanguage) {
+      return this.options.resolveLanguage(recipient);
+    }
+    return defaultResolveLanguage(recipient) ?? ctx.languageCode;
   }
 
   /**

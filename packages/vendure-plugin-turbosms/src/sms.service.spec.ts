@@ -41,6 +41,36 @@ describe('SmsService', () => {
 
       expect(sendMessage).toHaveBeenCalledWith(['48501234567'], 'Twój kod logowania Brand – 1234');
     });
+
+    it('lets a configured resolveLanguage override the built-in rule, even for 380 numbers', async () => {
+      const { service, sendMessage } = makeService({ resolveLanguage: () => LanguageCode.en });
+
+      await service.sendOtpCode(ctx(LanguageCode.uk), '380501234567', '1234');
+
+      expect(sendMessage).toHaveBeenCalledWith(['380501234567'], 'Your Brand login code – 1234');
+    });
+  });
+
+  describe('resolveLanguage', () => {
+    it('pins Ukrainian numbers to Ukrainian whatever the context language', () => {
+      const { service } = makeService();
+
+      expect(service.resolveLanguage(ctx(LanguageCode.en), '380501234567')).toBe(LanguageCode.uk);
+    });
+
+    it('falls back to the context language for every other number', () => {
+      const { service } = makeService();
+
+      expect(service.resolveLanguage(ctx(LanguageCode.pl), '48501234567')).toBe(LanguageCode.pl);
+    });
+
+    it('delegates entirely to the configured resolver, which sees the recipient', () => {
+      const resolveLanguage = vi.fn().mockReturnValue(LanguageCode.de);
+      const { service } = makeService({ resolveLanguage });
+
+      expect(service.resolveLanguage(ctx(LanguageCode.uk), '380501234567')).toBe(LanguageCode.de);
+      expect(resolveLanguage).toHaveBeenCalledWith('380501234567');
+    });
   });
 
   describe('template', () => {
