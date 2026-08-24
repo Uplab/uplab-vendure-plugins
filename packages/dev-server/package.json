@@ -1,0 +1,29 @@
+{
+  "name": "dev-server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local Vendure server that registers every plugin in this repo",
+  "license": "MIT",
+  "scripts": {
+    "dev": "ts-node --project tsconfig.json src/index.ts",
+    "dashboard": "vite --config vite.config.mts",
+    "dashboard:build": "vite build --config vite.config.mts",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"no tests in dev-server\" && exit 0"
+  },
+  "dependencies": {
+    "@uplab/vendure-plugin-turbosms": "workspace:*",
+    "@vendure/asset-server-plugin": "3.7.2",
+    "@vendure/core": "3.7.2",
+    "@vendure/dashboard": "3.7.2",
+    "better-sqlite3": "^11.10.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "vite": "^7.3.1"
+  }
+}
