@@ -13,7 +13,7 @@
  *   node scripts/release.mjs --dry-run  # only report what would be published
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const dryRun = process.argv.includes('--dry-run');
@@ -22,6 +22,45 @@ function run(cmd, args, opts = {}) {
   const result = spawnSync(cmd, args, { stdio: 'inherit', ...opts });
   if (result.status !== 0) {
     throw new Error(`${cmd} ${args.join(' ')} exited with ${result.status}`);
+  }
+}
+
+/**
+ * Extracts the changelog section for a specific version from a changesets-generated
+ * CHANGELOG.md (everything between `## <version>` and the next `## ` heading).
+ */
+function changelogSection(pkgPath, version) {
+  const file = join(pkgPath, 'CHANGELOG.md');
+  if (!existsSync(file)) return '';
+  const lines = readFileSync(file, 'utf8').split('\n');
+  const start = lines.findIndex((line) => line.trim() === `## ${version}`);
+  if (start === -1) return '';
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^## /.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  return lines
+    .slice(start + 1, end)
+    .join('\n')
+    .trim();
+}
+
+/** Creates a GitHub Release for `<name>@<version>` unless one already exists. */
+function createGithubRelease(pkg) {
+  const tag = `${pkg.name}@${pkg.version}`;
+  const exists = spawnSync('gh', ['release', 'view', tag], { stdio: 'ignore' });
+  if (exists.status === 0) {
+    console.log(`GitHub release ${tag} already exists, skipping.`);
+    return;
+  }
+  const notes = changelogSection(pkg.path, pkg.version) || `Release ${tag}.`;
+  const result = spawnSync('gh', ['release', 'create', tag, '--title', tag, '--notes', notes], { stdio: 'inherit' });
+  if (result.status !== 0) {
+    // Non-fatal: the npm publish already succeeded; a missing GitHub release is cosmetic.
+    console.warn(`Warning: could not create the GitHub release for ${tag}.`);
   }
 }
 
@@ -59,4 +98,8 @@ for (const pkg of toPublish) {
 if (!dryRun) {
   // `changeset tag` tags the current version of every package; it skips tags that already exist.
   run('pnpm', ['exec', 'changeset', 'tag']);
+  run('git', ['push', '--tags']);
+  for (const pkg of toPublish) {
+    createGithubRelease(pkg);
+  }
 }

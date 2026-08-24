@@ -1,5 +1,8 @@
 # Uplab Vendure plugins
 
+[![CI](https://github.com/Uplab/uplab-vendure-plugins/actions/workflows/ci.yml/badge.svg)](https://github.com/Uplab/uplab-vendure-plugins/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Uplab/uplab-vendure-plugins/branch/main/graph/badge.svg)](https://codecov.io/gh/Uplab/uplab-vendure-plugins)
+
 A monorepo of open-source [Vendure](https://www.vendure.io/) plugins maintained by
 [Uplab](https://uplab.io), focused on the Ukrainian market: SMS, delivery, payments,
 fiscalization and exchange rates.
@@ -24,12 +27,20 @@ Checkbox fiscalization, Monobank acquiring.
 
 ```bash
 pnpm install
-pnpm build        # tsc build of every publishable package
+pnpm build          # tsc build of every package — run FIRST (typecheck needs dist/)
 pnpm typecheck
-pnpm test         # unit + e2e (sql.js, no external database needed)
 pnpm lint
-pnpm format
+pnpm format:check
+pnpm test           # unit + e2e (sql.js, no external database needed)
+pnpm test:coverage  # same, with merged coverage + thresholds
+pnpm knip           # unused files/exports/dependencies
+pnpm check:packages # publint + attw against the packed tarballs
 ```
+
+More detail: [docs/TESTING.md](./docs/TESTING.md) ·
+[docs/PLUGIN-AUTHORING.md](./docs/PLUGIN-AUTHORING.md) ·
+[docs/RELEASING.md](./docs/RELEASING.md). Agent-readable repo guide:
+[AGENTS.md](./AGENTS.md).
 
 ### Dev server
 
@@ -56,77 +67,26 @@ packages/
   dev-server/                  # private: Vendure config + dashboard Vite config
   vendure-plugin-<name>/       # one publishable package per plugin
     src/                       # server code, compiled to dist/ by tsc
-    dashboard/                 # optional React dashboard extension, copied to dist/dashboard
+    dashboard/                 # optional React dashboard extension
     e2e/                       # @vendure/testing e2e specs (sql.js)
     README.md CHANGELOG.md
+docs/                          # releasing, testing, plugin authoring
 ```
 
-### Anatomy of a plugin package
-
-Every publishable package follows the same contract:
-
-- `name: @uplab/vendure-plugin-<x>`, `license: MIT`, `publishConfig.access: public`
-- `files: ["dist", "README.md", "CHANGELOG.md"]` — nothing else ends up in the tarball
-- `main` / `types` / `exports` point into `dist`
-- `peerDependencies: { "@vendure/core": "^3.7.0" }` (plus `@vendure/dashboard` when the
-  package ships a dashboard extension) — Vendure packages are never direct dependencies
-- `compatibility: '^3.7.0'` on the `@VendurePlugin()` decorator
-- `build` = `tsc -p tsconfig.build.json`. A package that ships a dashboard extension adds
-  a `copyfiles` step that copies `dashboard/**` into `dist/dashboard`, so the plugin's
-  `dashboard: './dashboard/index.tsx'` path resolves from the published `dist`. The
-  dashboard source is shipped as `.tsx` on purpose: the host application's Vite plugin
-  compiles it.
-- unit tests with vitest next to the source, e2e tests in `e2e/` using `@vendure/testing`
-  with the sql.js initializer
+The package contract every plugin follows lives in
+[docs/PLUGIN-AUTHORING.md](./docs/PLUGIN-AUTHORING.md).
 
 ## Releasing
 
-Releases are driven by [changesets](https://github.com/changesets/changesets) with
-independent versions per package.
-
-1. Add a changeset in the PR that makes the change: `pnpm changeset`
-2. Merging to `main` makes the release workflow open (or update) a
-   `chore(release): version packages` PR
-3. Merging that PR publishes the changed packages to npm
-
-Publishing uses [npm trusted publishing](https://docs.npmjs.com/trusted-publishers)
-(OIDC + provenance) — there is no `NPM_TOKEN` secret. The workflow publishes through
-`scripts/release.mjs` (plain `npm publish` per package, then `changeset tag`) rather than
-`changeset publish`, because the latter shells out to `pnpm publish`, which does not reliably
-support OIDC ([pnpm/pnpm#9812](https://github.com/pnpm/pnpm/issues/9812)).
-
-### Bootstrapping a new package
-
-OIDC cannot create a package: npm only lets you attach a trusted publisher to a package that
-already exists. So the **first version of every package is published by hand**, once:
-
-1. `pnpm changeset version` (or merge the version PR) so the package has its release version,
-   commit the result.
-2. `pnpm build`, then in the package directory `npm publish --access public` (you need
-   `npm login` and a 2FA code; this first publish carries no provenance — that is expected).
-3. On npmjs.com open `https://www.npmjs.com/package/<name>/access` → _Trusted Publisher_ →
-   _GitHub Actions_: organization `Uplab`, repository `vendure-plugins`, workflow filename
-   `release.yml`, environment empty. npm does not validate these fields — a typo only shows
-   up as a failed publish.
-4. Same page → _Publishing access_: choose _Require two-factor authentication and disallow
-   tokens_ so OIDC is the only way to publish.
-5. `pnpm exec changeset tag && git push --tags`.
-
-From then on every release of that package is automated.
-
-### One-time repository setup
-
-- The GitHub repository must be **public** — npm does not generate provenance for private
-  repositories, even for public packages.
-- Repository → Settings → Actions → General → _Workflow permissions_: enable
-  **Allow GitHub Actions to create and approve pull requests**, otherwise
-  `changesets/action` cannot open the version PR with `GITHUB_TOKEN`.
-- Every package's `repository.url` must match the repository (case-sensitive) — provenance
-  verification compares them.
+Fully automated: a changeset per PR → merging to `main` opens a version PR →
+merging that publishes to npm (trusted publishing / OIDC, no tokens), pushes tags
+and creates GitHub Releases. Details, one-time setup and the new-package bootstrap:
+[docs/RELEASING.md](./docs/RELEASING.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+See [CONTRIBUTING.md](./CONTRIBUTING.md). Every PR gets installable preview builds
+via [pkg.pr.new](https://pkg.pr.new).
 
 ## License
 
