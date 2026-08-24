@@ -19,6 +19,10 @@ packages/dev-server/.vendure/
 .env.*
 !.env.example
 
+# agent harness — personal files stay local
+.claude/settings.local.json
+CLAUDE.local.md
+
 # editors / OS
 .DS_Store
 .idea/

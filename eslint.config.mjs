@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 
@@ -28,6 +29,13 @@ export default tseslint.config(
     files: ['scripts/**/*.mjs'],
     languageOptions: {
       globals: { process: 'readonly', console: 'readonly' },
+    },
+  },
+  {
+    // Plain-JS Node scripts (release tooling, agent hooks) — give them the Node globals.
+    files: ['**/*.mjs', '**/*.cjs'],
+    languageOptions: {
+      globals: globals.node,
     },
   },
   {

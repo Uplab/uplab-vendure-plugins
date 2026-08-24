@@ -4,34 +4,53 @@ on:
   push:
     branches: [main]
 
+permissions: {}
+
 concurrency:
   group: release-${{ github.ref }}
+  # Never cancel a half-finished publish.
   cancel-in-progress: false
-
-permissions:
-  contents: write
-  pull-requests: write
-  # Required for npm trusted publishing (OIDC) — no NPM_TOKEN secret is used.
-  id-token: write
 
 jobs:
   release:
     name: Version or publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the version branch, tags and GitHub Releases
+      pull-requests: write # open/update the version PR
+      # npm trusted publishing (OIDC) — no NPM_TOKEN secret is used.
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      # PRs created with the default GITHUB_TOKEN never trigger CI. A GitHub App
+      # token makes the version PR run the normal checks. Until the App is
+      # configured (see docs/RELEASING.md) this step is skipped and the workflow
+      # falls back to GITHUB_TOKEN.
+      - name: Mint a GitHub App token
+        id: app-token
+        if: vars.RELEASE_BOT_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # The changesets action pushes the version branch and tags with the git CLI,
+      # so the checkout must persist the App token (falling back to GITHUB_TOKEN).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token || github.token }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
-      - uses: actions/setup-node@v6
+      # No dependency cache in the privileged release job (cache-poisoning defense),
+      # and no registry-url: with OIDC there is no auth token to reference.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
+          node-version: 24
 
-      # Trusted publishing requires npm >= 11.5.1; the npm bundled with Node 22 is older.
+      # Trusted publishing requires npm >= 11.5.1.
       - name: Update npm
         run: npm install -g npm@latest
 
@@ -40,15 +59,18 @@ jobs:
       - run: pnpm build
 
       - name: Create version PR or publish
-        uses: changesets/action@v1
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           version: pnpm run version
           # scripts/release.mjs publishes with the npm CLI directly (not `changeset publish`,
-          # which would shell out to `pnpm publish` — see the script header) and then runs
-          # `changeset tag`. With OIDC there is no NPM_TOKEN: npm mints a short-lived token
-          # from the id-token permission above and attaches provenance automatically.
+          # which on CLI v2 shells out per package anyway — see the script header), then runs
+          # `changeset tag` and creates the GitHub Releases. With OIDC there is no NPM_TOKEN:
+          # npm mints a short-lived token from the id-token permission above and attaches
+          # provenance automatically.
           publish: node scripts/release.mjs
           commit: 'chore(release): version packages'
           title: 'chore(release): version packages'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # App token when configured (version PR then triggers CI), GITHUB_TOKEN otherwise.
+          # Also used by @changesets/changelog-github at `changeset version` time.
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}

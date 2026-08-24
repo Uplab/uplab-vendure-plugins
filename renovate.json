@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices", "schedule:weekly", ":semanticCommitTypeAll(chore)"],
+  "minimumReleaseAge": "3 days",
+  "lockFileMaintenance": { "enabled": true, "automerge": true },
+  "packageRules": [
+    {
+      "description": "Automerge non-major updates once the required checks pass",
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchCurrentVersion": "!/^0/",
+      "groupName": "all non-major dependencies",
+      "automerge": true
+    },
+    {
+      "description": "Automerge GitHub Actions digest bumps",
+      "matchManagers": ["github-actions"],
+      "automerge": true
+    },
+    {
+      "description": "Vendure upgrades are a deliberate PR with a changeset, never automerged",
+      "matchPackageNames": ["@vendure/**"],
+      "groupName": "vendure",
+      "automerge": false
+    }
+  ]
+}

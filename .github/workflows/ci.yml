@@ -5,29 +5,45 @@ on:
   push:
     branches: [main]
 
+permissions: {}
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  checks:
     name: node ${{ matrix.node }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Tokenless Codecov upload via GitHub OIDC.
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
         node: [22, 24]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # Build must run before typecheck: dev-server resolves the workspace
+      # plugins' types from their dist/ output.
+      - name: Build
+        run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Lint
         run: pnpm lint
@@ -35,11 +51,57 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
-      - name: Typecheck
-        run: pnpm typecheck
+      - name: Test (with coverage)
+        run: pnpm test:coverage
+
+      - name: Upload coverage to Codecov
+        if: matrix.node == 22
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: coverage/lcov.info
+          use_oidc: true
+
+  package-hygiene:
+    name: Package hygiene
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
 
       - name: Build
         run: pnpm build
 
-      - name: Test
-        run: pnpm test
+      - name: publint + attw (tarball checks)
+        run: pnpm check:packages
+
+      - name: knip (unused files, exports, dependencies)
+        run: pnpm knip
+
+      - name: Release dry-run
+        run: node scripts/release.mjs --dry-run
+
+  # Terminal job: the single required status check for branch protection,
+  # stable regardless of the matrix shape.
+  ci-ok:
+    name: CI OK
+    runs-on: ubuntu-latest
+    needs: [checks, package-hygiene]
+    if: always()
+    permissions: {}
+    steps:
+      - name: Fail if any needed job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo "All checks passed."
