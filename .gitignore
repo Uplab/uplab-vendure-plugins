@@ -12,6 +12,7 @@ packages/dev-server/vendure.sqlite
 packages/dev-server/static/
 packages/dev-server/dist/
 packages/dev-server/src/gql/
+packages/dev-server/.vendure/
 
 # env
 .env
