@@ -1,11 +1,23 @@
-import { type LanguageCode } from '@vendure/core';
+import { type ScheduledTaskConfig } from '@vendure/core';
 
 /**
- * A single message template. `{code}` and `{sender}` are interpolated.
+ * @description
+ * Turns on the scheduled TurboSMS balance check. See the `lowBalanceAlert` option.
  */
-export interface TurboSmsTranslations {
-  /** Template of the one-time-password message sent by `SmsService.sendOtpCode()`. */
-  otpCode: string;
+export interface TurboSmsLowBalanceAlertOptions {
+  /**
+   * @description
+   * Warn when the account balance drops below this figure, in the currency of the
+   * TurboSMS account (UAH).
+   */
+  threshold: number;
+  /**
+   * @description
+   * When to check, as a cron expression or a `cron-time-generator` callback.
+   *
+   * @default '0 9 * * *' (every day at 09:00)
+   */
+  schedule?: ScheduledTaskConfig['schedule'];
 }
 
 /**
@@ -21,6 +33,8 @@ export interface TurboSmsPluginOptions {
   /**
    * @description
    * The registered alphanumeric sender name ("alpha name") that messages are sent from.
+   * This is the identifier registered with TurboSMS, not display copy — it can be
+   * overridden per call.
    */
   sender: string;
   /**
@@ -33,51 +47,89 @@ export interface TurboSmsPluginOptions {
   dryRun?: boolean;
   /**
    * @description
-   * Base URL of the TurboSMS REST API. Override it to point at a mock server.
+   * Base URL of the TurboSMS REST API. Override it to point at a mock server. A trailing
+   * slash is added if you leave it off.
    *
    * @default 'https://api.turbosms.ua/'
    */
   apiUrl?: string;
   /**
    * @description
-   * Language used when the request context has no translation available.
+   * How long a request to TurboSMS may take before it is aborted, in milliseconds.
    *
-   * @default LanguageCode.en
+   * @default 10000
    */
-  defaultLanguageCode?: LanguageCode;
+  timeout?: number;
   /**
    * @description
-   * Decides which language a recipient's message is rendered in, from their phone number
-   * alone. Replaces the built-in rule (Ukrainian numbers get Ukrainian, everyone else
-   * gets the language of the request context).
+   * Registers a scheduled task that checks the account balance and warns when it runs
+   * low, publishing a {@link TurboSmsLowBalanceEvent}. Omit it and no task is registered.
+   *
+   * Requires a scheduler plugin (such as Vendure's `DefaultSchedulerPlugin`) to be
+   * configured, since that is what runs scheduled tasks.
    *
    * @example
    * ```ts
-   * resolveLanguage: (recipient) =>
-   *   recipient.startsWith('48') ? LanguageCode.pl : LanguageCode.en,
+   * lowBalanceAlert: { threshold: 100 },
    * ```
    */
-  resolveLanguage?: (recipient: string) => LanguageCode;
-  /**
-   * @description
-   * Overrides for the built-in message templates, merged over the defaults per language.
-   * Add a language that the plugin does not ship, or reword an existing one.
-   *
-   * @example
-   * ```ts
-   * translations: {
-   *   [LanguageCode.uk]: { otpCode: 'Код: {code}' },
-   * }
-   * ```
-   */
-  translations?: Partial<Record<LanguageCode, Partial<TurboSmsTranslations>>>;
+  lowBalanceAlert?: TurboSmsLowBalanceAlertOptions;
 }
 
 /**
- * Resolved options — every optional value has been defaulted.
+ * Resolved options — the values that have a default have been filled in.
  */
 export type ResolvedTurboSmsPluginOptions = TurboSmsPluginOptions &
-  Required<Pick<TurboSmsPluginOptions, 'dryRun' | 'apiUrl' | 'defaultLanguageCode'>>;
+  Required<Pick<TurboSmsPluginOptions, 'dryRun' | 'apiUrl' | 'timeout'>>;
+
+/**
+ * @description
+ * Per-call overrides for {@link TurboSmsService.send} and
+ * {@link TurboSmsService.sendBulk}.
+ */
+export interface TurboSmsSendOptions {
+  /**
+   * @description
+   * The alpha name to send from, overriding the plugin-level `sender` for this message.
+   * It must be registered with your TurboSMS account.
+   */
+  sender?: string;
+}
+
+/**
+ * @description
+ * A recipient TurboSMS would not deliver to, and the code it gave for that number.
+ */
+export interface TurboSmsRefusedRecipient {
+  phone: string;
+  responseCode: number;
+  responseStatus: string;
+}
+
+/**
+ * @description
+ * What a send call did. In dry-run mode nothing reached TurboSMS, so `response` is
+ * absent — check `dryRun` before reading it.
+ */
+export interface TurboSmsSendResult {
+  /** `true` when the plugin is in dry-run mode and the message was only logged. */
+  dryRun: boolean;
+  /** The recipients the message was addressed to, after normalization. */
+  recipients: string[];
+  /** The message body. */
+  text: string;
+  /** The alpha name the message was sent from. */
+  sender: string;
+  /**
+   * The recipients TurboSMS took for delivery. A request can be accepted as a whole while
+   * an individual number is refused, so this is not always every recipient.
+   */
+  accepted: string[];
+  /** The recipients TurboSMS refused, with the code it gave for each. Usually empty. */
+  refused: TurboSmsRefusedRecipient[];
+  /** The raw TurboSMS response. Absent in dry-run mode. */
+  response?: TurboSmsSendMessageResponse;
+}
 
 export interface TurboSmsResponseResult {
   phone: string;

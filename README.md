@@ -11,9 +11,9 @@ All packages are published to npm under the `@uplab` scope and target **Vendure 
 
 ## Packages
 
-| Package                                                                | npm                                                                                                                                     | Description                                                                                        | Vendure  |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------- |
-| [`@uplab/vendure-plugin-turbosms`](./packages/vendure-plugin-turbosms) | [![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-turbosms.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-turbosms) | Send transactional SMS (OTP codes and free-form messages) through [TurboSMS](https://turbosms.ua/) | `^3.7.0` |
+| Package                                                                | npm                                                                                                                                     | Description                                                     | Vendure  |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------- |
+| [`@uplab/vendure-plugin-turbosms`](./packages/vendure-plugin-turbosms) | [![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-turbosms.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-turbosms) | Send transactional SMS through [TurboSMS](https://turbosms.ua/) | `^3.7.0` |
 
 Planned, in extraction order: Nova Poshta, Monobank exchange rates, WayForPay,
 Checkbox fiscalization, Monobank acquiring.

@@ -3,13 +3,16 @@
 Send transactional SMS from Vendure through [TurboSMS](https://turbosms.ua/), the Ukrainian
 bulk-SMS provider.
 
-The plugin adds no GraphQL API extensions, no entities and no admin UI. It exports two
-injectable services that other plugins and the host application can use:
+The plugin adds no GraphQL API extensions, no entities and no admin UI. It exports one
+injectable service, `TurboSmsService`, with `send()`, `sendBulk()` and `getBalance()`.
 
-- **`SmsService`** — renders a localized message and sends it. Currently one message type:
-  a one-time-password code.
-- **`TurboSmsApiService`** — a thin typed client for the TurboSMS REST API
-  (`sendMessage()`, `getBalance()`).
+It is deliberately message-agnostic: it sends the text you hand it. Composing that text —
+templates, translations, which language a given customer reads — stays in your
+application, which knows its own copy. What the plugin does own is everything specific to
+sending SMS through this provider: the wire format, phone number formatting, segment
+accounting, per-recipient outcomes, and the account balance.
+
+No runtime dependencies: the client is built on the global `fetch`.
 
 Compatible with **Vendure ^3.7.0**.
 
@@ -21,7 +24,8 @@ npm install @uplab/vendure-plugin-turbosms
 pnpm add @uplab/vendure-plugin-turbosms
 ```
 
-`@vendure/core` is a peer dependency — the plugin uses the copy already in your project.
+`@vendure/core` and `@nestjs/common` are peer dependencies — the plugin uses the copies
+already in your project.
 
 ## Usage
 
@@ -41,108 +45,210 @@ export const config: VendureConfig = {
 };
 ```
 
-Then inject the services anywhere in your own plugin:
+Then inject the service anywhere in your own plugin:
 
 ```ts
 import { Injectable } from '@nestjs/common';
-import { RequestContext } from '@vendure/core';
-import { SmsService, TurboSmsApiService, TurboSmsError } from '@uplab/vendure-plugin-turbosms';
+import { Logger } from '@vendure/core';
+import { TurboSmsError, TurboSmsService, interpolate } from '@uplab/vendure-plugin-turbosms';
 
 @Injectable()
 export class MyAuthService {
-  constructor(
-    private smsService: SmsService,
-    private turboSmsApiService: TurboSmsApiService,
-  ) {}
+  constructor(private turboSms: TurboSmsService) {}
 
-  async sendCode(ctx: RequestContext, phone: string, code: string) {
-    const { isCodeSent, error } = await this.smsService.sendOtpCode(ctx, phone, code);
-    if (!isCodeSent) {
-      // `error` is a TurboSmsError with the raw per-recipient response codes
-      throw error;
-    }
-  }
+  async sendLoginCode(phone: string, code: string): Promise<boolean> {
+    const text = interpolate('Your {brand} login code – {code}', { brand: 'MyShop', code });
 
-  async lowBalance(): Promise<boolean> {
-    if (this.turboSmsApiService.isDryRun) {
-      return false;
+    try {
+      await this.turboSms.send(phone, text);
+      return true;
+    } catch (e) {
+      if (e instanceof TurboSmsError) {
+        // Log it and fall back to another channel rather than failing the request.
+        Logger.error(e.message, 'MyAuthService');
+        return false;
+      }
+      throw e;
     }
-    return (await this.turboSmsApiService.getBalance()) < 100;
   }
 }
 ```
 
-Remember to add `TurboSmsPlugin` to your own plugin's `imports` if you inject its
-services, since Vendure plugins are Nest modules.
+Remember to add `TurboSmsPlugin` to your own plugin's `imports` if you inject its service,
+since Vendure plugins are Nest modules.
 
 ## Options
 
 `TurboSmsPlugin.init(options)`:
 
-| Option                | Type                                                           | Default                      | Description                                                                                |
-| --------------------- | -------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------ |
-| `apiKey`              | `string`                                                       | _required_                   | The TurboSMS API key (the bearer token from your TurboSMS account).                        |
-| `sender`              | `string`                                                       | _required_                   | The registered alphanumeric sender name ("alpha name").                                    |
-| `dryRun`              | `boolean`                                                      | `false`                      | When `true`, nothing is sent: the message is written to the Vendure log instead.           |
-| `apiUrl`              | `string`                                                       | `'https://api.turbosms.ua/'` | Base URL of the TurboSMS REST API. Point it at a mock server in tests.                     |
-| `defaultLanguageCode` | `LanguageCode`                                                 | `LanguageCode.en`            | Language used when no template exists for the request's language.                          |
-| `resolveLanguage`     | `(recipient: string) => LanguageCode`                          | built-in rule (see below)    | Decides a recipient's language from their phone number alone, replacing the built-in rule. |
-| `translations`        | `Partial<Record<LanguageCode, Partial<TurboSmsTranslations>>>` | `{}`                         | Overrides for the built-in message templates, merged over the defaults per language.       |
+| Option            | Type                       | Default                      | Description                                                                      |
+| ----------------- | -------------------------- | ---------------------------- | -------------------------------------------------------------------------------- |
+| `apiKey`          | `string`                   | _required_                   | The TurboSMS API key (the bearer token from your TurboSMS account).              |
+| `sender`          | `string`                   | _required_                   | The registered alphanumeric sender name ("alpha name"). Overridable per call.    |
+| `dryRun`          | `boolean`                  | `false`                      | When `true`, nothing is sent: the message is written to the Vendure log instead. |
+| `apiUrl`          | `string`                   | `'https://api.turbosms.ua/'` | Base URL of the TurboSMS REST API. Point it at a mock server in tests.           |
+| `timeout`         | `number`                   | `10000`                      | How long a request may take before it is aborted, in milliseconds.               |
+| `lowBalanceAlert` | `{ threshold, schedule? }` | —                            | Registers a scheduled balance check. See **Watching the balance**.               |
 
-## Messages and localization
-
-The plugin ships templates for `en`, `uk` and `pl`:
-
-| Language | `otpCode`                              |
-| -------- | -------------------------------------- |
-| `en`     | `Your {sender} login code – {code}`    |
-| `uk`     | `Ваш код входу {sender} – {code}`      |
-| `pl`     | `Twój kod logowania {sender} – {code}` |
-
-`{sender}` and `{code}` are interpolated; unknown placeholders are left as-is.
-
-Language resolution for `sendOtpCode()` happens in two steps. First the language is
-chosen — `SmsService.resolveLanguage(ctx, recipient)`:
-
-1. If you configured `resolveLanguage`, it decides, full stop.
-2. Otherwise the built-in rule applies: a recipient whose dialling prefix pins them to a
-   language gets that language. Only `380` (Ukraine) is mapped, since a Ukrainian mobile
-   number is a stronger signal about what its owner reads than the storefront's current
-   locale. The mapping is exported as `languageByDiallingPrefix`.
-3. Everyone else gets `ctx.languageCode`.
-
-Then a template is looked up for that language, falling back to `defaultLanguageCode`
-and finally to `en`.
-
-Replace the rule when it does not fit your customers:
+## Sending
 
 ```ts
-TurboSmsPlugin.init({
-  apiKey: '...',
-  sender: 'MyShop',
-  // Route by country, ignoring the storefront locale entirely.
-  resolveLanguage: (recipient) => (recipient.startsWith('48') ? LanguageCode.pl : LanguageCode.en),
+// One recipient.
+const result = await turboSms.send('380501234567', 'Your code is 1234');
+
+// The same text to many recipients, in a single request.
+await turboSms.sendBulk(['380501234567', '380671234567'], 'We are closed on Monday');
+
+// A different registered alpha name for this message only.
+await turboSms.send('380501234567', 'Your code is 1234', { sender: 'MyOtherShop' });
+```
+
+Both return a `TurboSmsSendResult`:
+
+```ts
+{
+  dryRun: boolean;        // true when the message was only logged
+  recipients: string[];   // after normalization
+  text: string;
+  sender: string;
+  accepted: string[];               // numbers TurboSMS took for delivery
+  refused: TurboSmsRefusedRecipient[];  // { phone, responseCode, responseStatus }
+  response?: TurboSmsSendMessageResponse;  // the raw API response; absent in dry-run mode
+}
+```
+
+**A request can be accepted as a whole while an individual number is refused**, which is
+easy to miss when reading only the top-level response code. That is why the result splits
+recipients up front:
+
+```ts
+const { refused } = await turboSms.sendBulk(phones, text);
+if (refused.length) {
+  Logger.warn(`Not delivered: ${refused.map((r) => `${r.phone} (${r.responseStatus})`).join(', ')}`);
+}
+```
+
+There is no message template or localization layer — `interpolate(template, values)` is
+exported for filling `{placeholder}` tokens, and that is as far as the plugin goes. See
+**Localizing messages** for the pattern that replaces it.
+
+## Phone numbers
+
+TurboSMS wants digits only, no leading `+` — `380501234567`. Storefronts collect whatever
+the customer typed, so every recipient is stripped down before it is sent:
+
+1. Everything that is not a digit is dropped, `+` and separators included.
+2. A leading `00` — the international access code, the written form of `+` — is dropped.
+
+```ts
+await turboSms.send('+38 (050) 123-45-67', text); // → 380501234567
+await turboSms.send('00380501234567', text); //      → 380501234567
+```
+
+Both steps only remove notation. **The plugin never adds a country code**, because which
+country a national number like `0501234567` belongs to is not something it can know — that
+is a fact about your customers. Such a number goes out as stored and TurboSMS refuses it,
+which shows up in `refused` rather than being silently guessed at.
+
+So store phone numbers in international form. If you have national ones, expand them where
+the country is known:
+
+```ts
+const international = phone.replace(/\D/g, '').replace(/^0/, '380');
+await turboSms.send(international, text);
+```
+
+`normalizePhoneNumber(input)` is exported if you want the same stripping elsewhere. It
+does not validate — a string that is not a phone number comes back as whatever digits it
+contained, and TurboSMS refuses it per recipient.
+
+## Message length and cost
+
+TurboSMS bills per segment, and a segment is much smaller in Cyrillic than the familiar
+160 characters: one non-Latin character re-encodes the whole message to UCS-2, where a
+segment holds **70** characters. A 75-character Ukrainian message costs two segments.
+
+```ts
+import { countSegments } from '@uplab/vendure-plugin-turbosms';
+
+countSegments('Your code is 1234');
+// { encoding: 'GSM-7', length: 17, segments: 1, remaining: 143 }
+
+countSegments('Ваш код 1234');
+// { encoding: 'UCS-2', length: 12, segments: 1, remaining: 58 }
+```
+
+Useful for keeping campaign copy inside one segment, and for showing an author how much
+room is left. The plugin does not enforce a limit — it only tells you the count.
+
+## Localizing messages
+
+The plugin ships no templates on purpose: a published package cannot know your copy, and
+Vendure's `I18nService` translates GraphQL error results for API responses, so it is not
+available on the background paths that send SMS. Keep the strings in your application:
+
+```ts
+import { LanguageCode } from '@vendure/core';
+import { interpolate } from '@uplab/vendure-plugin-turbosms';
+
+const templates: Partial<Record<LanguageCode, { otpCode: string }>> = {
+  [LanguageCode.en]: { otpCode: 'Your {brand} login code – {code}' },
+  [LanguageCode.uk]: { otpCode: 'Ваш код входу {brand} – {code}' },
+};
+
+/** Falls back through the shop's default language to English. */
+function template(languageCode: LanguageCode) {
+  return templates[languageCode] ?? templates[defaultLanguageCode] ?? templates[LanguageCode.en]!;
+}
+
+const text = interpolate(template(ctx.languageCode).otpCode, { brand: 'MyShop', code });
+await turboSms.send(phone, text);
+```
+
+If the recipient's number is a better signal of what they read than the storefront locale,
+branch on it yourself — `recipient.startsWith('380') ? LanguageCode.uk : ctx.languageCode`.
+That is a decision about your customers, not about TurboSMS, so it stays on your side.
+
+## Events
+
+The plugin publishes on Vendure's event bus, so metering and audit logging do not have to
+wrap every call site:
+
+| Event                     | When                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `TurboSmsSentEvent`       | A send request was accepted. Carries the full result, `dryRun` sends too.    |
+| `TurboSmsFailedEvent`     | A send request failed as a whole, published just before the error is thrown. |
+| `TurboSmsLowBalanceEvent` | The scheduled balance check found the balance below the threshold.           |
+
+```ts
+eventBus.ofType(TurboSmsSentEvent).subscribe(({ result }) => {
+  metrics.increment('sms.sent', result.accepted.length);
+  metrics.increment('sms.refused', result.refused.length);
 });
 ```
 
-Override or add a language:
+## Watching the balance
+
+Running out of credit stops SMS silently from the application's point of view — the API
+starts refusing sends. Configure `lowBalanceAlert` and the plugin registers a scheduled
+task that checks the balance and warns before that happens:
 
 ```ts
 TurboSmsPlugin.init({
-  apiKey: '...',
+  apiKey: process.env.TURBOSMS_API_KEY!,
   sender: 'MyShop',
-  translations: {
-    [LanguageCode.uk]: { otpCode: 'Код підтвердження: {code}' },
-    [LanguageCode.de]: { otpCode: 'Ihr {sender} Anmeldecode – {code}' },
-  },
+  lowBalanceAlert: { threshold: 100 }, // UAH; checked daily at 09:00
 });
 ```
 
-The templates are plain data owned by the plugin, deliberately **not** registered with
-Vendure's `I18nService`. That service translates GraphQL error results for API responses
-and is not usable from the background paths that send SMS, so a published package cannot
-rely on it being wired up. If you keep all your copy in one place, pass your own strings
-through `translations`.
+`schedule` takes a cron expression or a `cron-time-generator` callback if the default does
+not suit. The task logs a warning and publishes a `TurboSmsLowBalanceEvent`; subscribe to
+that to raise an alert wherever your team watches. It is skipped in dry-run mode, and it
+needs a scheduler plugin (such as Vendure's `DefaultSchedulerPlugin`) to be configured,
+since that is what runs scheduled tasks.
+
+`getBalance()` is there for a one-off check. It is a live call even in dry-run mode, where
+the configured API key is usually a placeholder — guard it with `isDryRun`.
 
 ## GraphQL surface
 
@@ -151,39 +257,33 @@ custom fields — it is a service-only plugin.
 
 ## Error handling
 
-`TurboSmsApiService.sendMessage()` throws a `TurboSmsError` when TurboSMS rejects a
-request. It carries `responseCode`, `responseStatus`, `responseResult`, `recipients`, and
-a `recipientCodes` getter with the per-recipient codes.
+Everything the plugin throws extends `TurboSmsError`, so one `catch` covers falling back
+to another channel. Both kinds carry the `endpoint` that failed.
 
-`SmsService.sendOtpCode()` catches `TurboSmsError`, logs it, and returns
-`{ isCodeSent: false, error }` so a caller can fall back to another channel. Any other
-error is re-thrown.
+| Error                    | When                                                                                         | Extra fields                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `TurboSmsRejectedError`  | TurboSMS answered, and the answer was a refusal — unknown alpha name, empty balance, …       | `responseCode`, `responseStatus`, `responseResult`, `recipientCodes`, `recipients`, `text` |
+| `TurboSmsTransportError` | The request never produced a usable answer: network failure, timeout, non-2xx, non-JSON body | `status` (when there was an HTTP response), `cause`                                        |
 
-Response codes `0`, `1` and `800`–`803` are treated as accepted; everything else raises.
+Response codes `0`, `1` and `800`–`803` are treated as accepted; everything else raises a
+`TurboSmsRejectedError`.
+
+A `TurboSmsTransportError` means the outcome is **unknown** — the message may or may not
+have gone out, so an automatic retry can deliver it twice.
+
+The message body is never put into an error's `message`, so codes do not leak into logs
+through a stack trace. It is available on `TurboSmsRejectedError.text` if you need it.
 
 ## Dry-run mode
 
-With `dryRun: true`, `sendMessage()` logs the recipients and the message body under the
-`TurboSmsPlugin` logger context and returns `undefined` without touching the network.
-`TurboSmsApiService.isDryRun` exposes the flag, so monitoring code can skip balance
-checks when there is no real account behind the plugin.
+With `dryRun: true`, nothing touches the network: the recipients and the message body are
+written to the Vendure log under the `TurboSmsPlugin` context, and the call resolves with
+`dryRun: true`. `TurboSmsService.isDryRun` exposes the flag, so monitoring code can skip
+balance checks when there is no real account behind the plugin.
 
-## Migrating from an in-project SMS plugin
-
-If you are moving off a locally vendored version of this plugin, the option names changed:
-
-| Before                                                          | Now                                                            |
-| --------------------------------------------------------------- | -------------------------------------------------------------- |
-| `SmsPlugin`                                                     | `TurboSmsPlugin`                                               |
-| `brandName`                                                     | `sender`                                                       |
-| `isDev`                                                         | `dryRun`                                                       |
-| —                                                               | `apiUrl` (new, defaults to the TurboSMS production endpoint)   |
-| —                                                               | `defaultLanguageCode`, `resolveLanguage`, `translations` (new) |
-| `TurboSmsApiService.isDevMode`                                  | `TurboSmsApiService.isDryRun`                                  |
-| `i18n` via `I18nService` + `i18next`, `{brandName}` placeholder | `translations` option, `{sender}` placeholder                  |
-
-Service class names (`SmsService`, `TurboSmsApiService`) and the `sendOtpCode()` /
-`sendMessage()` / `getBalance()` signatures are unchanged.
+Because the body is logged verbatim, anything sensitive in it — a one-time code, an order
+total — ends up in your logs. Dry run is a development mode; do not enable it in
+production.
 
 ## Changelog
 

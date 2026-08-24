@@ -18,12 +18,12 @@
     "vendure-plugin",
     "turbosms",
     "sms",
-    "otp",
     "ukraine"
   ],
   "publishConfig": {
     "access": "public"
   },
+  "type": "commonjs",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -43,10 +43,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
-  "dependencies": {
-    "axios": "^1.7.0"
-  },
   "peerDependencies": {
+    "@nestjs/common": "^11.0.0",
     "@vendure/core": "^3.7.0"
   },
   "devDependencies": {
