@@ -30,7 +30,8 @@ New `lowBalanceAlert` options:
 The scheduled task also sets its own timeout when the configured request timeout plus 20 s
 of callback headroom would not fit in `DefaultSchedulerPlugin`'s `defaultTimeout`, so a slow
 API response is not reported as a task failure. When it fits, the scheduler's setting is left
-as it was.
+as it was — as it is for a `defaultTimeout` given as a duration string, which only the
+scheduler's own parser can read, with a warning so a short one is not left unnoticed.
 
 `TurboSmsService.getBalance()` now throws a `TurboSmsTransportError` for a 2xx body without a
 balance in it, instead of a bare `TypeError`, so the scheduled check reports it as an outage.

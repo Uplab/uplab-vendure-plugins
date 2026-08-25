@@ -1,10 +1,11 @@
-import { CacheService, EventBus, Injector, ScheduledTask, type ScheduledTaskConfig } from '@vendure/core';
+import { CacheService, EventBus, Injector, Logger, ScheduledTask, type ScheduledTaskConfig } from '@vendure/core';
 import {
   CHECK_FAILED_ALERTED_CACHE_KEY,
   DEFAULT_LOW_BALANCE_SCHEDULE,
   LOW_BALANCE_ALERTED_CACHE_KEY_PREFIX,
   LOW_BALANCE_CALLBACK_HEADROOM,
   LOW_BALANCE_TASK_ID,
+  TURBOSMS_LOGGER_CTX,
 } from './constants';
 import { TurboSmsLowBalanceEvent } from './events';
 import { notifyBalanceCheckFailed, notifyLowBalance } from './low-balance-notify';
@@ -90,19 +91,20 @@ export function createLowBalanceTask(options: ScheduledBalanceCheckOptions): Sch
         return { balance, threshold: options.threshold, low, notified: false };
       }
 
-      const notified = await alerts.isOpen(lowBalanceKey);
-      if (notified) {
+      let notified = false;
+      if (await alerts.isOpen(lowBalanceKey)) {
         // Logs, then runs the callback; never throws, so a failing callback cannot fail the
         // scheduled run.
-        const delivered = await notifyLowBalance(
+        notified = await notifyLowBalance(
           { reason: 'scheduledCheck', balance, threshold: options.threshold },
           injector,
           options.onLowBalance,
         );
         await injector.get(EventBus).publish(new TurboSmsLowBalanceEvent(balance, options.threshold));
         // The interval only starts once the alert actually went out. A callback that threw is
-        // retried on the next run instead of being silenced for the whole interval.
-        if (delivered) {
+        // retried on the next run instead of being silenced for the whole interval, and this
+        // run reports `notified: false` — nothing reached anyone.
+        if (notified) {
           await alerts.close(lowBalanceKey);
         }
       }
@@ -127,11 +129,24 @@ function alertInterval(minIntervalBetweenAlerts: number | undefined): number | u
  * raised or the scheduler default lowered. Overriding unconditionally would cut a generous
  * host default down to 30s for the default request timeout.
  *
- * A default given as a string (`'2m'`) can only be read by the scheduler's own parser, so it
- * is trusted as is: the task then behaves exactly as it did before it had a timeout of its own.
+ * A default given as a string (`'2m'`) can only be read by the scheduler's own parser, and this
+ * package has no runtime dependencies to add one of its own. It is left as it is and the host is
+ * told, because the case that needs saying is a *short* string default: the check would then be
+ * cut short mid-request on every run, with nothing but failed runs to show for it.
  */
 function taskTimeout(requestTimeout: number, schedulerDefault: ScheduledTaskConfig['timeout']): number | undefined {
   const budget = requestTimeout + LOW_BALANCE_CALLBACK_HEADROOM;
+
+  if (typeof schedulerDefault === 'string') {
+    Logger.warn(
+      `The scheduler's defaultTimeout is "${schedulerDefault}", which this plugin cannot compare ` +
+        `against the ${budget}ms the balance check may need, so it is left alone. Express it as a ` +
+        `number of milliseconds to have that checked.`,
+      TURBOSMS_LOGGER_CTX,
+    );
+    return undefined;
+  }
+
   return typeof schedulerDefault === 'number' && schedulerDefault < budget ? budget : undefined;
 }
 

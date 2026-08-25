@@ -104,8 +104,20 @@ describe('createLowBalanceTask', () => {
       expect(task({ threshold: 100, requestTimeout }).options.timeout).toBeUndefined();
     });
 
-    it.each(['5s', undefined])('trusts a scheduler default it cannot compare (%s), as before it had one', (value) => {
-      expect(task({ threshold: 100, schedulerDefaultTimeout: value }).options.timeout).toBeUndefined();
+    it('leaves a duration given as a string alone, and says so', () => {
+      const warn = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+
+      // Only the scheduler parses `'5s'`. The case that matters is exactly a short one, where
+      // the check would be cut off mid-request every run — so it is said out loud.
+      expect(task({ threshold: 100, schedulerDefaultTimeout: '5s' }).options.timeout).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('"5s"'), expect.anything());
+    });
+
+    it('says nothing when the scheduler has no default at all', () => {
+      const warn = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+
+      expect(task({ threshold: 100, schedulerDefaultTimeout: undefined }).options.timeout).toBeUndefined();
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 
@@ -208,9 +220,17 @@ describe('createLowBalanceTask', () => {
         { threshold: 100, onLowBalance },
       );
 
-      await expect(result).resolves.toEqual({ balance: 42, threshold: 100, low: true, notified: true });
+      // `notified: false` — the run was not suppressed by an interval, but nothing reached
+      // anyone, which is the question an operator reading the task history is asking.
+      await expect(result).resolves.toEqual({ balance: 42, threshold: 100, low: true, notified: false });
       expect(publish).toHaveBeenCalledOnce();
       expect(publish.mock.calls[0][0]).toBeInstanceOf(TurboSmsLowBalanceEvent);
+    });
+
+    it('reports the run as notified when there is no callback, since the log line is the alert', async () => {
+      const { result } = run({ isDryRun: false, getBalance: vi.fn().mockResolvedValue(42) }, { threshold: 100 });
+
+      await expect(result).resolves.toMatchObject({ notified: true });
     });
   });
 
@@ -280,7 +300,10 @@ describe('createLowBalanceTask', () => {
         { threshold: 100, onLowBalance, minIntervalBetweenAlerts: DAY },
       );
 
-      await expect(execute()).resolves.toMatchObject({ notified: true });
+      // `notified` says whether an alert went out, so it is false both here — the callback
+      // threw — and on the third run, where the interval suppressed it. Which of the two it
+      // was is in the log; the interval is what the cache shows.
+      await expect(execute()).resolves.toMatchObject({ notified: false });
       expect(cache.set).not.toHaveBeenCalled();
 
       await expect(execute()).resolves.toMatchObject({ notified: true });

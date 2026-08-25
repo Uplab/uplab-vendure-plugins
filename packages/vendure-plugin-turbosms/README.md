@@ -302,8 +302,14 @@ Rules worth knowing:
 - **It is awaited**, so keep it quick — a slow callback delays the send's rejection and
   counts against the scheduled task's timeout. That is `DefaultSchedulerPlugin`'s
   `defaultTimeout` (60 s unless you changed it), except when one request (`timeout`) plus
-  20 s of headroom would not fit in it — then the task sets that budget itself. A
-  `defaultTimeout` given as a string (`'2m'`) is trusted as is. Queue anything slow.
+  20 s of headroom would not fit in it — then the task sets that budget itself. Queue
+  anything slow.
+
+  That comparison needs a number. A `defaultTimeout` written as a duration string (`'30s'`)
+  is only readable by the scheduler's own parser, so the task leaves it alone and logs a
+  warning. Express it in milliseconds if you want the check made — especially if it is
+  short, since the balance check would otherwise be cut off mid-request on every run.
+
 - **It can fire once per refused send**, so a burst of failures means a burst of calls.
   Debounce before paging anyone.
 - In a cluster the refused-send trigger fires on whichever instance sent the SMS, while the
