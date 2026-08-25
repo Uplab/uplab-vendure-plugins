@@ -3,8 +3,9 @@
   "extends": ["config:best-practices", "schedule:weekly", ":semanticCommitTypeAll(chore)"],
   "minimumReleaseAge": "3 days",
   "vulnerabilityAlerts": {
-    "description": "Security fixes bypass the weekly schedule and the release-age gate (Renovate defaults); label them so they are visible among the chore PRs.",
-    "labels": ["security"]
+    "description": "Security fixes bypass the weekly schedule and the release-age gate (Renovate defaults); label them so they are visible among the chore PRs. The approval opt-out is spelled out rather than inherited, so a fix that happens to be a major is not parked behind the dashboard checkbox below.",
+    "labels": ["security"],
+    "dependencyDashboardApproval": false
   },
   "lockFileMaintenance": {
     "enabled": true,
