@@ -36,10 +36,13 @@ export class TurboSmsFailedEvent extends VendureEvent {
 
 /**
  * @description
- * Published by the scheduled balance check when the account balance is below the
- * configured threshold. Subscribe to it to raise an alert wherever your team watches.
+ * Published by the **scheduled** balance check when the account balance is below the
+ * configured threshold, i.e. only when `lowBalanceAlert.threshold` is set.
  *
- * Only published when the `lowBalanceAlert` plugin option is configured.
+ * A send that TurboSMS refuses for insufficient funds does **not** publish this — there is
+ * no balance figure to report. That case arrives as a {@link TurboSmsFailedEvent} carrying
+ * a {@link TurboSmsRejectedError} whose `responseCode` is
+ * `INSUFFICIENT_FUNDS_RESPONSE_CODE`, and it calls `lowBalanceAlert.onLowBalance`.
  */
 export class TurboSmsLowBalanceEvent extends VendureEvent {
   constructor(

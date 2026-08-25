@@ -1,4 +1,5 @@
-import { type EventBus } from '@vendure/core';
+import { type ModuleRef } from '@nestjs/core';
+import { type EventBus, Logger } from '@vendure/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TURBOSMS_API_URL, DEFAULT_TURBOSMS_TIMEOUT } from './constants';
 import { TurboSmsFailedEvent, TurboSmsSentEvent } from './events';
@@ -8,6 +9,8 @@ import { type ResolvedTurboSmsPluginOptions } from './types';
 
 const fetchMock = vi.fn();
 const publish = vi.fn();
+/** Stands in for Nest's ModuleRef; the Injector the service builds delegates to it. */
+const moduleRefGet = vi.fn();
 
 function makeService(options: Partial<ResolvedTurboSmsPluginOptions> = {}): TurboSmsService {
   return new TurboSmsService(
@@ -20,6 +23,7 @@ function makeService(options: Partial<ResolvedTurboSmsPluginOptions> = {}): Turb
       ...options,
     },
     { publish } as unknown as EventBus,
+    { get: moduleRefGet } as unknown as ModuleRef,
   );
 }
 
@@ -45,10 +49,17 @@ describe('TurboSmsService', () => {
   beforeEach(() => {
     fetchMock.mockReset();
     publish.mockReset();
+    moduleRefGet.mockReset();
     vi.stubGlobal('fetch', fetchMock);
+    // The insufficient-funds path logs through notifyLowBalance; keep the output clean.
+    vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   describe('send', () => {
     it('posts the recipient, sender and text to the send endpoint', async () => {
@@ -342,6 +353,88 @@ describe('TurboSmsService', () => {
       await makeService({ dryRun: true }).getBalance();
 
       expect(fetchMock).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('insufficient funds', () => {
+    const outOfCredit = { response_code: 103, response_status: 'NOT_ENOUGH_MONEY', response_result: [] };
+
+    it('calls onLowBalance with the refusal that is about to be thrown', async () => {
+      const onLowBalance = vi.fn();
+      fetchMock.mockResolvedValue(jsonResponse(outOfCredit));
+
+      const error = await makeService({ lowBalanceAlert: { onLowBalance } })
+        .send('380501234567', 'hello')
+        .catch((e: unknown) => e);
+
+      expect(onLowBalance).toHaveBeenCalledOnce();
+      const context = onLowBalance.mock.calls[0][0];
+      expect(context.reason).toBe('sendRejected');
+      // The very same instance: the callback cannot substitute or swallow it.
+      expect(context.error).toBe(error);
+      expect((error as TurboSmsRejectedError).responseCode).toBe(103);
+    });
+
+    it('still publishes TurboSmsFailedEvent as well as calling the callback', async () => {
+      const onLowBalance = vi.fn();
+      fetchMock.mockResolvedValue(jsonResponse(outOfCredit));
+
+      await makeService({ lowBalanceAlert: { onLowBalance } }).send('380501234567', 'hello').catch(noop);
+
+      expect(publishedEvent<TurboSmsFailedEvent>()).toBeInstanceOf(TurboSmsFailedEvent);
+      expect(onLowBalance).toHaveBeenCalledOnce();
+    });
+
+    it('hands the callback an injector that resolves through the module ref', async () => {
+      const onLowBalance = vi.fn();
+      const token = Symbol('SomeService');
+      fetchMock.mockResolvedValue(jsonResponse(outOfCredit));
+
+      await makeService({ lowBalanceAlert: { onLowBalance } }).send('380501234567', 'hello').catch(noop);
+
+      onLowBalance.mock.calls[0][0].injector.get(token);
+      expect(moduleRefGet).toHaveBeenCalledWith(token, { strict: false });
+    });
+
+    it('is not called for a refusal with any other response code', async () => {
+      const onLowBalance = vi.fn();
+      fetchMock.mockResolvedValue(
+        jsonResponse({ response_code: 20, response_status: 'INVALID_NUMBER', response_result: [] }),
+      );
+
+      await makeService({ lowBalanceAlert: { onLowBalance } }).send('380501234567', 'hello').catch(noop);
+
+      expect(onLowBalance).not.toHaveBeenCalled();
+    });
+
+    it('is not called when the request never reached TurboSMS', async () => {
+      const onLowBalance = vi.fn();
+      fetchMock.mockRejectedValue(new Error('network down'));
+
+      const error = await makeService({ lowBalanceAlert: { onLowBalance } })
+        .send('380501234567', 'hello')
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(TurboSmsTransportError);
+      expect(onLowBalance).not.toHaveBeenCalled();
+    });
+
+    it('rejects with the TurboSMS refusal even when the callback throws', async () => {
+      const onLowBalance = vi.fn().mockRejectedValue(new Error('notifier is down'));
+      fetchMock.mockResolvedValue(jsonResponse(outOfCredit));
+
+      const error = await makeService({ lowBalanceAlert: { onLowBalance } })
+        .send('380501234567', 'hello')
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(TurboSmsRejectedError);
+      expect((error as Error).message).not.toContain('notifier is down');
+    });
+
+    it('rejects as usual when no lowBalanceAlert is configured', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(outOfCredit));
+
+      await expect(makeService().send('380501234567', 'hello')).rejects.toBeInstanceOf(TurboSmsRejectedError);
     });
   });
 });

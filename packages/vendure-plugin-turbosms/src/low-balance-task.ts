@@ -1,20 +1,22 @@
-import { EventBus, Logger, ScheduledTask } from '@vendure/core';
-import { DEFAULT_LOW_BALANCE_SCHEDULE, LOW_BALANCE_TASK_ID, TURBOSMS_LOGGER_CTX } from './constants';
+import { EventBus, ScheduledTask } from '@vendure/core';
+import { DEFAULT_LOW_BALANCE_SCHEDULE, LOW_BALANCE_TASK_ID } from './constants';
 import { TurboSmsLowBalanceEvent } from './events';
+import { notifyLowBalance } from './low-balance-notify';
 import { TurboSmsService } from './turbo-sms.service';
 import { type TurboSmsLowBalanceAlertOptions } from './types';
 
+/** The scheduled check only exists when a threshold was configured. */
+export type ScheduledBalanceCheckOptions = TurboSmsLowBalanceAlertOptions & { threshold: number };
+
 /**
- * @description
- * Builds the scheduled task that watches the TurboSMS account balance. The
- * `lowBalanceAlert` plugin option registers it for you; call this directly only if you
- * want to register it yourself, on your own schedule.
+ * Builds the scheduled task that watches the TurboSMS account balance. Internal: the
+ * `lowBalanceAlert` option registers it when a `threshold` is set.
  *
- * When the balance is below the threshold it logs a warning and publishes a
+ * When the balance is below the threshold it warns, calls `onLowBalance` and publishes a
  * {@link TurboSmsLowBalanceEvent}. It is skipped in dry-run mode, where the API key is
  * usually a placeholder and there is no real account to check.
  */
-export function createLowBalanceTask(options: TurboSmsLowBalanceAlertOptions): ScheduledTask {
+export function createLowBalanceTask(options: ScheduledBalanceCheckOptions): ScheduledTask {
   return new ScheduledTask({
     id: LOW_BALANCE_TASK_ID,
     description: 'Warns when the TurboSMS account balance runs low',
@@ -30,9 +32,12 @@ export function createLowBalanceTask(options: TurboSmsLowBalanceAlertOptions): S
       const low = balance < options.threshold;
 
       if (low) {
-        Logger.warn(
-          `TurboSMS balance is ${balance}, below the configured threshold of ${options.threshold}`,
-          TURBOSMS_LOGGER_CTX,
+        // Logs, then runs the callback; never throws, so a failing callback cannot fail
+        // the scheduled run.
+        await notifyLowBalance(
+          { reason: 'scheduledCheck', balance, threshold: options.threshold },
+          injector,
+          options.onLowBalance,
         );
         await injector.get(EventBus).publish(new TurboSmsLowBalanceEvent(balance, options.threshold));
       }

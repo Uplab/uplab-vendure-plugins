@@ -19,6 +19,15 @@ export const DEFAULT_TURBOSMS_API_URL = 'https://api.turbosms.ua/';
 export const DEFAULT_TURBOSMS_TIMEOUT = 10_000;
 
 /**
+ * @description
+ * The TurboSMS response code for "not enough money on the account balance". A send
+ * rejected with this code is what triggers `lowBalanceAlert.onLowBalance` with
+ * `reason: 'sendRejected'`; it is exported so a `TurboSmsFailedEvent` subscriber can
+ * recognise the same case without a magic number.
+ */
+export const INSUFFICIENT_FUNDS_RESPONSE_CODE = 103;
+
+/**
  * When the scheduled balance check runs, unless `lowBalanceAlert.schedule` says otherwise.
  */
 export const DEFAULT_LOW_BALANCE_SCHEDULE = '0 9 * * *';
