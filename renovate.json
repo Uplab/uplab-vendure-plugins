@@ -2,7 +2,14 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:best-practices", "schedule:weekly", ":semanticCommitTypeAll(chore)"],
   "minimumReleaseAge": "3 days",
-  "lockFileMaintenance": { "enabled": true, "automerge": true },
+  "vulnerabilityAlerts": {
+    "description": "Security fixes bypass the weekly schedule and the release-age gate (Renovate defaults); label them so they are visible among the chore PRs.",
+    "labels": ["security"]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
   "packageRules": [
     {
       "description": "Automerge non-major updates once the required checks pass",
