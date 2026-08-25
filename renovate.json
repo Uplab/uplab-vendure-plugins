@@ -3,8 +3,9 @@
   "extends": ["config:best-practices", "schedule:weekly", ":semanticCommitTypeAll(chore)"],
   "minimumReleaseAge": "3 days",
   "vulnerabilityAlerts": {
-    "description": "Security fixes bypass the weekly schedule and the release-age gate (Renovate defaults); label them so they are visible among the chore PRs.",
-    "labels": ["security"]
+    "description": "Security fixes bypass the weekly schedule and the release-age gate (Renovate defaults); label them so they are visible among the chore PRs. The approval opt-out is spelled out rather than inherited, so a fix that happens to be a major is not parked behind the dashboard checkbox below.",
+    "labels": ["security"],
+    "dependencyDashboardApproval": false
   },
   "lockFileMaintenance": {
     "enabled": true,
@@ -19,14 +20,21 @@
       "automerge": true
     },
     {
-      "description": "Automerge GitHub Actions digest bumps",
+      "description": "Automerge GitHub Action digest and non-major bumps; the major rule below takes majors back.",
       "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest", "pinDigest", "pin", "patch", "minor"],
       "automerge": true
     },
     {
       "description": "Vendure upgrades are a deliberate PR with a changeset, never automerged",
       "matchPackageNames": ["@vendure/**"],
       "groupName": "vendure",
+      "automerge": false
+    },
+    {
+      "description": "Majors wait for a click on the dependency dashboard, then land as a reviewed PR. Last rule so it also reclaims the GitHub Actions and Vendure matches above.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
       "automerge": false
     }
   ]
