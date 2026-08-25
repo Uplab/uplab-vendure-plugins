@@ -53,6 +53,21 @@ describe('notifyLowBalance', () => {
       expect(warn.mock.calls[0][0]).not.toContain('9999');
     });
 
+    it('counts zero recipients when the refusal carries none', async () => {
+      const error = new TurboSmsRejectedError({
+        endpoint: 'message/send.json',
+        responseCode: 103,
+        responseStatus: 'NOT_ENOUGH_MONEY',
+      });
+
+      await notifyLowBalance({ reason: 'sendRejected', error }, injector);
+
+      expect(warn).toHaveBeenCalledWith(
+        'TurboSMS refused a send to 0 recipient(s) for insufficient funds: NOT_ENOUGH_MONEY (code 103)',
+        'TurboSmsPlugin',
+      );
+    });
+
     it('logs even when no callback is configured', async () => {
       await expect(
         notifyLowBalance({ reason: 'scheduledCheck', balance: 1, threshold: 2 }, injector),
@@ -109,6 +124,20 @@ describe('notifyLowBalance', () => {
 
       expect(error).toHaveBeenCalledOnce();
       expect(error.mock.calls[0][0]).toBe('The lowBalanceAlert.onLowBalance callback failed: notifier is down');
+    });
+
+    it('stringifies a thrown non-Error and logs no stack for it', async () => {
+      const onLowBalance = () => Promise.reject('notifier is down');
+
+      await expect(
+        notifyLowBalance({ reason: 'scheduledCheck', balance: 1, threshold: 2 }, injector, onLowBalance),
+      ).resolves.toBeUndefined();
+
+      expect(error).toHaveBeenCalledWith(
+        'The lowBalanceAlert.onLowBalance callback failed: notifier is down',
+        'TurboSmsPlugin',
+        undefined,
+      );
     });
 
     it('swallows a rejected promise too', async () => {
