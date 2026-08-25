@@ -45,10 +45,12 @@
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
     "@vendure/core": "^3.7.0"
   },
   "devDependencies": {
     "@nestjs/common": "^11.0.12",
+    "@nestjs/core": "^11.2.1",
     "@vendure/core": "3.7.2",
     "@vendure/testing": "3.7.2",
     "rimraf": "^6.0.1",

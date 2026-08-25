@@ -1,5 +1,5 @@
-import { getConfigurationFunction, type RuntimeVendureConfig } from '@vendure/core';
-import { describe, expect, it } from 'vitest';
+import { getConfigurationFunction, Logger, type RuntimeVendureConfig } from '@vendure/core';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TURBOSMS_API_URL, DEFAULT_TURBOSMS_TIMEOUT, LOW_BALANCE_TASK_ID } from './constants';
 import { TurboSmsPlugin } from './turbo-sms.plugin';
 
@@ -62,5 +62,40 @@ describe('the lowBalanceAlert option', () => {
     const { tasks } = (await configure()).schedulerOptions;
 
     expect(tasks[0].options.schedule).toBe('*/30 * * * *');
+  });
+
+  it('registers no task when only a callback is configured, so no scheduler is needed', async () => {
+    const onLowBalance = vi.fn();
+    TurboSmsPlugin.init({ apiKey: 'key', sender: 'Brand', lowBalanceAlert: { onLowBalance } });
+
+    const { tasks } = (await configure()).schedulerOptions;
+
+    expect(tasks).toEqual([]);
+    expect(TurboSmsPlugin.options.lowBalanceAlert?.onLowBalance).toBe(onLowBalance);
+  });
+
+  it('registers the task when a threshold accompanies the callback', async () => {
+    TurboSmsPlugin.init({
+      apiKey: 'key',
+      sender: 'Brand',
+      lowBalanceAlert: { threshold: 100, onLowBalance: vi.fn() },
+    });
+
+    const { tasks } = (await configure()).schedulerOptions;
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe(LOW_BALANCE_TASK_ID);
+  });
+
+  it('warns that a schedule without a threshold registers nothing', async () => {
+    const warn = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    TurboSmsPlugin.init({ apiKey: 'key', sender: 'Brand', lowBalanceAlert: { schedule: '*/5 * * * *' } });
+
+    const { tasks } = (await configure()).schedulerOptions;
+
+    expect(tasks).toEqual([]);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0][0]).toContain('no threshold');
+    warn.mockRestore();
   });
 });

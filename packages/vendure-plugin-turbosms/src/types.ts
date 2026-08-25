@@ -1,23 +1,77 @@
-import { type ScheduledTaskConfig } from '@vendure/core';
+import { type Injector, type ScheduledTaskConfig } from '@vendure/core';
+import { type TurboSmsRejectedError } from './turbo-sms-error';
 
 /**
  * @description
- * Turns on the scheduled TurboSMS balance check. See the `lowBalanceAlert` option.
+ * Why {@link TurboSmsLowBalanceCallback} was called. Narrow on `reason` to reach the
+ * details — or read `message`, which is populated on both, so a callback that only
+ * forwards text does not have to narrow at all.
+ */
+export type TurboSmsLowBalanceContext =
+  | {
+      /** A scheduled balance check found the balance below the configured threshold. */
+      reason: 'scheduledCheck';
+      /** The current balance, in the currency of the account (UAH). */
+      balance: number;
+      /** The threshold it fell below. */
+      threshold: number;
+      /** A one-line summary — the same text the plugin logs. Written for humans; do not parse it. */
+      message: string;
+      /** Vendure's injector, for reaching your own services from the callback. */
+      injector: Injector;
+    }
+  | {
+      /** TurboSMS refused a send for insufficient funds: the account is already empty. */
+      reason: 'sendRejected';
+      /** The refusal, carrying the recipients and the response code. */
+      error: TurboSmsRejectedError;
+      /** A one-line summary — the same text the plugin logs. Written for humans; do not parse it. */
+      message: string;
+      /** Vendure's injector, for reaching your own services from the callback. */
+      injector: Injector;
+    };
+
+/**
+ * @description
+ * Called when the TurboSMS account is running out of credit, from either trigger. Errors
+ * it throws are caught and logged: a failing callback never breaks a send or a scheduled
+ * run. It is awaited, so keep it quick and queue anything slow.
+ */
+export type TurboSmsLowBalanceCallback = (context: TurboSmsLowBalanceContext) => void | Promise<void>;
+
+/**
+ * @description
+ * Low-balance alerting: a callback, a scheduled balance check, or both. See the
+ * `lowBalanceAlert` option.
  */
 export interface TurboSmsLowBalanceAlertOptions {
   /**
    * @description
    * Warn when the account balance drops below this figure, in the currency of the
    * TurboSMS account (UAH).
+   *
+   * Omit it and no scheduled task is registered — `onLowBalance` still fires when TurboSMS
+   * refuses a send for insufficient funds, which needs neither a threshold nor a scheduler.
    */
-  threshold: number;
+  threshold?: number;
   /**
    * @description
-   * When to check, as a cron expression or a `cron-time-generator` callback.
+   * When to check, as a cron expression or a `cron-time-generator` callback. Ignored
+   * unless a `threshold` is set, since that is what registers the scheduled task.
    *
    * @default '0 9 * * *' (every day at 09:00)
    */
   schedule?: ScheduledTaskConfig['schedule'];
+  /**
+   * @description
+   * What to do about a low balance. See {@link TurboSmsLowBalanceCallback}.
+   *
+   * @example
+   * ```ts
+   * onLowBalance: ({ message }) => notifySlack(message),
+   * ```
+   */
+  onLowBalance?: TurboSmsLowBalanceCallback;
 }
 
 /**
@@ -62,15 +116,24 @@ export interface TurboSmsPluginOptions {
   timeout?: number;
   /**
    * @description
-   * Registers a scheduled task that checks the account balance and warns when it runs
-   * low, publishing a {@link TurboSmsLowBalanceEvent}. Omit it and no task is registered.
+   * Alerting for an account that is running out of credit. There are two triggers, and
+   * both call `onLowBalance`:
    *
-   * Requires a scheduler plugin (such as Vendure's `DefaultSchedulerPlugin`) to be
-   * configured, since that is what runs scheduled tasks.
+   * - **A refused send.** TurboSMS rejects a send for insufficient funds — immediate,
+   *   exact, and needs neither a threshold nor a scheduler.
+   * - **A scheduled check.** Set a `threshold` and the plugin registers a task that polls
+   *   the balance and warns *before* sends start failing, also publishing a
+   *   {@link TurboSmsLowBalanceEvent}. It needs a scheduler plugin (such as Vendure's
+   *   `DefaultSchedulerPlugin`) to be configured, since that is what runs scheduled tasks.
+   *
+   * Omit the option entirely and neither trigger does anything.
    *
    * @example
    * ```ts
-   * lowBalanceAlert: { threshold: 100 },
+   * lowBalanceAlert: {
+   *   threshold: 100,
+   *   onLowBalance: ({ message }) => notifySlack(message),
+   * },
    * ```
    */
   lowBalanceAlert?: TurboSmsLowBalanceAlertOptions;

@@ -1,5 +1,10 @@
-import { PluginCommonModule, type Type, VendurePlugin } from '@vendure/core';
-import { DEFAULT_TURBOSMS_API_URL, DEFAULT_TURBOSMS_TIMEOUT, TURBOSMS_PLUGIN_OPTIONS } from './constants';
+import { Logger, PluginCommonModule, type Type, VendurePlugin } from '@vendure/core';
+import {
+  DEFAULT_TURBOSMS_API_URL,
+  DEFAULT_TURBOSMS_TIMEOUT,
+  TURBOSMS_LOGGER_CTX,
+  TURBOSMS_PLUGIN_OPTIONS,
+} from './constants';
 import { createLowBalanceTask } from './low-balance-task';
 import { TurboSmsService } from './turbo-sms.service';
 import { type ResolvedTurboSmsPluginOptions, type TurboSmsPluginOptions } from './types';
@@ -34,8 +39,19 @@ import { type ResolvedTurboSmsPluginOptions, type TurboSmsPluginOptions } from '
   exports: [TurboSmsService],
   configuration: (config) => {
     const { lowBalanceAlert } = TurboSmsPlugin.options;
-    if (lowBalanceAlert) {
-      config.schedulerOptions.tasks = [...(config.schedulerOptions.tasks ?? []), createLowBalanceTask(lowBalanceAlert)];
+    // The threshold is what turns on polling; `onLowBalance` alone is the reactive-only
+    // setup and needs no task (and therefore no scheduler plugin).
+    if (lowBalanceAlert?.threshold !== undefined) {
+      const { threshold } = lowBalanceAlert;
+      config.schedulerOptions.tasks = [
+        ...(config.schedulerOptions.tasks ?? []),
+        createLowBalanceTask({ ...lowBalanceAlert, threshold }),
+      ];
+    } else if (lowBalanceAlert?.schedule !== undefined) {
+      Logger.warn(
+        'lowBalanceAlert.schedule is ignored because no threshold is configured — the scheduled balance check is only registered when a threshold is set.',
+        TURBOSMS_LOGGER_CTX,
+      );
     }
     return config;
   },

@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { EventBus, Logger } from '@vendure/core';
-import { TURBOSMS_LOGGER_CTX, TURBOSMS_PLUGIN_OPTIONS } from './constants';
+// A value import on purpose: with `emitDecoratorMetadata`, a type-only import erases the
+// `design:paramtypes` metadata Nest's DI relies on.
+import { ModuleRef } from '@nestjs/core';
+import { EventBus, Injector, Logger } from '@vendure/core';
+import { INSUFFICIENT_FUNDS_RESPONSE_CODE, TURBOSMS_LOGGER_CTX, TURBOSMS_PLUGIN_OPTIONS } from './constants';
 import { TurboSmsFailedEvent, TurboSmsSentEvent } from './events';
+import { notifyLowBalance } from './low-balance-notify';
 import { normalizePhoneNumber } from './phone';
 import { TurboSmsError, TurboSmsRejectedError, TurboSmsTransportError } from './turbo-sms-error';
 import {
@@ -64,11 +68,18 @@ function splitRecipients(
  */
 @Injectable()
 export class TurboSmsService {
+  /** Handed to the `onLowBalance` callback so it can reach the application's own services. */
+  private readonly injector: Injector;
+
   constructor(
     @Inject(TURBOSMS_PLUGIN_OPTIONS)
     private options: ResolvedTurboSmsPluginOptions,
     private eventBus: EventBus,
-  ) {}
+    moduleRef: ModuleRef,
+  ) {
+    // Nothing is resolved until the callback actually runs, so building it here is safe.
+    this.injector = new Injector(moduleRef);
+  }
 
   /**
    * @description
@@ -140,6 +151,15 @@ export class TurboSmsService {
         text,
       });
       await this.eventBus.publish(new TurboSmsFailedEvent(normalized, text, sender, error));
+      if (response.response_code === INSUFFICIENT_FUNDS_RESPONSE_CODE) {
+        // The moment the account actually runs dry — no extra API call, no scheduler
+        // needed. `notifyLowBalance` never throws, so `error` propagates untouched.
+        await notifyLowBalance(
+          { reason: 'sendRejected', error },
+          this.injector,
+          this.options.lowBalanceAlert?.onLowBalance,
+        );
+      }
       throw error;
     }
 

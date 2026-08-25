@@ -3,7 +3,7 @@
  * one later is a minor release, removing one is a breaking change. Anything not listed
  * is internal and may change at any time.
  */
-export { TURBOSMS_PLUGIN_OPTIONS } from './constants';
+export { INSUFFICIENT_FUNDS_RESPONSE_CODE, TURBOSMS_PLUGIN_OPTIONS } from './constants';
 export { TurboSmsFailedEvent, TurboSmsLowBalanceEvent, TurboSmsSentEvent } from './events';
 export {
   TurboSmsError,
@@ -17,6 +17,8 @@ export { TurboSmsService } from './turbo-sms.service';
 export {
   type ResolvedTurboSmsPluginOptions,
   type TurboSmsLowBalanceAlertOptions,
+  type TurboSmsLowBalanceCallback,
+  type TurboSmsLowBalanceContext,
   type TurboSmsPluginOptions,
   type TurboSmsRefusedRecipient,
   type TurboSmsSendOptions,

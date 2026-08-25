@@ -1,14 +1,14 @@
-import { type Injector } from '@vendure/core';
-import { describe, expect, it, vi } from 'vitest';
+import { type Injector, Logger } from '@vendure/core';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOW_BALANCE_TASK_ID } from './constants';
 import { TurboSmsLowBalanceEvent } from './events';
-import { createLowBalanceTask } from './low-balance-task';
+import { createLowBalanceTask, type ScheduledBalanceCheckOptions } from './low-balance-task';
 import { TurboSmsService } from './turbo-sms.service';
 
 function run(
   turboSms: Partial<TurboSmsService>,
-  options: { threshold: number },
-): { result: Promise<unknown>; publish: ReturnType<typeof vi.fn> } {
+  options: ScheduledBalanceCheckOptions,
+): { result: Promise<unknown>; publish: ReturnType<typeof vi.fn>; injector: Injector } {
   const publish = vi.fn();
   const injector = {
     get: (token: unknown) => (token === TurboSmsService ? turboSms : { publish }),
@@ -17,8 +17,14 @@ function run(
   const task = createLowBalanceTask(options);
   const result = task.options.execute({ injector, scheduledContext: {} as never, params: {} });
 
-  return { result, publish };
+  return { result, publish, injector };
 }
+
+// The task logs through notifyLowBalance; keep the test output clean.
+beforeEach(() => {
+  vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+  vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
+});
 
 describe('createLowBalanceTask', () => {
   it('has a stable id, so an operator can find it in the admin UI', () => {
@@ -70,5 +76,53 @@ describe('createLowBalanceTask', () => {
     );
 
     await expect(result).rejects.toThrow('nope');
+  });
+
+  describe('the onLowBalance callback', () => {
+    it("is called with the scheduled-check context and the task's own injector", async () => {
+      const onLowBalance = vi.fn();
+      const { result, injector } = run(
+        { isDryRun: false, getBalance: vi.fn().mockResolvedValue(42) },
+        { threshold: 100, onLowBalance },
+      );
+
+      await result;
+
+      expect(onLowBalance).toHaveBeenCalledOnce();
+      expect(onLowBalance.mock.calls[0][0]).toMatchObject({ reason: 'scheduledCheck', balance: 42, threshold: 100 });
+      expect(onLowBalance.mock.calls[0][0].injector).toBe(injector);
+    });
+
+    it('is not called when the balance is healthy', async () => {
+      const onLowBalance = vi.fn();
+      const { result } = run(
+        { isDryRun: false, getBalance: vi.fn().mockResolvedValue(500) },
+        { threshold: 100, onLowBalance },
+      );
+
+      await result;
+
+      expect(onLowBalance).not.toHaveBeenCalled();
+    });
+
+    it('is not called in dry-run mode', async () => {
+      const onLowBalance = vi.fn();
+      const { result } = run({ isDryRun: true, getBalance: vi.fn() }, { threshold: 100, onLowBalance });
+
+      await expect(result).resolves.toEqual({ skipped: 'dryRun' });
+      expect(onLowBalance).not.toHaveBeenCalled();
+    });
+
+    it('cannot fail the run, and the event is still published, when it throws', async () => {
+      const onLowBalance = vi.fn().mockRejectedValue(new Error('notifier is down'));
+      const { result, publish } = run(
+        { isDryRun: false, getBalance: vi.fn().mockResolvedValue(42) },
+        { threshold: 100, onLowBalance },
+      );
+
+      await expect(result).resolves.toEqual({ balance: 42, threshold: 100, low: true });
+      expect(publish).toHaveBeenCalledOnce();
+      expect(publish.mock.calls[0][0]).toBeInstanceOf(TurboSmsLowBalanceEvent);
+    });
   });
 });
