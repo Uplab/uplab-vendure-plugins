@@ -50,14 +50,14 @@ Then inject the service anywhere in your own plugin:
 ```ts
 import { Injectable } from '@nestjs/common';
 import { Logger } from '@vendure/core';
-import { TurboSmsError, TurboSmsService, interpolate } from '@uplab/vendure-plugin-turbosms';
+import { TurboSmsError, TurboSmsService } from '@uplab/vendure-plugin-turbosms';
 
 @Injectable()
 export class MyAuthService {
   constructor(private turboSms: TurboSmsService) {}
 
   async sendLoginCode(phone: string, code: string): Promise<boolean> {
-    const text = interpolate('Your {brand} login code – {code}', { brand: 'MyShop', code });
+    const text = `Your MyShop login code – ${code}`;
 
     try {
       await this.turboSms.send(phone, text);
@@ -128,9 +128,8 @@ if (refused.length) {
 }
 ```
 
-There is no message template or localization layer — `interpolate(template, values)` is
-exported for filling `{placeholder}` tokens, and that is as far as the plugin goes. See
-**Localizing messages** for the pattern that replaces it.
+There is no message template or localization layer: the plugin sends the text you hand
+it. See **Localizing messages** for how to keep that copy in your application.
 
 ## Phone numbers
 
@@ -158,28 +157,24 @@ const international = phone.replace(/\D/g, '').replace(/^0/, '380');
 await turboSms.send(international, text);
 ```
 
-`normalizePhoneNumber(input)` is exported if you want the same stripping elsewhere. It
-does not validate — a string that is not a phone number comes back as whatever digits it
-contained, and TurboSMS refuses it per recipient.
+The stripping does not validate: a string that is not a phone number goes out as whatever
+digits it contained, and TurboSMS refuses it per recipient.
 
 ## Message length and cost
 
 TurboSMS bills per segment, and a segment is much smaller in Cyrillic than the familiar
-160 characters: one non-Latin character re-encodes the whole message to UCS-2, where a
-segment holds **70** characters. A 75-character Ukrainian message costs two segments.
+160 characters: **one** non-Latin character re-encodes the whole message to UCS-2, where a
+segment holds **70** characters instead of 160. A 75-character Ukrainian message therefore
+costs two segments, and a message that mixes in a single `і` costs the same as one written
+entirely in Ukrainian.
 
-```ts
-import { countSegments } from '@uplab/vendure-plugin-turbosms';
+Worth knowing when writing campaign copy, or when showing an author how much room is left.
 
-countSegments('Your code is 1234');
-// { encoding: 'GSM-7', length: 17, segments: 1, remaining: 143 }
-
-countSegments('Ваш код 1234');
-// { encoding: 'UCS-2', length: 12, segments: 1, remaining: 58 }
-```
-
-Useful for keeping campaign copy inside one segment, and for showing an author how much
-room is left. The plugin does not enforce a limit — it only tells you the count.
+The plugin does not count segments for you — that is the GSM 03.38 standard rather than
+anything specific to TurboSMS, and it is a solved problem: use a dedicated package such as
+[`split-sms`](https://www.npmjs.com/package/split-sms) or
+[`sms-segments-calculator`](https://www.npmjs.com/package/sms-segments-calculator) if you
+need the exact count.
 
 ## Localizing messages
 
@@ -189,11 +184,10 @@ available on the background paths that send SMS. Keep the strings in your applic
 
 ```ts
 import { LanguageCode } from '@vendure/core';
-import { interpolate } from '@uplab/vendure-plugin-turbosms';
 
-const templates: Partial<Record<LanguageCode, { otpCode: string }>> = {
-  [LanguageCode.en]: { otpCode: 'Your {brand} login code – {code}' },
-  [LanguageCode.uk]: { otpCode: 'Ваш код входу {brand} – {code}' },
+const templates: Partial<Record<LanguageCode, { otpCode: (code: string) => string }>> = {
+  [LanguageCode.en]: { otpCode: (code) => `Your MyShop login code – ${code}` },
+  [LanguageCode.uk]: { otpCode: (code) => `Ваш код входу MyShop – ${code}` },
 };
 
 /** Falls back through the shop's default language to English. */
@@ -201,7 +195,7 @@ function template(languageCode: LanguageCode) {
   return templates[languageCode] ?? templates[defaultLanguageCode] ?? templates[LanguageCode.en]!;
 }
 
-const text = interpolate(template(ctx.languageCode).otpCode, { brand: 'MyShop', code });
+const text = template(ctx.languageCode).otpCode(code);
 await turboSms.send(phone, text);
 ```
 

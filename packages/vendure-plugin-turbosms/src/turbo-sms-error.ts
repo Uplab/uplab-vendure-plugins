@@ -57,11 +57,6 @@ export class TurboSmsRejectedError extends TurboSmsError {
     this.recipients = details.recipients;
     this.text = details.text;
   }
-
-  /** The per-recipient `response_code` values, in the order returned by the API. */
-  get recipientCodes(): number[] {
-    return this.responseResult?.map((r) => r.response_code) ?? [];
-  }
 }
 
 /**
