@@ -60,6 +60,9 @@ jobs:
         with:
           files: coverage/lcov.info
           use_oidc: true
+          # Without this the action exits 0 even when Codecov rejects the upload
+          # ("Repository not found"), and CI stays green while no coverage lands.
+          fail_ci_if_error: true
 
   package-hygiene:
     name: Package hygiene
