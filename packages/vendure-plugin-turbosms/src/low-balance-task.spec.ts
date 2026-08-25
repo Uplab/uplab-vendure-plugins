@@ -1,14 +1,30 @@
 import { CacheService, type Injector, Logger } from '@vendure/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { CHECK_FAILED_ALERTED_CACHE_KEY, LOW_BALANCE_CALLBACK_HEADROOM, LOW_BALANCE_TASK_ID } from './constants';
+import {
+  CHECK_FAILED_ALERTED_CACHE_KEY,
+  LOW_BALANCE_ALERTED_CACHE_KEY_PREFIX,
+  LOW_BALANCE_CALLBACK_HEADROOM,
+  LOW_BALANCE_TASK_ID,
+} from './constants';
 import { TurboSmsLowBalanceEvent } from './events';
 import { createLowBalanceTask, type ScheduledBalanceCheckOptions } from './low-balance-task';
 import { TurboSmsTransportError } from './turbo-sms-error';
 import { TurboSmsService } from './turbo-sms.service';
 
 const REQUEST_TIMEOUT = 10_000;
+const SCHEDULER_DEFAULT_TIMEOUT = 60_000;
+const DAY = 86_400_000;
 
-type TaskOptions = Omit<ScheduledBalanceCheckOptions, 'requestTimeout'> & { requestTimeout?: number };
+type TaskOptions = Omit<ScheduledBalanceCheckOptions, 'requestTimeout' | 'schedulerDefaultTimeout'> &
+  Partial<Pick<ScheduledBalanceCheckOptions, 'requestTimeout' | 'schedulerDefaultTimeout'>>;
+
+function task(options: TaskOptions) {
+  return createLowBalanceTask({
+    requestTimeout: REQUEST_TIMEOUT,
+    schedulerDefaultTimeout: SCHEDULER_DEFAULT_TIMEOUT,
+    ...options,
+  });
+}
 
 /**
  * A cache double over a plain Map. TTL expiry is not simulated — the tests drive the
@@ -39,16 +55,18 @@ function harness(turboSms: Partial<TurboSmsService>, options: TaskOptions, cache
     },
   } as unknown as Injector;
 
-  const task = createLowBalanceTask({ requestTimeout: REQUEST_TIMEOUT, ...options });
-  const execute = () => task.options.execute({ injector, scheduledContext: {} as never, params: {} });
+  const built = task(options);
+  const execute = () => built.options.execute({ injector, scheduledContext: {} as never, params: {} });
 
-  return { task, execute, publish, injector, cache };
+  return { task: built, execute, publish, injector, cache };
 }
 
 function run(turboSms: Partial<TurboSmsService>, options: TaskOptions) {
   const { execute, publish, injector, cache } = harness(turboSms, options);
   return { result: execute(), publish, injector, cache };
 }
+
+const outage = () => new TurboSmsTransportError({ endpoint: 'user/balance.json', cause: new Error('ETIMEDOUT') });
 
 // The task logs through notifyLowBalance; keep the test output clean.
 beforeEach(() => {
@@ -58,13 +76,37 @@ beforeEach(() => {
 
 describe('createLowBalanceTask', () => {
   it('has a stable id, so an operator can find it in the admin UI', () => {
-    expect(createLowBalanceTask({ threshold: 100, requestTimeout: REQUEST_TIMEOUT }).id).toBe(LOW_BALANCE_TASK_ID);
+    expect(task({ threshold: 100 }).id).toBe(LOW_BALANCE_TASK_ID);
   });
 
-  it('allows longer than one API request, so a slow response is not reported as a task failure', () => {
-    const task = createLowBalanceTask({ threshold: 100, requestTimeout: REQUEST_TIMEOUT });
+  describe('timeout', () => {
+    it("leaves the scheduler's default alone when a request and the callbacks fit inside it", () => {
+      expect(task({ threshold: 100 }).options.timeout).toBeUndefined();
+    });
 
-    expect(task.options.timeout).toBe(REQUEST_TIMEOUT + LOW_BALANCE_CALLBACK_HEADROOM);
+    it('sets its own when the request timeout was raised past what the scheduler allows', () => {
+      const requestTimeout = SCHEDULER_DEFAULT_TIMEOUT - LOW_BALANCE_CALLBACK_HEADROOM + 1;
+
+      expect(task({ threshold: 100, requestTimeout }).options.timeout).toBe(
+        requestTimeout + LOW_BALANCE_CALLBACK_HEADROOM,
+      );
+    });
+
+    it('sets its own when the scheduler default was lowered below one request plus the callbacks', () => {
+      expect(task({ threshold: 100, schedulerDefaultTimeout: 15_000 }).options.timeout).toBe(
+        REQUEST_TIMEOUT + LOW_BALANCE_CALLBACK_HEADROOM,
+      );
+    });
+
+    it('does not override a scheduler default that is exactly enough', () => {
+      const requestTimeout = SCHEDULER_DEFAULT_TIMEOUT - LOW_BALANCE_CALLBACK_HEADROOM;
+
+      expect(task({ threshold: 100, requestTimeout }).options.timeout).toBeUndefined();
+    });
+
+    it.each(['5s', undefined])('trusts a scheduler default it cannot compare (%s), as before it had one', (value) => {
+      expect(task({ threshold: 100, schedulerDefaultTimeout: value }).options.timeout).toBeUndefined();
+    });
   });
 
   it('warns and publishes an event when the balance is below the threshold', async () => {
@@ -112,6 +154,16 @@ describe('createLowBalanceTask', () => {
     );
 
     await expect(result).rejects.toThrow('nope');
+  });
+
+  it('never touches the cache when no interval is configured', async () => {
+    const { result, cache } = run({ isDryRun: false, getBalance: async () => 42 }, { threshold: 100 });
+
+    await result;
+
+    expect(cache.get).not.toHaveBeenCalled();
+    expect(cache.set).not.toHaveBeenCalled();
+    expect(cache.delete).not.toHaveBeenCalled();
   });
 
   describe('the onLowBalance callback', () => {
@@ -177,11 +229,28 @@ describe('createLowBalanceTask', () => {
       expect(publish).toHaveBeenCalledTimes(2);
     });
 
+    it.each([0, -1, Number.NaN])(
+      'treats %s as no interval, rather than as a TTL that never expires',
+      async (interval) => {
+        const onLowBalance = vi.fn();
+        const { execute, cache } = harness(
+          { isDryRun: false, getBalance: vi.fn().mockResolvedValue(42) },
+          { threshold: 100, onLowBalance, minIntervalBetweenAlerts: interval },
+        );
+
+        await execute();
+        await execute();
+
+        expect(onLowBalance).toHaveBeenCalledTimes(2);
+        expect(cache.set).not.toHaveBeenCalled();
+      },
+    );
+
     it('alerts once while the balance stays low', async () => {
       const onLowBalance = vi.fn();
       const { execute, publish } = harness(
         { isDryRun: false, getBalance: vi.fn().mockResolvedValue(42) },
-        { threshold: 100, onLowBalance, minIntervalBetweenAlerts: 86_400_000 },
+        { threshold: 100, onLowBalance, minIntervalBetweenAlerts: DAY },
       );
 
       await expect(execute()).resolves.toMatchObject({ notified: true });
@@ -191,12 +260,42 @@ describe('createLowBalanceTask', () => {
       expect(publish).toHaveBeenCalledOnce();
     });
 
+    it('records the alert under a threshold-specific key with the interval as its TTL, in milliseconds', async () => {
+      const { execute, cache } = harness(
+        { isDryRun: false, getBalance: vi.fn().mockResolvedValue(42) },
+        { threshold: 100, minIntervalBetweenAlerts: DAY },
+      );
+
+      await execute();
+
+      expect(cache.set).toHaveBeenCalledExactlyOnceWith(`${LOW_BALANCE_ALERTED_CACHE_KEY_PREFIX}100`, true, {
+        ttl: DAY,
+      });
+    });
+
+    it('only starts the interval once the callback went through, so a failed alert is retried next run', async () => {
+      const onLowBalance = vi.fn().mockRejectedValueOnce(new Error('notifier is down')).mockResolvedValue(undefined);
+      const { execute, cache } = harness(
+        { isDryRun: false, getBalance: vi.fn().mockResolvedValue(42) },
+        { threshold: 100, onLowBalance, minIntervalBetweenAlerts: DAY },
+      );
+
+      await expect(execute()).resolves.toMatchObject({ notified: true });
+      expect(cache.set).not.toHaveBeenCalled();
+
+      await expect(execute()).resolves.toMatchObject({ notified: true });
+      expect(cache.set).toHaveBeenCalledOnce();
+
+      await expect(execute()).resolves.toMatchObject({ notified: false });
+      expect(onLowBalance).toHaveBeenCalledTimes(2);
+    });
+
     it('re-arms when the balance recovers, so a second drop is not swallowed', async () => {
       const onLowBalance = vi.fn();
       const getBalance = vi.fn().mockResolvedValueOnce(42).mockResolvedValueOnce(500).mockResolvedValueOnce(42);
       const { execute } = harness(
         { isDryRun: false, getBalance },
-        { threshold: 100, onLowBalance, minIntervalBetweenAlerts: 86_400_000 },
+        { threshold: 100, onLowBalance, minIntervalBetweenAlerts: DAY },
       );
 
       await execute(); // low   → alerts
@@ -209,7 +308,7 @@ describe('createLowBalanceTask', () => {
     it('re-arms when the threshold changes, because the key carries it', async () => {
       const cache = createCacheMock();
       const turboSms = { isDryRun: false, getBalance: vi.fn().mockResolvedValue(42) };
-      const interval = { minIntervalBetweenAlerts: 86_400_000 };
+      const interval = { minIntervalBetweenAlerts: DAY };
 
       await harness(turboSms, { threshold: 100, ...interval }, cache).execute();
       const second = await harness(turboSms, { threshold: 50, ...interval }, cache).execute();
@@ -217,13 +316,16 @@ describe('createLowBalanceTask', () => {
       expect(second).toMatchObject({ notified: true });
     });
 
-    it('alerts anyway when the cache cannot be read, since a duplicate beats silence', async () => {
+    it('alerts anyway when the cache is unavailable, since a duplicate beats silence', async () => {
+      // CacheService never throws: on a strategy failure it logs, `get` resolves undefined
+      // and `set` is a no-op. That is the shape a Redis outage actually takes.
       const cache = createCacheMock();
-      cache.get.mockRejectedValue(new Error('redis is down'));
+      cache.get.mockResolvedValue(undefined);
+      cache.set.mockResolvedValue(undefined);
       const onLowBalance = vi.fn();
       const { execute } = harness(
         { isDryRun: false, getBalance: vi.fn().mockResolvedValue(42) },
-        { threshold: 100, onLowBalance, minIntervalBetweenAlerts: 86_400_000 },
+        { threshold: 100, onLowBalance, minIntervalBetweenAlerts: DAY },
         cache,
       );
 
@@ -235,8 +337,6 @@ describe('createLowBalanceTask', () => {
   });
 
   describe('the onCheckFailed callback', () => {
-    const outage = () => new TurboSmsTransportError({ endpoint: 'user/balance.json', cause: new Error('ETIMEDOUT') });
-
     it('reports that monitoring is blind, and still fails the run', async () => {
       const onCheckFailed = vi.fn();
       const { result, injector } = run(
@@ -257,19 +357,35 @@ describe('createLowBalanceTask', () => {
       expect(onCheckFailed.mock.calls[0][0].injector).toBe(injector);
     });
 
+    it('still logs the outage and fails the run when no callback is configured', async () => {
+      const error = vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
+      const { result } = run(
+        {
+          isDryRun: false,
+          getBalance: async () => {
+            throw outage();
+          },
+        },
+        { threshold: 100 },
+      );
+
+      await expect(result).rejects.toBeInstanceOf(TurboSmsTransportError);
+      expect(error.mock.calls[0][0]).toContain('Could not read the TurboSMS balance');
+    });
+
     it('is not called for a failure that is not the provider, which is a bug not an outage', async () => {
       const onCheckFailed = vi.fn();
       const { result } = run(
         {
           isDryRun: false,
           getBalance: async () => {
-            throw new TypeError('turboSms.getBalance is not a function');
+            throw new RangeError('a bug in the host application');
           },
         },
         { threshold: 100, onCheckFailed },
       );
 
-      await expect(result).rejects.toBeInstanceOf(TypeError);
+      await expect(result).rejects.toBeInstanceOf(RangeError);
       expect(onCheckFailed).not.toHaveBeenCalled();
     });
 
@@ -290,6 +406,25 @@ describe('createLowBalanceTask', () => {
 
     it('shares the alert interval, under its own key', async () => {
       const onCheckFailed = vi.fn();
+      const { execute, cache } = harness(
+        {
+          isDryRun: false,
+          getBalance: async () => {
+            throw outage();
+          },
+        },
+        { threshold: 100, onCheckFailed, minIntervalBetweenAlerts: DAY },
+      );
+
+      await expect(execute()).rejects.toThrow();
+      await expect(execute()).rejects.toThrow();
+
+      expect(onCheckFailed).toHaveBeenCalledOnce();
+      expect(cache.set).toHaveBeenCalledExactlyOnceWith(CHECK_FAILED_ALERTED_CACHE_KEY, true, { ttl: DAY });
+    });
+
+    it('retries next run when the callback itself failed, instead of going quiet for the interval', async () => {
+      const onCheckFailed = vi.fn().mockRejectedValueOnce(new Error('notifier is down')).mockResolvedValue(undefined);
       const { execute } = harness(
         {
           isDryRun: false,
@@ -297,13 +432,14 @@ describe('createLowBalanceTask', () => {
             throw outage();
           },
         },
-        { threshold: 100, onCheckFailed, minIntervalBetweenAlerts: 86_400_000 },
+        { threshold: 100, onCheckFailed, minIntervalBetweenAlerts: DAY },
       );
 
       await expect(execute()).rejects.toThrow();
       await expect(execute()).rejects.toThrow();
+      await expect(execute()).rejects.toThrow();
 
-      expect(onCheckFailed).toHaveBeenCalledOnce();
+      expect(onCheckFailed).toHaveBeenCalledTimes(2);
     });
 
     it('re-arms once a check succeeds again', async () => {
@@ -317,7 +453,7 @@ describe('createLowBalanceTask', () => {
             return 500;
           },
         },
-        { threshold: 100, onCheckFailed, minIntervalBetweenAlerts: 86_400_000 },
+        { threshold: 100, onCheckFailed, minIntervalBetweenAlerts: DAY },
       );
 
       await expect(execute()).rejects.toThrow();

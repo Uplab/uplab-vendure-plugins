@@ -219,11 +219,11 @@ That is a decision about your customers, not about TurboSMS, so it stays on your
 The plugin publishes on Vendure's event bus, so metering and audit logging do not have to
 wrap every call site:
 
-| Event                     | When                                                                                             |
-| ------------------------- | ------------------------------------------------------------------------------------------------ |
-| `TurboSmsSentEvent`       | A send request was accepted. Carries the full result, `dryRun` sends too.                        |
-| `TurboSmsFailedEvent`     | A send request failed as a whole, published just before the error is thrown.                     |
-| `TurboSmsLowBalanceEvent` | The **scheduled** check found the balance below the threshold. Not published for a refused send. |
+| Event                     | When                                                                                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TurboSmsSentEvent`       | A send request was accepted. Carries the full result, `dryRun` sends too.                                                                                   |
+| `TurboSmsFailedEvent`     | A send request failed as a whole, published just before the error is thrown.                                                                                |
+| `TurboSmsLowBalanceEvent` | The **scheduled** check found the balance below the threshold. Not published for a refused send, and gated by `minIntervalBetweenAlerts` like the callback. |
 
 ```ts
 eventBus.ofType(TurboSmsSentEvent).subscribe(({ result }) => {
@@ -300,7 +300,10 @@ Rules worth knowing:
 - **Errors are caught and logged.** A failing callback never breaks a send or fails a
   scheduled run.
 - **It is awaited**, so keep it quick — a slow callback delays the send's rejection and
-  counts against the scheduled task's timeout. Queue anything slow.
+  counts against the scheduled task's timeout. That is `DefaultSchedulerPlugin`'s
+  `defaultTimeout` (60 s unless you changed it), except when one request (`timeout`) plus
+  20 s of headroom would not fit in it — then the task sets that budget itself. A
+  `defaultTimeout` given as a string (`'2m'`) is trusted as is. Queue anything slow.
 - **It can fire once per refused send**, so a burst of failures means a burst of calls.
   Debounce before paging anyone.
 - In a cluster the refused-send trigger fires on whichever instance sent the SMS, while the
@@ -327,10 +330,15 @@ lowBalanceAlert: {
 evening, and you are told — a plain "once per day" timer would swallow that, and only the
 check itself can tell the difference, because your callback never sees the healthy runs.
 
+**The interval starts once the alert has gone out.** A callback that throws is logged and
+retried on the next scheduled run, not silenced until the interval is up.
+
 State lives in Vendure's `CacheService`, so it is as durable as your cache strategy: Redis
-or DB survives restarts and is shared between instances, the default in-memory strategy
-resets on restart. Cache failures fail open — a duplicate alert beats a silently dropped
-one. Changing `threshold` re-arms too, since it is part of the key.
+or DB survives restarts and is shared between instances, the default in-memory strategy is
+per process — it resets on restart, and in a cluster each instance keeps its own, so use a
+shared strategy there. Cache failures fail open — a duplicate alert beats a silently dropped
+one. Changing `threshold` re-arms too, since it is part of the key. `0` (or a negative
+value) means no interval, the same as leaving it out.
 
 The interval gates the scheduled check only, `TurboSmsLowBalanceEvent` included. A refused
 send always calls `onLowBalance`: its rate is bounded by your own send volume, and each one
@@ -350,8 +358,9 @@ lowBalanceAlert: {
 },
 ```
 
-`onCheckFailed` fires for a `TurboSmsError` — a refusal or a transport failure. Anything
-else is a bug rather than an outage and is rethrown untouched. It shares
+`onCheckFailed` fires for a `TurboSmsError` — a refusal, or a transport failure, which
+includes a 2xx body with no balance in it. Anything else is a bug rather than an outage and
+is rethrown untouched. It shares
 `minIntervalBetweenAlerts` under its own key, and re-arms as soon as a check succeeds.
 
 Without it, a multi-day outage shows up only as failed runs in the scheduled-tasks screen —
@@ -435,7 +444,8 @@ with `reason: 'sendRejected'` — see **Watching the balance**.
 ### Per-recipient codes
 
 A refusal also carries a row per recipient. `recipientCodes` reads their codes in order, and
-is empty when the rejection was request-level rather than per-number:
+is empty when the rejection was request-level rather than per-number. It is a getter over
+`responseResult`, so it is not in `JSON.stringify(error)` or `{ ...error }` — the rows are:
 
 ```ts
 import {

@@ -45,7 +45,10 @@ export type TurboSmsLowBalanceCallback = (context: TurboSmsLowBalanceContext) =>
  * the balance at all.
  */
 export interface TurboSmsBalanceCheckFailedContext {
-  /** What went wrong: a refusal from TurboSMS, or a request that never got an answer. */
+  /**
+   * What went wrong: a refusal from TurboSMS, or a request that never got a usable answer —
+   * a network failure, a timeout, a non-2xx status, or a body without a balance in it.
+   */
   error: TurboSmsError;
   /** The threshold the check would have compared against. */
   threshold: number;
@@ -105,17 +108,22 @@ export interface TurboSmsLowBalanceAlertOptions {
    * Only the check itself sees the healthy runs, which is why this cannot be built around the
    * plugin from a callback.
    *
+   * The interval starts once the alert has gone out. A callback that throws is logged and
+   * retried on the next scheduled run rather than silenced for the whole interval.
+   *
    * State lives in Vendure's `CacheService`, so it is exactly as durable as the configured
    * cache strategy: Redis or DB survives restarts and is shared between instances, while the
-   * default in-memory strategy resets on restart. Cache failures fail open — a duplicate alert
-   * beats a silently dropped one.
+   * default in-memory strategy is per process — it resets on restart, and in a cluster each
+   * instance keeps its own. Cache failures fail open — a duplicate alert beats a silently
+   * dropped one.
    *
    * Gates the scheduled check only, including its {@link TurboSmsLowBalanceEvent} and
    * `onCheckFailed` (each under its own key). `onLowBalance` with `reason: 'sendRejected'` is
    * never gated: its rate is bounded by your own send volume, and each one is a customer
    * message that actually failed.
    *
-   * Omit it for the raw behaviour — an alert on every scheduled run while the balance is low.
+   * Omit it, or set it to `0`, for the raw behaviour — an alert on every scheduled run while
+   * the balance is low.
    *
    * @example
    * ```ts

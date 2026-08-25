@@ -1,4 +1,4 @@
-import { Logger, PluginCommonModule, type Type, VendurePlugin } from '@vendure/core';
+import { DefaultSchedulerPlugin, Logger, PluginCommonModule, type Type, VendurePlugin } from '@vendure/core';
 import {
   DEFAULT_TURBOSMS_API_URL,
   DEFAULT_TURBOSMS_TIMEOUT,
@@ -45,7 +45,15 @@ import { type ResolvedTurboSmsPluginOptions, type TurboSmsPluginOptions } from '
       const { threshold } = lowBalanceAlert;
       config.schedulerOptions.tasks = [
         ...(config.schedulerOptions.tasks ?? []),
-        createLowBalanceTask({ ...lowBalanceAlert, threshold, requestTimeout: TurboSmsPlugin.options.timeout }),
+        createLowBalanceTask({
+          ...lowBalanceAlert,
+          threshold,
+          requestTimeout: TurboSmsPlugin.options.timeout,
+          // Read here, after every plugin's `init()` has run, so it is the host's actual value.
+          // Without DefaultSchedulerPlugin it holds that plugin's defaults, which is the best
+          // guess available.
+          schedulerDefaultTimeout: DefaultSchedulerPlugin.options.defaultTimeout,
+        }),
       ];
     } else if (lowBalanceAlert?.schedule !== undefined) {
       Logger.warn(

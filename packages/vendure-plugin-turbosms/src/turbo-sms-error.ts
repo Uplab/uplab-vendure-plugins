@@ -94,7 +94,7 @@ export class TurboSmsTransportError extends TurboSmsError {
 
   constructor(details: TurboSmsTransportErrorDetails) {
     super(
-      `The request to ${details.endpoint} failed: ${describe(details)}`,
+      `The request to ${details.endpoint} failed: ${describeFailure(details)}`,
       details.endpoint,
       details.cause === undefined ? undefined : { cause: details.cause },
     );
@@ -103,7 +103,7 @@ export class TurboSmsTransportError extends TurboSmsError {
   }
 }
 
-function describe({ status, cause }: TurboSmsTransportErrorDetails): string {
+function describeFailure({ status, cause }: TurboSmsTransportErrorDetails): string {
   const reason = cause instanceof Error ? cause.message : cause !== undefined ? String(cause) : undefined;
   if (status !== undefined) {
     return reason ? `HTTP ${status} (${reason})` : `HTTP ${status}`;

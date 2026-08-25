@@ -1,6 +1,11 @@
-import { getConfigurationFunction, Logger, type RuntimeVendureConfig } from '@vendure/core';
-import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TURBOSMS_API_URL, DEFAULT_TURBOSMS_TIMEOUT, LOW_BALANCE_TASK_ID } from './constants';
+import { DefaultSchedulerPlugin, getConfigurationFunction, Logger, type RuntimeVendureConfig } from '@vendure/core';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  DEFAULT_TURBOSMS_API_URL,
+  DEFAULT_TURBOSMS_TIMEOUT,
+  LOW_BALANCE_CALLBACK_HEADROOM,
+  LOW_BALANCE_TASK_ID,
+} from './constants';
 import { TurboSmsPlugin } from './turbo-sms.plugin';
 
 /** Applies the plugin's `configuration` hook to a config carrying only what it touches. */
@@ -50,6 +55,39 @@ describe('the lowBalanceAlert option', () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0].id).toBe(LOW_BALANCE_TASK_ID);
     expect(tasks[0].options.schedule).toBe('0 9 * * *');
+  });
+
+  describe('the task timeout', () => {
+    const schedulerDefaults = { ...DefaultSchedulerPlugin.options };
+
+    afterEach(() => {
+      DefaultSchedulerPlugin.options = schedulerDefaults;
+    });
+
+    it("leaves the scheduler's own timeout alone for the default request timeout", async () => {
+      TurboSmsPlugin.init({ apiKey: 'key', sender: 'Brand', lowBalanceAlert: { threshold: 100 } });
+
+      const { tasks } = (await configure()).schedulerOptions;
+
+      expect(tasks[0].options.timeout).toBeUndefined();
+    });
+
+    it('gives the task a timeout of its own when the configured request timeout needs it', async () => {
+      TurboSmsPlugin.init({ apiKey: 'key', sender: 'Brand', timeout: 50_000, lowBalanceAlert: { threshold: 100 } });
+
+      const { tasks } = (await configure()).schedulerOptions;
+
+      expect(tasks[0].options.timeout).toBe(50_000 + LOW_BALANCE_CALLBACK_HEADROOM);
+    });
+
+    it("reads the host's DefaultSchedulerPlugin default, so a lowered one is covered too", async () => {
+      DefaultSchedulerPlugin.init({ defaultTimeout: 15_000 });
+      TurboSmsPlugin.init({ apiKey: 'key', sender: 'Brand', lowBalanceAlert: { threshold: 100 } });
+
+      const { tasks } = (await configure()).schedulerOptions;
+
+      expect(tasks[0].options.timeout).toBe(DEFAULT_TURBOSMS_TIMEOUT + LOW_BALANCE_CALLBACK_HEADROOM);
+    });
   });
 
   it('uses a configured schedule instead of the default', async () => {

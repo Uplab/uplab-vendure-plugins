@@ -192,7 +192,18 @@ export class TurboSmsService {
       });
     }
 
-    return response.response_result.balance;
+    const balance = response.response_result?.balance;
+    if (typeof balance !== 'number') {
+      // A 2xx JSON body without a balance is still "we do not know the balance": an API-side
+      // degradation or a proxy answering in TurboSMS's place. Reported as a transport failure
+      // so the scheduled check treats it as an outage rather than a bug.
+      throw new TurboSmsTransportError({
+        endpoint: BALANCE_ENDPOINT,
+        cause: new TypeError('The response carried no numeric response_result.balance'),
+      });
+    }
+
+    return balance;
   }
 
   private async published(result: TurboSmsSendResult): Promise<TurboSmsSendResult> {

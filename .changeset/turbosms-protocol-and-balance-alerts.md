@@ -19,12 +19,18 @@ New exports:
 New `lowBalanceAlert` options:
 
 - `minIntervalBetweenAlerts` — stay quiet after alerting, but re-arm as soon as the balance
-  recovers, so a top-up followed by another drop is still reported. Backed by Vendure's
-  `CacheService` and failing open. Omitted, the behaviour is unchanged: an alert on every
-  scheduled run while the balance is low.
+  recovers, so a top-up followed by another drop is still reported. The interval only
+  starts once the alert went out, so a callback that throws is retried next run. Backed by
+  Vendure's `CacheService` and failing open. Omitted (or `0`), the behaviour is unchanged:
+  an alert on every scheduled run while the balance is low.
 - `onCheckFailed` — called when a scheduled check cannot read the balance at all. The task
   still rethrows, so the failed run is recorded either way; the callback is what turns "we
   no longer know the balance" into something that reaches a person.
 
-The scheduled task also now sets its own timeout from the configured request timeout, rather
-than riding the scheduler default, so a slow API response is not reported as a task failure.
+The scheduled task also sets its own timeout when the configured request timeout plus 20 s
+of callback headroom would not fit in `DefaultSchedulerPlugin`'s `defaultTimeout`, so a slow
+API response is not reported as a task failure. When it fits, the scheduler's setting is left
+as it was.
+
+`TurboSmsService.getBalance()` now throws a `TurboSmsTransportError` for a 2xx body without a
+balance in it, instead of a bare `TypeError`, so the scheduled check reports it as an outage.

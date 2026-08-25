@@ -61,8 +61,8 @@ export const LOW_BALANCE_TASK_ID = 'turbosms-low-balance';
 
 /**
  * How much longer than one API request the scheduled check is allowed to take, covering the
- * `onLowBalance` callback. A task that gives up while its only request is still in flight
- * reports a failure that never happened.
+ * cache round-trips and whichever of `onLowBalance` / `onCheckFailed` runs. A task that gives
+ * up while its only request is still in flight reports a failure that never happened.
  */
 export const LOW_BALANCE_CALLBACK_HEADROOM = 20_000;
 
