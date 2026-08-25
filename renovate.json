@@ -19,14 +19,21 @@
       "automerge": true
     },
     {
-      "description": "Automerge GitHub Actions digest bumps",
+      "description": "Automerge GitHub Action digest and non-major bumps; the major rule below takes majors back.",
       "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest", "pinDigest", "pin", "patch", "minor"],
       "automerge": true
     },
     {
       "description": "Vendure upgrades are a deliberate PR with a changeset, never automerged",
       "matchPackageNames": ["@vendure/**"],
       "groupName": "vendure",
+      "automerge": false
+    },
+    {
+      "description": "Majors wait for a click on the dependency dashboard, then land as a reviewed PR. Last rule so it also reclaims the GitHub Actions and Vendure matches above.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
       "automerge": false
     }
   ]
