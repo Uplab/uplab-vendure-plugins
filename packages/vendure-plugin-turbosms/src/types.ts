@@ -1,5 +1,5 @@
 import { type Injector, type ScheduledTaskConfig } from '@vendure/core';
-import { type TurboSmsRejectedError } from './turbo-sms-error';
+import { type TurboSmsError, type TurboSmsRejectedError } from './turbo-sms-error';
 
 /**
  * @description
@@ -41,6 +41,31 @@ export type TurboSmsLowBalanceCallback = (context: TurboSmsLowBalanceContext) =>
 
 /**
  * @description
+ * Handed to {@link TurboSmsBalanceCheckFailedCallback} when a scheduled check could not read
+ * the balance at all.
+ */
+export interface TurboSmsBalanceCheckFailedContext {
+  /** What went wrong: a refusal from TurboSMS, or a request that never got an answer. */
+  error: TurboSmsError;
+  /** The threshold the check would have compared against. */
+  threshold: number;
+  /** A one-line summary — the same text the plugin logs. Written for humans; do not parse it. */
+  message: string;
+  /** Vendure's injector, for reaching your own services from the callback. */
+  injector: Injector;
+}
+
+/**
+ * @description
+ * Called when a scheduled balance check fails outright — balance monitoring has gone blind,
+ * which is a different emergency from a low balance. Errors it throws are caught and logged,
+ * and the check's own error is rethrown afterwards, so the scheduler still records the run as
+ * failed. It is awaited, so keep it quick and queue anything slow.
+ */
+export type TurboSmsBalanceCheckFailedCallback = (context: TurboSmsBalanceCheckFailedContext) => void | Promise<void>;
+
+/**
+ * @description
  * Low-balance alerting: a callback, a scheduled balance check, or both. See the
  * `lowBalanceAlert` option.
  */
@@ -72,6 +97,44 @@ export interface TurboSmsLowBalanceAlertOptions {
    * ```
    */
   onLowBalance?: TurboSmsLowBalanceCallback;
+  /**
+   * @description
+   * Once the scheduled check has alerted, stay quiet for this many milliseconds — unless the
+   * balance recovers to the threshold or above first, which re-arms the alert immediately. A
+   * top-up followed by another drop is therefore reported, however short the interval was.
+   * Only the check itself sees the healthy runs, which is why this cannot be built around the
+   * plugin from a callback.
+   *
+   * State lives in Vendure's `CacheService`, so it is exactly as durable as the configured
+   * cache strategy: Redis or DB survives restarts and is shared between instances, while the
+   * default in-memory strategy resets on restart. Cache failures fail open — a duplicate alert
+   * beats a silently dropped one.
+   *
+   * Gates the scheduled check only, including its {@link TurboSmsLowBalanceEvent} and
+   * `onCheckFailed` (each under its own key). `onLowBalance` with `reason: 'sendRejected'` is
+   * never gated: its rate is bounded by your own send volume, and each one is a customer
+   * message that actually failed.
+   *
+   * Omit it for the raw behaviour — an alert on every scheduled run while the balance is low.
+   *
+   * @example
+   * ```ts
+   * minIntervalBetweenAlerts: 24 * 60 * 60 * 1000,
+   * ```
+   */
+  minIntervalBetweenAlerts?: number;
+  /**
+   * @description
+   * What to do when a scheduled check fails outright. The task rethrows either way, so the
+   * scheduler records the failed run; without this callback that record is the only signal,
+   * and a prolonged TurboSMS outage leaves balance monitoring blind with nobody told.
+   *
+   * @example
+   * ```ts
+   * onCheckFailed: ({ message }) => notifySlack(message),
+   * ```
+   */
+  onCheckFailed?: TurboSmsBalanceCheckFailedCallback;
 }
 
 /**

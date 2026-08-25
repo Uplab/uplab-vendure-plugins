@@ -45,7 +45,7 @@ import { type ResolvedTurboSmsPluginOptions, type TurboSmsPluginOptions } from '
       const { threshold } = lowBalanceAlert;
       config.schedulerOptions.tasks = [
         ...(config.schedulerOptions.tasks ?? []),
-        createLowBalanceTask({ ...lowBalanceAlert, threshold }),
+        createLowBalanceTask({ ...lowBalanceAlert, threshold, requestTimeout: TurboSmsPlugin.options.timeout }),
       ];
     } else if (lowBalanceAlert?.schedule !== undefined) {
       Logger.warn(

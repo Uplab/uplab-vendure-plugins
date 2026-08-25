@@ -57,6 +57,19 @@ export class TurboSmsRejectedError extends TurboSmsError {
     this.recipients = details.recipients;
     this.text = details.text;
   }
+
+  /**
+   * @description
+   * The code TurboSMS gave for each recipient, in the order it reported them — the usual way to
+   * decide whether a refusal is routine (see {@link RECIPIENT_COUNTRY_NOT_ALLOWED_CODE}) or worth
+   * acting on.
+   *
+   * Empty when the refusal carried no per-recipient rows, which is what a request-level rejection
+   * looks like; read {@link TurboSmsRejectedError.responseCode} for those.
+   */
+  get recipientCodes(): number[] {
+    return this.responseResult?.map((row) => row.response_code) ?? [];
+  }
 }
 
 /**

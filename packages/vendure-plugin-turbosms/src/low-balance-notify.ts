@@ -1,7 +1,11 @@
 import { type Injector, Logger } from '@vendure/core';
 import { TURBOSMS_LOGGER_CTX } from './constants';
-import { type TurboSmsRejectedError } from './turbo-sms-error';
-import { type TurboSmsLowBalanceCallback, type TurboSmsLowBalanceContext } from './types';
+import { type TurboSmsError, type TurboSmsRejectedError } from './turbo-sms-error';
+import {
+  type TurboSmsBalanceCheckFailedCallback,
+  type TurboSmsLowBalanceCallback,
+  type TurboSmsLowBalanceContext,
+} from './types';
 
 /**
  * What happened, before the message and the injector are filled in. The two arms mirror
@@ -37,6 +41,34 @@ export async function notifyLowBalance(
     const reason = e instanceof Error ? e.message : String(e);
     Logger.error(
       `The lowBalanceAlert.onLowBalance callback failed: ${reason}`,
+      TURBOSMS_LOGGER_CTX,
+      e instanceof Error ? e.stack : undefined,
+    );
+  }
+}
+
+/**
+ * The check-failed counterpart, with the same contract: it always logs, it awaits the
+ * callback, and it never throws — the caller rethrows the underlying error itself.
+ */
+export async function notifyBalanceCheckFailed(
+  trigger: { error: TurboSmsError; threshold: number },
+  injector: Injector,
+  onCheckFailed?: TurboSmsBalanceCheckFailedCallback,
+): Promise<void> {
+  const message = `Could not read the TurboSMS balance, so it is not being monitored: ${trigger.error.message}`;
+  Logger.error(message, TURBOSMS_LOGGER_CTX);
+
+  if (!onCheckFailed) {
+    return;
+  }
+
+  try {
+    await onCheckFailed({ error: trigger.error, threshold: trigger.threshold, message, injector });
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    Logger.error(
+      `The lowBalanceAlert.onCheckFailed callback failed: ${reason}`,
       TURBOSMS_LOGGER_CTX,
       e instanceof Error ? e.stack : undefined,
     );

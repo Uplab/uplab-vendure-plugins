@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import {
+  INSUFFICIENT_FUNDS_RESPONSE_CODE,
+  RECIPIENT_COUNTRY_NOT_ALLOWED_CODE,
+  RECIPIENT_INSUFFICIENT_FUNDS_CODE,
+} from './constants';
 import { TurboSmsError, TurboSmsRejectedError, TurboSmsTransportError } from './turbo-sms-error';
 import { type TurboSmsResponseResult } from './types';
 
@@ -28,6 +33,30 @@ describe('TurboSmsRejectedError', () => {
     });
 
     expect(error.responseResult?.map((r) => r.response_code)).toEqual([0, 800]);
+  });
+
+  it('exposes the per-recipient codes, which is what classifying a refusal needs', () => {
+    const error = new TurboSmsRejectedError({
+      endpoint: 'message/send.json',
+      responseCode: 202,
+      responseStatus: 'ACCEPTED',
+      responseResult: [
+        result('380501234567', RECIPIENT_COUNTRY_NOT_ALLOWED_CODE),
+        result('380671234567', RECIPIENT_INSUFFICIENT_FUNDS_CODE),
+      ],
+    });
+
+    expect(error.recipientCodes).toEqual([406, 203]);
+  });
+
+  it('has no recipient codes when the rejection was request-level', () => {
+    const error = new TurboSmsRejectedError({
+      endpoint: 'user/balance.json',
+      responseCode: INSUFFICIENT_FUNDS_RESPONSE_CODE,
+      responseStatus: 'NOT_ENOUGH_MONEY',
+    });
+
+    expect(error.recipientCodes).toEqual([]);
   });
 });
 
