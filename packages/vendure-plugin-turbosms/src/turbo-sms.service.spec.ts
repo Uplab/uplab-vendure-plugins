@@ -187,7 +187,7 @@ describe('TurboSmsService', () => {
         recipients: ['380501234567'],
         text: 'hello',
       });
-      expect((error as TurboSmsRejectedError).recipientCodes).toEqual([103]);
+      expect((error as TurboSmsRejectedError).responseResult?.map((r) => r.response_code)).toEqual([103]);
     });
 
     it('keeps the message body out of the error message', async () => {

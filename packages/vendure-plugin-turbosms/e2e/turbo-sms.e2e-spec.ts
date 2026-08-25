@@ -2,7 +2,9 @@ import path from 'path';
 import { mergeConfig } from '@vendure/core';
 import { createTestEnvironment, registerInitializer, SqljsInitializer, testConfig } from '@vendure/testing';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TURBOSMS_API_URL, DEFAULT_TURBOSMS_TIMEOUT, TurboSmsPlugin, TurboSmsService } from '../src';
+import { TurboSmsPlugin, TurboSmsService } from '../src';
+// Internal constants: not part of the package's public API, imported directly.
+import { DEFAULT_TURBOSMS_API_URL, DEFAULT_TURBOSMS_TIMEOUT } from '../src/constants';
 import { initialData } from './fixtures/initial-data';
 
 registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__sqlite-data__')));
