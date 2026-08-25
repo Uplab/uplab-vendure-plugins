@@ -4,8 +4,8 @@ import { DEFAULT_TURBOSMS_API_URL, DEFAULT_TURBOSMS_TIMEOUT, LOW_BALANCE_TASK_ID
 import { TurboSmsPlugin } from './turbo-sms.plugin';
 
 /** Applies the plugin's `configuration` hook to a config carrying only what it touches. */
-async function configure(): Promise<RuntimeVendureConfig> {
-  const config = { schedulerOptions: { tasks: [] } } as unknown as RuntimeVendureConfig;
+async function configure(schedulerOptions: object = { tasks: [] }): Promise<RuntimeVendureConfig> {
+  const config = { schedulerOptions } as unknown as RuntimeVendureConfig;
   return (await getConfigurationFunction(TurboSmsPlugin)?.(config)) ?? config;
 }
 
@@ -85,6 +85,25 @@ describe('the lowBalanceAlert option', () => {
 
     expect(tasks).toHaveLength(1);
     expect(tasks[0].id).toBe(LOW_BALANCE_TASK_ID);
+  });
+
+  it('starts the task list when the config has none yet', async () => {
+    TurboSmsPlugin.init({ apiKey: 'key', sender: 'Brand', lowBalanceAlert: { threshold: 100 } });
+
+    const { tasks } = (await configure({})).schedulerOptions;
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe(LOW_BALANCE_TASK_ID);
+  });
+
+  it('keeps the tasks another plugin already registered', async () => {
+    TurboSmsPlugin.init({ apiKey: 'key', sender: 'Brand', lowBalanceAlert: { threshold: 100 } });
+    const existing = { id: 'other-task' };
+
+    const { tasks } = (await configure({ tasks: [existing] })).schedulerOptions;
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]).toBe(existing);
   });
 
   it('warns that a schedule without a threshold registers nothing', async () => {

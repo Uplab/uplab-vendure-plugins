@@ -51,6 +51,13 @@ describe('TurboSmsTransportError', () => {
     expect(error.cause).toBe(cause);
   });
 
+  it('stringifies a cause that is not an Error', () => {
+    const error = new TurboSmsTransportError({ endpoint: 'message/send.json', cause: 'socket hang up' });
+
+    expect(error.message).toBe('The request to message/send.json failed: socket hang up');
+    expect(error.cause).toBe('socket hang up');
+  });
+
   it('falls back to a generic reason when there is neither a status nor a cause', () => {
     expect(new TurboSmsTransportError({ endpoint: 'message/send.json' }).message).toBe(
       'The request to message/send.json failed: unknown error',
