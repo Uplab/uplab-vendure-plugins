@@ -68,6 +68,10 @@ jobs:
           # npm mints a short-lived token from the id-token permission above and attaches
           # provenance automatically.
           publish: node scripts/release.mjs
+          # scripts/release.mjs already creates the GitHub Release (with the changelog
+          # section as notes). Left on, the action creates it a second time from the
+          # `🦋 New tag:` output and fails the job with "already_exists".
+          createGithubReleases: false
           commit: 'chore(release): version packages'
           title: 'chore(release): version packages'
         env:
