@@ -81,14 +81,14 @@ since Vendure plugins are Nest modules.
 
 `TurboSmsPlugin.init(options)`:
 
-| Option            | Type                                       | Default                      | Description                                                                                 |
-| ----------------- | ------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------- |
-| `apiKey`          | `string`                                   | _required_                   | The TurboSMS API key (the bearer token from your TurboSMS account).                         |
-| `sender`          | `string`                                   | _required_                   | The registered alphanumeric sender name ("alpha name"). Overridable per call.               |
-| `dryRun`          | `boolean`                                  | `false`                      | When `true`, nothing is sent: the message is written to the Vendure log instead.            |
-| `apiUrl`          | `string`                                   | `'https://api.turbosms.ua/'` | Base URL of the TurboSMS REST API. Point it at a mock server in tests.                      |
-| `timeout`         | `number`                                   | `10000`                      | How long a request may take before it is aborted, in milliseconds.                          |
-| `lowBalanceAlert` | `{ threshold?, schedule?, onLowBalance? }` | —                            | Low-balance alerting: a callback, a scheduled check, or both. See **Watching the balance**. |
+| Option            | Type                                                                                  | Default                      | Description                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------- |
+| `apiKey`          | `string`                                                                              | _required_                   | The TurboSMS API key (the bearer token from your TurboSMS account).                         |
+| `sender`          | `string`                                                                              | _required_                   | The registered alphanumeric sender name ("alpha name"). Overridable per call.               |
+| `dryRun`          | `boolean`                                                                             | `false`                      | When `true`, nothing is sent: the message is written to the Vendure log instead.            |
+| `apiUrl`          | `string`                                                                              | `'https://api.turbosms.ua/'` | Base URL of the TurboSMS REST API. Point it at a mock server in tests.                      |
+| `timeout`         | `number`                                                                              | `10000`                      | How long a request may take before it is aborted, in milliseconds.                          |
+| `lowBalanceAlert` | `{ threshold?, schedule?, onLowBalance?, minIntervalBetweenAlerts?, onCheckFailed? }` | —                            | Low-balance alerting: a callback, a scheduled check, or both. See **Watching the balance**. |
 
 ## Sending
 
@@ -149,11 +149,22 @@ country a national number like `0501234567` belongs to is not something it can k
 is a fact about your customers. Such a number goes out as stored and TurboSMS refuses it,
 which shows up in `refused` rather than being silently guessed at.
 
+The same stripping is exported as `normalizePhoneNumber`, so an application that needs to
+reason about a number before sending — picking a language from the country code, say — can
+apply it rather than re-deriving it:
+
+```ts
+import { normalizePhoneNumber } from '@uplab/vendure-plugin-turbosms';
+
+const digits = normalizePhoneNumber(phoneNumber); // '+38 (050) …' → '380501234567'
+const lang = digits.startsWith('380') ? 'uk' : sessionLanguage;
+```
+
 So store phone numbers in international form. If you have national ones, expand them where
 the country is known:
 
 ```ts
-const international = phone.replace(/\D/g, '').replace(/^0/, '380');
+const international = normalizePhoneNumber(phone).replace(/^0/, '380');
 await turboSms.send(international, text);
 ```
 
@@ -208,11 +219,11 @@ That is a decision about your customers, not about TurboSMS, so it stays on your
 The plugin publishes on Vendure's event bus, so metering and audit logging do not have to
 wrap every call site:
 
-| Event                     | When                                                                                             |
-| ------------------------- | ------------------------------------------------------------------------------------------------ |
-| `TurboSmsSentEvent`       | A send request was accepted. Carries the full result, `dryRun` sends too.                        |
-| `TurboSmsFailedEvent`     | A send request failed as a whole, published just before the error is thrown.                     |
-| `TurboSmsLowBalanceEvent` | The **scheduled** check found the balance below the threshold. Not published for a refused send. |
+| Event                     | When                                                                                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TurboSmsSentEvent`       | A send request was accepted. Carries the full result, `dryRun` sends too.                                                                                   |
+| `TurboSmsFailedEvent`     | A send request failed as a whole, published just before the error is thrown.                                                                                |
+| `TurboSmsLowBalanceEvent` | The **scheduled** check found the balance below the threshold. Not published for a refused send, and gated by `minIntervalBetweenAlerts` like the callback. |
 
 ```ts
 eventBus.ofType(TurboSmsSentEvent).subscribe(({ result }) => {
@@ -235,6 +246,9 @@ simply starts refusing sends. There are two triggers, and both call the same
 The refused send is exact and immediate, costs no extra API call and works without a
 scheduler — but by then messages are already failing. The scheduled check is what warns you
 _before_ that happens. Configure both in production.
+
+A third thing can happen: the scheduled check fails and the balance is simply unknown. That
+is `onCheckFailed` — see **When the check itself fails**.
 
 ### The callback
 
@@ -286,13 +300,77 @@ Rules worth knowing:
 - **Errors are caught and logged.** A failing callback never breaks a send or fails a
   scheduled run.
 - **It is awaited**, so keep it quick — a slow callback delays the send's rejection and
-  counts against the scheduled task's timeout. Queue anything slow.
+  counts against the scheduled task's timeout. That is `DefaultSchedulerPlugin`'s
+  `defaultTimeout` (60 s unless you changed it), except when one request (`timeout`) plus
+  20 s of headroom would not fit in it — then the task sets that budget itself. Queue
+  anything slow.
+
+  That comparison needs a number. A `defaultTimeout` written as a duration string (`'30s'`)
+  is only readable by the scheduler's own parser, so the task leaves it alone and logs a
+  warning. Express it in milliseconds if you want the check made — especially if it is
+  short, since the balance check would otherwise be cut off mid-request on every run.
+
 - **It can fire once per refused send**, so a burst of failures means a burst of calls.
   Debounce before paging anyone.
 - In a cluster the refused-send trigger fires on whichever instance sent the SMS, while the
   scheduled check runs once.
 - **Dry-run fires neither trigger** — nothing reaches the API and the scheduled task skips
   itself — so a local test of `onLowBalance` will look like nothing happened.
+
+### How often it repeats
+
+While the balance stays low, every scheduled run alerts. That is the right default for a
+single alert channel that collapses duplicates, and the wrong one for a chat room. Set
+`minIntervalBetweenAlerts` to quieten it:
+
+```ts
+lowBalanceAlert: {
+  threshold: 100,
+  schedule: '0 * * * *',                    // check hourly
+  minIntervalBetweenAlerts: 24 * 60 * 60 * 1000,  // but alert at most daily
+  onLowBalance: ({ message }) => notifySlack(message),
+},
+```
+
+**A recovery re-arms the alert immediately.** Topped up at noon and drained again by
+evening, and you are told — a plain "once per day" timer would swallow that, and only the
+check itself can tell the difference, because your callback never sees the healthy runs.
+
+**The interval starts once the alert has gone out.** A callback that throws is logged and
+retried on the next scheduled run, not silenced until the interval is up.
+
+State lives in Vendure's `CacheService`, so it is as durable as your cache strategy: Redis
+or DB survives restarts and is shared between instances, the default in-memory strategy is
+per process — it resets on restart, and in a cluster each instance keeps its own, so use a
+shared strategy there. Cache failures fail open — a duplicate alert beats a silently dropped
+one. Changing `threshold` re-arms too, since it is part of the key. `0` (or a negative
+value) means no interval, the same as leaving it out.
+
+The interval gates the scheduled check only, `TurboSmsLowBalanceEvent` included. A refused
+send always calls `onLowBalance`: its rate is bounded by your own send volume, and each one
+is a customer message that actually failed.
+
+### When the check itself fails
+
+TurboSMS being unreachable is not a low balance — it means you no longer know what the
+balance is. The task rethrows, so the run is recorded as failed, but nothing is pushed
+anywhere unless you ask for it:
+
+```ts
+lowBalanceAlert: {
+  threshold: 100,
+  onLowBalance: ({ message }) => notifySlack(message),
+  onCheckFailed: ({ message }) => notifySlack(message),  // "balance monitoring is blind"
+},
+```
+
+`onCheckFailed` fires for a `TurboSmsError` — a refusal, or a transport failure, which
+includes a 2xx body with no balance in it. Anything else is a bug rather than an outage and
+is rethrown untouched. It shares
+`minIntervalBetweenAlerts` under its own key, and re-arms as soon as a check succeeds.
+
+Without it, a multi-day outage shows up only as failed runs in the scheduled-tasks screen —
+which is exactly where nobody is looking while SMS still appears to work.
 
 ### Choosing when to check
 
@@ -357,10 +435,10 @@ custom fields — it is a service-only plugin.
 Everything the plugin throws extends `TurboSmsError`, so one `catch` covers falling back
 to another channel. Both kinds carry the `endpoint` that failed.
 
-| Error                    | When                                                                                         | Extra fields                                                             |
-| ------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `TurboSmsRejectedError`  | TurboSMS answered, and the answer was a refusal — unknown alpha name, empty balance, …       | `responseCode`, `responseStatus`, `responseResult`, `recipients`, `text` |
-| `TurboSmsTransportError` | The request never produced a usable answer: network failure, timeout, non-2xx, non-JSON body | `status` (when there was an HTTP response), `cause`                      |
+| Error                    | When                                                                                         | Extra fields                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `TurboSmsRejectedError`  | TurboSMS answered, and the answer was a refusal — unknown alpha name, empty balance, …       | `responseCode`, `responseStatus`, `responseResult`, `recipientCodes`, `recipients`, `text` |
+| `TurboSmsTransportError` | The request never produced a usable answer: network failure, timeout, non-2xx, non-JSON body | `status` (when there was an HTTP response), `cause`                                        |
 
 Response codes `0`, `1` and `800`–`803` are treated as accepted; everything else raises a
 `TurboSmsRejectedError`.
@@ -369,11 +447,39 @@ Code `103` (`NOT_ENOUGH_MONEY`) means the account is out of credit. It is export
 `INSUFFICIENT_FUNDS_RESPONSE_CODE`, and it is what triggers `lowBalanceAlert.onLowBalance`
 with `reason: 'sendRejected'` — see **Watching the balance**.
 
+### Per-recipient codes
+
+A refusal also carries a row per recipient. `recipientCodes` reads their codes in order, and
+is empty when the rejection was request-level rather than per-number. It is a getter over
+`responseResult`, so it is not in `JSON.stringify(error)` or `{ ...error }` — the rows are:
+
+```ts
+import {
+  RECIPIENT_COUNTRY_NOT_ALLOWED_CODE,
+  RECIPIENT_INSUFFICIENT_FUNDS_CODE,
+  TurboSmsRejectedError,
+} from '@uplab/vendure-plugin-turbosms';
+
+catch (e) {
+  if (e instanceof TurboSmsRejectedError) {
+    const codes = e.recipientCodes;
+    // Routine: SMS is not enabled for that country, fall back to another channel.
+    if (codes.every((c) => c === RECIPIENT_COUNTRY_NOT_ALLOWED_CODE)) return callInstead();
+    // Never routine: the account is empty and no recipient will go through.
+    if (codes.includes(RECIPIENT_INSUFFICIENT_FUNDS_CODE)) return alertOps();
+  }
+}
+```
+
 A `TurboSmsTransportError` means the outcome is **unknown** — the message may or may not
 have gone out, so an automatic retry can deliver it twice.
 
 The message body is never put into an error's `message`, so codes do not leak into logs
 through a stack trace. It is available on `TurboSmsRejectedError.text` if you need it.
+
+`text` is an own enumerable property, though, so **serializing the whole error puts the body
+back in** — `JSON.stringify(error)` in an alert or a log line will carry whatever the message
+said, one-time codes included. Pick the fields you want, or redact `text`.
 
 ## Dry-run mode
 

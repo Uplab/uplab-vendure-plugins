@@ -39,6 +39,10 @@ export class TurboSmsFailedEvent extends VendureEvent {
  * Published by the **scheduled** balance check when the account balance is below the
  * configured threshold, i.e. only when `lowBalanceAlert.threshold` is set.
  *
+ * It is gated by `lowBalanceAlert.minIntervalBetweenAlerts` together with `onLowBalance`:
+ * while the interval is running, a low balance publishes nothing. Subscribe for alerting,
+ * not for a live balance figure — for that, call `TurboSmsService.getBalance()`.
+ *
  * A send that TurboSMS refuses for insufficient funds does **not** publish this — there is
  * no balance figure to report. That case arrives as a {@link TurboSmsFailedEvent} carrying
  * a {@link TurboSmsRejectedError} whose `responseCode` is

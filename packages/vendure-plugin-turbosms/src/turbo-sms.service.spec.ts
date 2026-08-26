@@ -345,6 +345,26 @@ describe('TurboSmsService', () => {
       expect(error).toMatchObject({ endpoint: 'user/balance.json', responseCode: 1 });
     });
 
+    it('throws a TurboSmsTransportError when a 2xx body carries no balance, so it counts as an outage', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ response_code: 0, response_status: 'OK' }));
+
+      const error = await makeService()
+        .getBalance()
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(TurboSmsTransportError);
+      expect(error).toMatchObject({ endpoint: 'user/balance.json' });
+      expect((error as Error).message).toContain('response_result.balance');
+    });
+
+    it('rejects a balance that is not a number rather than returning it', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({ response_code: 0, response_status: 'OK', response_result: { balance: '150.5' } }),
+      );
+
+      await expect(makeService().getBalance()).rejects.toBeInstanceOf(TurboSmsTransportError);
+    });
+
     it('calls the API even in dryRun mode', async () => {
       fetchMock.mockResolvedValue(
         jsonResponse({ response_code: 0, response_status: 'OK', response_result: { balance: 0 } }),
