@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="TurboSMS">
+  <rect width="512" height="512" rx="112" fill="#063452"/>
+  <g stroke="#F9DB41" stroke-width="26" stroke-linecap="round" fill="none">
+    <line x1="60" y1="192" x2="128" y2="192"/>
+    <line x1="42" y1="256" x2="112" y2="256"/>
+    <line x1="60" y1="320" x2="140" y2="320"/>
+  </g>
+  <rect x="178" y="158" width="278" height="196" rx="24" fill="#F9DB41" stroke="#063452" stroke-width="12"/>
+  <g stroke="#063452" stroke-width="24" stroke-linecap="round" fill="none">
+    <line x1="206" y1="186" x2="428" y2="326"/>
+    <line x1="428" y1="186" x2="206" y2="326"/>
+  </g>
+</svg>

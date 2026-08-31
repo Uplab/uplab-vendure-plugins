@@ -1,20 +1,36 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-turbosms/assets/icon.svg" alt="" width="96" height="96">
+</p>
+
 # @uplab/vendure-plugin-turbosms
+
+[![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-turbosms.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-turbosms)
+[![Vendure](https://img.shields.io/badge/Vendure-%5E3.7.0-17c9ff.svg)](https://www.vendure.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/Uplab/uplab-vendure-plugins/blob/main/LICENSE)
 
 Send transactional SMS from Vendure through [TurboSMS](https://turbosms.ua/), the Ukrainian
 bulk-SMS provider.
 
-The plugin adds no GraphQL API extensions, no entities and no admin UI. It exports one
-injectable service, `TurboSmsService`, with `send()`, `sendBulk()` and `getBalance()`.
+The plugin is service-only — no GraphQL extensions, no entities, no admin UI — and has no
+runtime dependencies: the client is built on the global `fetch`. Inject `TurboSmsService`
+into your own plugin and send.
 
 It is deliberately message-agnostic: it sends the text you hand it. Composing that text —
 templates, translations, which language a given customer reads — stays in your
 application, which knows its own copy. What the plugin does own is everything specific to
-sending SMS through this provider: the wire format, phone number formatting, segment
-accounting, per-recipient outcomes, and the account balance.
-
-No runtime dependencies: the client is built on the global `fetch`.
+sending SMS through this provider: the wire format, phone number normalization,
+per-recipient delivery outcomes, an error taxonomy worth branching on, events on Vendure's
+event bus, and watching the account balance before it runs out.
 
 Compatible with **Vendure ^3.7.0**.
+
+## Contents
+
+[Install](#install) · [Usage](#usage) · [Options](#options) · [Sending](#sending) ·
+[Phone numbers](#phone-numbers) · [Message length and cost](#message-length-and-cost) ·
+[Localizing messages](#localizing-messages) · [Events](#events) ·
+[Watching the balance](#watching-the-balance) · [GraphQL surface](#graphql-surface) ·
+[Error handling](#error-handling) · [Dry-run mode](#dry-run-mode)
 
 ## Install
 
@@ -366,8 +382,8 @@ lowBalanceAlert: {
 
 `onCheckFailed` fires for a `TurboSmsError` — a refusal, or a transport failure, which
 includes a 2xx body with no balance in it. Anything else is a bug rather than an outage and
-is rethrown untouched. It shares
-`minIntervalBetweenAlerts` under its own key, and re-arms as soon as a check succeeds.
+is rethrown untouched. It shares `minIntervalBetweenAlerts` under its own key, and re-arms
+as soon as a check succeeds.
 
 Without it, a multi-day outage shows up only as failed runs in the scheduled-tasks screen —
 which is exactly where nobody is looking while SMS still appears to work.
@@ -495,6 +511,12 @@ production.
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md).
+
+## Trademarks
+
+TurboSMS is a trademark of its owner. This is an independent, community-maintained
+plugin and is not affiliated with or endorsed by TurboSMS. The icon in this package is
+a derivative of the TurboSMS mark, used only to identify the service the plugin talks to.
 
 ## License
 
