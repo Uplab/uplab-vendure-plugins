@@ -47,10 +47,13 @@ describe('UnifiedSlugAdminResolver', () => {
     });
   });
 
-  it('hands the strategy an empty context when the caller sent none', async () => {
+  it.each([
+    ['null', { entityName: 'Collection', name: 'Dresses', context: null }],
+    ['absent', { entityName: 'Collection', name: 'Dresses' }],
+  ])('hands the strategy an empty context when the caller sent none (%s)', async (_label, input) => {
     const { service, resolver } = build();
 
-    await resolver.unifiedSlugGenerate(ctx, { input: { entityName: 'Collection', name: 'Dresses', context: null } });
+    await resolver.unifiedSlugGenerate(ctx, { input });
     expect(service.generate).toHaveBeenCalledWith(ctx, expect.objectContaining({ context: {} }));
   });
 

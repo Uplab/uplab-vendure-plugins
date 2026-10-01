@@ -142,7 +142,9 @@ export class UnifiedSlugInterceptor implements NestInterceptor {
     // Global interceptor: bail out as early and as cheaply as possible on every other resolver field.
     // This is the *schema* field name, so an aliased mutation is matched just the same.
     const fieldName = gqlContext.getInfo<{ fieldName?: string }>()?.fieldName;
-    const spec = fieldName ? FIELD_SPECS[fieldName] : undefined;
+    // Own properties only: a plain object lookup would answer `Object.prototype` members for a field
+    // named `constructor` or `toString`.
+    const spec = fieldName && Object.hasOwn(FIELD_SPECS, fieldName) ? FIELD_SPECS[fieldName] : undefined;
     if (!spec) {
       return next.handle();
     }
@@ -191,8 +193,9 @@ export class UnifiedSlugInterceptor implements NestInterceptor {
 
   /**
    * The channel the request runs in, resolved the way core's `RequestContextService` resolves it: the
-   * channel token from the query string, else from the header, looked up in the channel cache (no
-   * database hit). The AuthGuard has already validated that token by the time interceptors run.
+   * channel token from the query string, else from the header, looked up in core's self-refreshing
+   * channel cache (a database hit only when the cache is stale). The AuthGuard has already validated
+   * that token by the time interceptors run.
    *
    * Any failure simply means no channel-default preference — `unifySlugs` then falls back to input
    * order, which is still a single slug. A missing channel must not fail the mutation.

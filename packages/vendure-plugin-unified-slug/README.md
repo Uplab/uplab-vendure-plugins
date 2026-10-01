@@ -9,26 +9,24 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/Uplab/uplab-vendure-plugins/blob/main/LICENSE)
 
 **One slug per product and collection, identical in every language** — enforced on the server for
-every API client, and shown in the dashboard as a single slug field instead of one per language tab.
+every API client, and shown in the React dashboard as a single slug field instead of one per language
+tab.
 
-Vendure stores a `slug` on every translation row, so each language can have its own. Many shops do
-not want that: the storefront resolves a slug without knowing the language
-(`ProductService.findOneBySlug` and `CollectionService.findOneBySlug` already match a slug in **any**
-language), and divergent or empty per-language slugs only cause broken links.
+Vendure stores a `slug` on every translation row, so each language can have its own. Many multilingual
+shops do not want that: the storefront resolves a slug without knowing the language
+(`ProductService.findOneBySlug` and `CollectionService.findOneBySlug` match a slug in **any** language),
+so per-language slugs only mean more URLs to keep in sync — and empty ones happen on their own. The
+dashboard's stock slug field generates a slug only when an entity is **created**: open an existing
+collection, switch to a language tab it has no translation for yet, type a name, save — that
+translation is stored with `slug: ''`, and nothing complains
+([vendurehq/vendure#5476](https://github.com/vendurehq/vendure/issues/5476)). This plugin closes that gap on both
+sides.
 
-The empty ones happen on their own. The dashboard's stock slug field generates a slug only when an
-entity is **created** (`isReadonly && !entityId && watchFieldState.isDirty` in
-`@vendure/dashboard/src/lib/components/data-input/slug-input.tsx`). Open an existing collection,
-switch to a language tab it has no translation for yet, type a name and save: that translation is
-stored with `slug: ''`, and nothing complains. This plugin closes that gap on both sides.
+**Not for** shops that _intentionally_ give each language its own slug (`/uk/sukni`, `/en/dresses`) for
+SEO. The plugin overwrites a divergent slug with the canonical one on every write — that is the point of
+it, and there is no per-language switch.
 
 Compatible with **Vendure ^3.7.0**.
-
-### Who this is not for
-
-Shops that **intentionally** give each language its own slug (`/uk/sukni`, `/en/dresses`) for SEO.
-This plugin overwrites a divergent slug with the canonical one on every write — that is the point of
-it, and there is no switch to turn it off per language.
 
 ## Contents
 
@@ -61,48 +59,47 @@ export const config: VendureConfig = {
 };
 ```
 
-That is all. There are no entities, so no migration; no jobs; no environment variables. If you use
-the React dashboard, its Vite plugin (`vendureDashboardPlugin`) discovers the extension from the
-package on its own — restart the dashboard dev server or rebuild it.
+That is all: no entities, so no migration; no jobs; no environment variables. If you use the React
+dashboard, its Vite plugin (`vendureDashboardPlugin`) discovers the extension from the package on its
+own — restart the dashboard dev server or rebuild it.
 
 ## What it looks like
 
-The product and collection detail pages get one slug field. Whichever content language is active,
-it shows the same value, and a change made in any language is written to all of them.
+The product and collection detail pages get one slug field. Whichever content language is active, it
+shows the same value, and a change made in any language is written to all of them.
 
 ![The same slug on the English and Ukrainian versions of a product](https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-unified-slug/assets/product-detail.png)
 
-Adding a language to an existing collection: the new translation already carries the slug, and is
-saved with it. With the stock field, this translation would be saved with `slug: ''`.
+Adding a language to an existing collection: the new translation already carries the slug and is saved
+with it. With the stock field, it would be saved with `slug: ''`.
 
 ![Adding Polish to an existing collection](https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-unified-slug/assets/add-language.png)
 
-Unlike the stock field, it also generates a slug on an **existing** entity. A product imported or
-saved without a slug gets one as soon as the name is edited — the stock field only does this on
-create.
+Unlike the stock field, it also generates a slug on an **existing** entity: a product imported or saved
+without one gets a slug as soon as its name is edited.
 
 ![An existing product with an empty slug gets one when its name is edited](https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-unified-slug/assets/auto-generate-on-update.png)
 
-The edit button switches the field to manual entry (the lock switches it back), and the refresh
-button regenerates the slug from the current name — also on an entity that has no slug yet.
+The edit button switches the field to manual entry (the lock switches it back); the refresh button
+regenerates the slug from the current name, also on an entity that has no slug yet.
 
 ![Manual editing of the slug](https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-unified-slug/assets/manual-edit.png)
 
 ## How it works
 
-Three parts. The server part holds the invariant; the dashboard part stops the admin UI from asking a
-human to hold it by hand; the slug strategy decides what a generated slug says.
+Three parts: the server holds the invariant, the dashboard stops asking a human to hold it by hand, and
+the slug strategy decides what a generated slug says.
 
 ### 1. Server — a global interceptor
 
-An `APP_INTERCEPTOR` that acts on exactly five Admin API fields: `createProduct`, `updateProduct`,
-`updateProducts`, `createCollection` and `updateCollection`. Every other field is passed through on a
-field-name check before anything else happens (an aliased mutation is caught just the same — the check
-reads the schema field name). `updateProducts` takes a list; each element is unified on its own.
+An `APP_INTERCEPTOR` acting on exactly five Admin API fields: `createProduct`, `updateProduct`,
+`updateProducts`, `createCollection` and `updateCollection`. Every other field passes through on a
+field-name check before anything else happens (the check reads the schema field name, so an aliased
+mutation is caught too). `updateProducts` takes a list; each element is unified on its own.
 
-It rewrites `input.translations` **before** the core resolver runs, so the corrected slugs are carried
-by the mutation's own transactional write. There is no follow-up write, no event subscriber and no
-job: an entity is never observable half-unified, and nothing needs undoing when the mutation fails.
+It rewrites `input.translations` **before** the core resolver runs, so the corrected slugs travel in
+the mutation's own transactional write. No follow-up write, no event subscriber, no job: an entity is
+never observable half-unified, and nothing needs undoing when the mutation fails.
 
 **Choosing the canonical slug**, in order:
 
@@ -110,7 +107,7 @@ job: an entity is never observable half-unified, and nothing needs undoing when 
 2. otherwise the first input translation with a non-empty slug, in input order;
 3. _update only_ — otherwise the existing row for the channel's default language, else the first
    non-empty existing row in `languageCode` order;
-4. otherwise the input is passed through untouched, and core validation decides. **A slug is never
+4. otherwise the input passes through untouched and core validation decides. **A slug is never
    invented.**
 
 **Applying it:**
@@ -126,14 +123,14 @@ job: an entity is never observable half-unified, and nothing needs undoing when 
 **Details that matter:**
 
 - An empty or whitespace-only slug counts as empty. The canonical slug is trimmed.
-- An update that sends no `translations` key — say, toggling `enabled` — costs no query. Creates
-  never query either.
+- An update that sends no `translations` key — say, toggling `enabled` — costs no query. Creates never
+  query either.
 - An update with `translations: []` is **not** a no-op: it reads the existing rows and pulls any that
   drifted apart back onto one slug. That is the cheapest way to repair one entity.
 - When reading the existing rows fails, the mutation fails, deliberately: letting it through would
   silently write a divergent slug.
-- The channel's default language is resolved from the channel token of the request, exactly as core
-  resolves it. If that lookup fails, the input order decides — still one slug.
+- The channel's default language is resolved from the request's channel token, as core resolves it.
+  If that lookup fails, input order decides — still one slug.
 - The plugin never normalises a slug itself. Core's `SlugValidator` runs afterwards and normalises
   every translation identically, so unified slugs stay unified.
 
@@ -145,25 +142,24 @@ The extension replaces the `slug` input in the `main-form` block of the `product
 - shows **one** value on every language tab — the channel default language's slug, else the first
   non-empty one;
 - on change, writes that value into every translation in play (see below);
-- while the slug is empty and in automatic mode, generates it from the channel default language's
-  name (falling back to the name in the language being edited) once the admin stops typing (500 ms)
-  — **on update as well as on create**;
+- while the slug is empty and the field is in automatic mode, generates it from the channel default
+  language's name (falling back to the name on the tab being edited) once the admin stops typing
+  (500 ms) — **on update as well as on create**;
 - keeps the stock field's lock/edit toggle and regenerate button.
 
-The value is written only into translations already in play — the language being edited,
-translations that exist in the database, translations the admin has typed into. The dashboard drops
-translations that are neither edited nor saved before it submits
-([vendure#4885](https://github.com/vendurehq/vendure/issues/4885)); touching the others would make
-them count as edited and save them with an empty name. A language left untouched now and filled in
-later gets the canonical slug from the server at that write.
+"In play" means the tab being edited, translations that exist in the database, and translations the
+admin has typed into. The dashboard drops translations that are neither edited nor saved before it
+submits ([vendure#4885](https://github.com/vendurehq/vendure/issues/4885)); writing the slug into the
+others would mark them edited and save them with an empty name. A language left untouched now and
+filled in later gets the canonical slug from the server at that write.
 
 ### 3. Slug generation
 
 The dashboard field asks this plugin's `unifiedSlugGenerate` query instead of core's `slugForEntity`.
-It runs the configured [slug strategy](#custom-slug-strategy) to build the base, then hands it to core's
-`EntitySlugService` — the same service `slugForEntity` uses — which passes it through your configured
-core `SlugStrategy` and appends `-1`, `-2`… until it is unique. With the default strategy the answer is
-exactly what `slugForEntity` would give.
+It runs the configured [slug strategy](#custom-slug-strategy) to build the base, then hands it to
+core's `EntitySlugService` — the same service `slugForEntity` uses — which passes it through your
+configured core `SlugStrategy` and appends `-1`, `-2`… until it is unique. With the default strategy
+the answer is exactly what `slugForEntity` would give.
 
 `SlugGenerationService` is exported, so an importer or another plugin can produce the same slug the
 dashboard would:
@@ -177,6 +173,8 @@ const slug = await slugGenerationService.generate(ctx, {
 ```
 
 ## Options
+
+`UnifiedSlugPlugin.init(options)`:
 
 | Option         | Type                  | Default                            | Description                                                                            |
 | -------------- | --------------------- | ---------------------------------- | -------------------------------------------------------------------------------------- |
@@ -210,10 +208,10 @@ UnifiedSlugPlugin.init({ slugStrategy: new BrandSlugStrategy() });
 - `watchFormFields` are react-hook-form paths in the product / collection detail form. For a relation
   custom field the form holds the id under `customFields.<name>Id`. Values arrive in `context` keyed
   by path; a caller without a form (an importer, a script) passes whatever it has, or `{}`.
-- The base is passed through your core `SlugStrategy` afterwards. The default one lower-cases,
-  strips diacritics, drops every character outside `a-z`, `0-9`, spaces and hyphens, and turns
-  spaces into hyphens — so a name in Cyrillic yields an **empty** slug. If your catalogue is named
-  in Ukrainian or another non-Latin script, transliterate in `generateBase` (with a library such as
+- The base is passed through your core `SlugStrategy` afterwards. The default one lower-cases, strips
+  diacritics, drops every character outside `a-z`, `0-9`, spaces and hyphens, and turns spaces into
+  hyphens — so a name in Cyrillic yields an **empty** slug. If your catalogue is named in Ukrainian or
+  another non-Latin script, transliterate in `generateBase` (with a library such as
   [`slugify`](https://www.npmjs.com/package/slugify) or [`slug`](https://www.npmjs.com/package/slug))
   and return Latin text.
 - The strategy is an `InjectableStrategy`: the plugin calls `init(injector)` on bootstrap and
@@ -221,7 +219,7 @@ UnifiedSlugPlugin.init({ slugStrategy: new BrandSlugStrategy() });
 
 ## GraphQL surface
 
-Admin API only, both queries gated by `Permission.Authenticated` — the same gate as core's
+Admin API only. Both queries are gated by `Permission.Authenticated` — the same gate as core's
 `slugForEntity`, which the dashboard field replaces.
 
 ```graphql
@@ -242,8 +240,8 @@ extend type Query {
 }
 ```
 
-The plugin adds no mutations: the slug itself is still written through core's `createProduct`,
-`updateCollection` and the rest.
+No mutations: the slug itself is still written through core's `createProduct`, `updateCollection` and
+the rest.
 
 ## Backfilling existing rows
 
@@ -329,16 +327,16 @@ COMMIT;
 
 If your search index stores slugs, reindex afterwards.
 
-For a backfill script in TypeScript, the package exports the rule itself: `unifySlugs(inputTranslations,
-existingRows, channelDefaultLanguageCode)` is the pure function the interceptor applies. It returns
-the translations to save, or `null` when nothing needs to change.
+For a backfill script in TypeScript, the package exports the rule itself:
+`unifySlugs(inputTranslations, existingRows, channelDefaultLanguageCode)` is the pure function the
+interceptor applies. It returns the translations to save, or `null` when nothing needs to change.
 
 ## Limitations
 
-- **Two write paths bypass the interceptor**: `duplicateEntity` and the CSV importer call the
-  services directly. Both are still consistent in practice — the duplicators derive each language's
-  slug from that language's own source row (`slug + '-copy'`), so a copy of a unified entity is
-  unified; an import is as unified as its input file.
+- **Two write paths bypass the interceptor**: `duplicateEntity` and the CSV importer call the services
+  directly. Both are still consistent in practice — the duplicators derive each language's slug from
+  that language's own source row (`slug + '-copy'`), so a copy of a unified entity is unified; an
+  import is as unified as its input file.
 - **Uniqueness can re-split one entity.** Core's `SlugValidator` checks uniqueness per language. If a
   _different_ entity already owns the slug in some languages but not others, core suffixes only those
   (`dresses-2` in `en`, `dresses` in `uk`). The next write through the plugin pulls them back

@@ -222,13 +222,7 @@ export const UnifiedSlugInput: DashboardFormComponent = ({ disabled, name, onBlu
           onChange={(event) => setSlugEverywhere(event.target.value)}
           disabled={isReadonly}
           placeholder={isReadonly ? t`Same slug in every language` : t`Enter slug manually`}
-          className={
-            showLoading
-              ? 'pr-8 bg-muted text-muted-foreground'
-              : isReadonly
-                ? 'pr-8 bg-muted text-muted-foreground'
-                : 'pr-8'
-          }
+          className={isReadonly ? 'pr-8 bg-muted text-muted-foreground' : 'pr-8'}
         />
         {showLoading && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -247,7 +241,7 @@ export const UnifiedSlugInput: DashboardFormComponent = ({ disabled, name, onBlu
               className="shrink-0"
               title={t`Regenerate the slug from the name`}
               aria-label={t`Regenerate the slug from the name`}
-              disabled={!sourceName || isLoading}
+              disabled={isLoading}
             >
               <RefreshCw className="h-4 w-4" />
             </Button>

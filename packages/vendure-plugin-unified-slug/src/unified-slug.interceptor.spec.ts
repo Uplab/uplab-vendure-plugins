@@ -114,6 +114,30 @@ describe('UnifiedSlugInterceptor', () => {
     },
   );
 
+  it.each(['constructor', 'toString', 'hasOwnProperty'])(
+    'passes a field named after an `Object.prototype` member (`%s`) through',
+    async (fieldName) => {
+      const { interceptor, createQueryBuilder } = makeInterceptor();
+      const input = { id: 128, translations: [{ languageCode: 'en', slug: 'dresses' }] };
+      expect(await run(makeExecutionContext(fieldName, input), interceptor)).toBe('resolver-result');
+      expect(createQueryBuilder).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not query an update that carries no `id` — there is no entity whose rows to read', async () => {
+    const { interceptor, createQueryBuilder } = makeInterceptor();
+    const input = {
+      translations: [
+        { languageCode: 'en', slug: 'dresses' },
+        { languageCode: 'uk', slug: '' },
+      ],
+    };
+    await run(makeExecutionContext('updateProduct', input), interceptor);
+    expect(createQueryBuilder).not.toHaveBeenCalled();
+    // The input itself is still unified; core decides what an update without an id means.
+    expect(input.translations.map((t) => t.slug)).toEqual(['dresses', 'dresses']);
+  });
+
   it('does not query when the input carries no translations — an `enabled` toggle costs nothing', async () => {
     const { interceptor, createQueryBuilder } = makeInterceptor();
     await run(makeExecutionContext('updateProduct', { id: 128, enabled: false }), interceptor);
@@ -167,6 +191,21 @@ describe('UnifiedSlugInterceptor', () => {
       vi.fn(async () => {
         throw new Error('unknown channel');
       }),
+    );
+    await run(makeExecutionContext('createProduct', input), interceptor);
+    expect(input.translations.map((t) => t.slug)).toEqual(['sukni', 'sukni']);
+  });
+
+  it('survives a channel lookup that answers nothing — still one slug in input order', async () => {
+    const input = {
+      translations: [
+        { languageCode: 'uk', slug: 'sukni' },
+        { languageCode: 'en', slug: 'dresses' },
+      ],
+    };
+    const { interceptor } = makeInterceptor(
+      [],
+      vi.fn(async () => undefined as never),
     );
     await run(makeExecutionContext('createProduct', input), interceptor);
     expect(input.translations.map((t) => t.slug)).toEqual(['sukni', 'sukni']);
