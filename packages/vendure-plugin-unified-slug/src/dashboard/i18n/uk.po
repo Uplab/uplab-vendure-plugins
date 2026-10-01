@@ -1,0 +1,37 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-09-06 23:21+0300\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: uk\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#: src/dashboard/components/unified-slug-input.tsx
+#: src/dashboard/components/unified-slug-input.tsx
+msgid "Edit the slug manually"
+msgstr "Редагувати slug вручну"
+
+#: src/dashboard/components/unified-slug-input.tsx
+msgid "Enter slug manually"
+msgstr "Введіть slug вручну"
+
+#: src/dashboard/components/unified-slug-input.tsx
+#: src/dashboard/components/unified-slug-input.tsx
+msgid "Generate the slug automatically"
+msgstr "Генерувати slug автоматично"
+
+#: src/dashboard/components/unified-slug-input.tsx
+#: src/dashboard/components/unified-slug-input.tsx
+msgid "Regenerate the slug from the name"
+msgstr "Перегенерувати slug з назви"
+
+#: src/dashboard/components/unified-slug-input.tsx
+msgid "Same slug in every language"
+msgstr "Однаковий slug для всіх мов"

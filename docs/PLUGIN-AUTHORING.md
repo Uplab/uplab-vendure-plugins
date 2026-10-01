@@ -33,9 +33,20 @@ Claude Code, `/new-plugin <name>` scaffolds all of this.
 ## Build
 
 `build` = `rimraf dist && tsc -p tsconfig.build.json`. A package that ships a
-React dashboard extension adds a `copyfiles` step copying `dashboard/**` into
-`dist/dashboard` (shipped as `.tsx` on purpose — the host's Vite compiles it) and
-declares `@vendure/dashboard` as a peer.
+React dashboard extension keeps it in `src/dashboard/`, excludes it from both
+tsconfigs (it gets its own `tsconfig.dashboard.json`), and adds a build step copying
+`src/dashboard/**` into `dist/dashboard` — shipped as `.tsx` on purpose, the host's
+Vite compiles it. The `dashboard` path on `@VendurePlugin()` is resolved relative
+to the compiled plugin file, so it must be a string literal (`'./dashboard/index.tsx'`)
+and the plugin file must sit directly in `src/`. Declare `@vendure/dashboard` and the
+React libraries the extension imports as optional peers. See
+`packages/vendure-plugin-unified-slug`.
+
+The dashboard's plugin discovery does not follow a pnpm workspace symlink into a
+package's sources, so `packages/dev-server` imports a plugin with a dashboard
+extension from its `src/` by relative path — see the comment there — and lists that plugin's
+runtime imports (`@nestjs/*`, `graphql-tag`, …) in its own devDependencies: the dashboard loads a
+compiled copy of the config from `node_modules/.cache`, where nothing else resolves.
 
 ## Checklist for a new plugin
 

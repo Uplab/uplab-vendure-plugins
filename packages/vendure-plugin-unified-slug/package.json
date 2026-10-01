@@ -1,0 +1,104 @@
+{
+  "name": "@uplab/vendure-plugin-unified-slug",
+  "version": "0.0.0",
+  "description": "Vendure plugin that keeps one slug per product and collection, identical in every language \u2014 on the server and in the dashboard",
+  "license": "MIT",
+  "author": "Uplab",
+  "homepage": "https://github.com/Uplab/uplab-vendure-plugins/tree/main/packages/vendure-plugin-unified-slug#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Uplab/uplab-vendure-plugins.git",
+    "directory": "packages/vendure-plugin-unified-slug"
+  },
+  "bugs": {
+    "url": "https://github.com/Uplab/uplab-vendure-plugins/issues"
+  },
+  "keywords": [
+    "vendure",
+    "vendure-plugin",
+    "slug",
+    "i18n",
+    "translations",
+    "dashboard"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "rimraf dist && tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/dashboard', 'dist/dashboard', { recursive: true })\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit && node ../../scripts/typecheck-dashboard.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "graphql-tag": "^2.12.6"
+  },
+  "peerDependencies": {
+    "@lingui/react": "^5.0.0",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/graphql": "^13.0.0",
+    "@tanstack/react-query": "^5.0.0",
+    "@vendure/core": "^3.7.0",
+    "@vendure/dashboard": "^3.7.0",
+    "lucide-react": ">=0.475.0",
+    "react": "^19.0.0",
+    "react-hook-form": "^7.71.0"
+  },
+  "peerDependenciesMeta": {
+    "@lingui/react": {
+      "optional": true
+    },
+    "@tanstack/react-query": {
+      "optional": true
+    },
+    "@vendure/dashboard": {
+      "optional": true
+    },
+    "lucide-react": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-hook-form": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@lingui/react": "^5.9.5",
+    "@nestjs/common": "^11.0.12",
+    "@nestjs/core": "^11.2.1",
+    "@nestjs/graphql": "^13.0.0",
+    "@tanstack/react-query": "^5.0.0",
+    "@types/react": "^19.0.0",
+    "@vendure/core": "3.7.2",
+    "@vendure/dashboard": "3.7.2",
+    "@vendure/testing": "3.7.2",
+    "lucide-react": "^0.475.0",
+    "react": "^19.0.0",
+    "react-hook-form": "^7.71.0",
+    "rimraf": "^6.0.1",
+    "rxjs": "^7.8.1",
+    "typescript": "^5.8.3",
+    "unplugin-swc": "^1.5.7",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

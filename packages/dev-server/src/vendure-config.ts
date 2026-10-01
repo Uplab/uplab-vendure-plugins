@@ -3,6 +3,12 @@ import path from 'path';
 import { AssetServerPlugin } from '@vendure/asset-server-plugin';
 import { DefaultJobQueuePlugin, DefaultSchedulerPlugin, DefaultSearchPlugin, type VendureConfig } from '@vendure/core';
 import { TurboSmsPlugin } from '@uplab/vendure-plugin-turbosms';
+// Imported from source, not by package name: the dashboard's plugin discovery does not follow a pnpm
+// workspace symlink into a package, so a plugin that ships a dashboard extension would be registered
+// on the server but never compiled into the dashboard. The dashboard loads a compiled copy of these
+// sources from node_modules/.cache, where only this package's own dependencies resolve — hence the
+// plugin's peers (@nestjs/*, graphql-tag) in this package's devDependencies.
+import { UnifiedSlugPlugin } from '../../vendure-plugin-unified-slug/src';
 
 const port = +(process.env.APP_PORT ?? 3000);
 
@@ -21,7 +27,8 @@ export const config: VendureConfig = {
     shopApiPlayground: { settings: { 'request.credentials': 'include' } },
     shopApiDebug: true,
     cors: {
-      origin: ['http://localhost:5173'],
+      // Any localhost port: the dashboard dev server moves off 5173 when that port is taken (PORT=…).
+      origin: [/^http:\/\/localhost:\d+$/],
       credentials: true,
     },
   },
@@ -59,5 +66,6 @@ export const config: VendureConfig = {
       sender: process.env.TURBOSMS_SENDER ?? 'Vendure',
       dryRun: process.env.TURBOSMS_DRY_RUN !== 'false',
     }),
+    UnifiedSlugPlugin.init(),
   ],
 };

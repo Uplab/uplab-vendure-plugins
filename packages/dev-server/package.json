@@ -21,7 +21,11 @@
     "dotenv": "^16.4.7"
   },
   "devDependencies": {
+    "@nestjs/common": "^11.0.12",
+    "@nestjs/core": "^11.2.1",
+    "@nestjs/graphql": "^13.0.0",
     "@types/node": "^22.15.3",
+    "graphql-tag": "^2.12.6",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",
     "vite": "^7.3.1"
