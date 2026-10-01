@@ -92,11 +92,13 @@ export const UnifiedSlugInput: DashboardFormComponent = ({ disabled, name, onBlu
   const isNameDirty =
     nameSourceIndex >= 0 && isRowDirty((dirtyTranslations?.[nameSourceIndex] as { name?: unknown } | undefined)?.name);
 
-  // No `entityId` here, unlike core: an existing entity with an empty slug must generate too. Waiting
-  // for the debounce matters there — `debouncedName` starts as the saved name, and generating from it
-  // the moment the admin starts typing would fill the slug from the name they are replacing.
+  // Generate while the entity has no saved slug — on create, and on an existing entity saved without
+  // one — so the slug follows the name as it is typed. A saved slug is never regenerated. Waiting for
+  // the debounce matters on an existing entity: `debouncedName` starts as the saved name.
+  const savedTranslations = (form.formState.defaultValues?.translations ?? NO_TRANSLATIONS) as TranslationRow[];
+  const savedSlug = displayedSlug(savedTranslations, findLanguageIndex(savedTranslations, defaultLanguageCode));
   const isNameSettled = debouncedName === sourceName;
-  const shouldAutoGenerate = isReadonly && !slug && isNameDirty && isNameSettled;
+  const shouldAutoGenerate = isReadonly && !savedSlug && isNameDirty && isNameSettled;
 
   const { data: generatedSlug, isLoading } = useQuery({
     // The context is part of the key: while the slug is empty, a changed watched field regenerates.

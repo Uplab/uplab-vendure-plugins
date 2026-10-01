@@ -131,9 +131,9 @@ The extension replaces the `slug` input on the product and collection detail pag
   submits ([vendure#4885](https://github.com/vendurehq/vendure/issues/4885)), and writing into them
   would save them with an empty name. A language filled in later gets the slug from the server at that
   write;
-- while the slug is empty and the field is in automatic mode, generates it from the channel default
-  language's name (else the name on the tab being edited) once the admin stops typing for 500 ms —
-  **on update as well as on create**;
+- while the entity has no saved slug and the field is in automatic mode, generates it from the channel
+  default language's name (else the name on the tab being edited) each time the admin stops typing for
+  500 ms — **on update as well as on create**. A saved slug is never regenerated on its own;
 - keeps the stock field's lock/edit toggle and regenerate button. A failed regenerate shows an error
   toast.
 
