@@ -100,3 +100,37 @@ export function slugsByLanguage(translations: TranslationRow[]): Record<string, 
     [...translations].sort((a, b) => a.languageCode.localeCompare(b.languageCode)).map((t) => [t.languageCode, t.slug]),
   );
 }
+
+export const CREATE_CHANNEL: Document = gql`
+  mutation CreateChannel($input: CreateChannelInput!) {
+    createChannel(input: $input) {
+      ... on Channel {
+        id
+        token
+      }
+    }
+  }
+`;
+
+export const UPDATE_GLOBAL_LANGUAGES: Document = gql`
+  mutation UpdateGlobalLanguages($languages: [LanguageCode!]!) {
+    updateGlobalSettings(input: { availableLanguages: $languages }) {
+      ... on GlobalSettings {
+        availableLanguages
+      }
+    }
+  }
+`;
+
+export const ACTIVE_CHANNEL_ZONES: Document = gql`
+  query ActiveChannelZones {
+    activeChannel {
+      defaultShippingZone {
+        id
+      }
+      defaultTaxZone {
+        id
+      }
+    }
+  }
+`;

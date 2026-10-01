@@ -1,10 +1,12 @@
 import path from 'path';
-import { CollectionTranslation, mergeConfig, TransactionalConnection } from '@vendure/core';
+import { CollectionTranslation, LanguageCode, mergeConfig, TransactionalConnection } from '@vendure/core';
 import { createTestEnvironment, registerInitializer, SqljsInitializer, testConfig } from '@vendure/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SlugGenerationService, UnifiedSlugPlugin } from '../src';
 import { initialData } from './fixtures/initial-data';
 import {
+  ACTIVE_CHANNEL_ZONES,
+  CREATE_CHANNEL,
   CREATE_COLLECTION,
   CREATE_PRODUCT,
   SLUG_FOR_ENTITY,
@@ -13,6 +15,7 @@ import {
   UNIFIED_SLUG_GENERATE,
   UNIFIED_SLUG_SETTINGS,
   UPDATE_COLLECTION,
+  UPDATE_GLOBAL_LANGUAGES,
   UPDATE_PRODUCT,
   UPDATE_PRODUCTS,
 } from './graphql';
@@ -25,10 +28,7 @@ interface EntityResult {
   translations: TranslationRow[];
 }
 
-/**
- * The default strategy, on the default channel (default language `en`). Every mutation goes through
- * the real Admin API, so this is what proves Nest actually runs the interceptor for these fields.
- */
+/** Every mutation goes through the real Admin API: this is what proves Nest runs the interceptor. */
 describe('UnifiedSlugPlugin', () => {
   const { server, adminClient } = createTestEnvironment(
     mergeConfig(testConfig, {
@@ -136,7 +136,7 @@ describe('UnifiedSlugPlugin', () => {
       await server.app
         .get(TransactionalConnection)
         .rawConnection.getRepository(CollectionTranslation)
-        .update({ base: { id }, languageCode: 'uk' as never }, { slug: 'knitwear-2' });
+        .update({ base: { id }, languageCode: LanguageCode.uk }, { slug: 'knitwear-2' });
 
       const { updateCollection } = await adminClient.query<{ updateCollection: EntityResult }>(UPDATE_COLLECTION, {
         input: { id, translations: [] },
@@ -182,6 +182,38 @@ describe('UnifiedSlugPlugin', () => {
 
       expect(product.enabled).toBe(false);
       expect(slugsByLanguage(product.translations)).toEqual({ en: 'gloves', uk: 'gloves' });
+    });
+
+    it('prefers the default language of the channel the request runs in', async () => {
+      // A channel can only default to a language that is enabled globally.
+      await adminClient.query(UPDATE_GLOBAL_LANGUAGES, { languages: [LanguageCode.en, LanguageCode.uk] });
+      const { activeChannel } = await adminClient.query<{
+        activeChannel: { defaultShippingZone: { id: string }; defaultTaxZone: { id: string } };
+      }>(ACTIVE_CHANNEL_ZONES);
+      const { createChannel } = await adminClient.query<{ createChannel: { token: string } }>(CREATE_CHANNEL, {
+        input: {
+          code: 'uk-channel',
+          token: 'uk-channel-token',
+          defaultLanguageCode: LanguageCode.uk,
+          availableLanguageCodes: [LanguageCode.uk, LanguageCode.en],
+          currencyCode: 'UAH',
+          pricesIncludeTax: true,
+          defaultShippingZoneId: activeChannel.defaultShippingZone.id,
+          defaultTaxZoneId: activeChannel.defaultTaxZone.id,
+        },
+      });
+      adminClient.setChannelToken(createChannel.token);
+
+      try {
+        const product = await createProduct([
+          { languageCode: 'en', name: 'Scarf', slug: 'scarf', description: '' },
+          { languageCode: 'uk', name: 'Шарф', slug: 'sharf', description: '' },
+        ]);
+
+        expect(slugsByLanguage(product.translations)).toEqual({ en: 'sharf', uk: 'sharf' });
+      } finally {
+        adminClient.setChannelToken('e2e-default-channel');
+      }
     });
   });
 
