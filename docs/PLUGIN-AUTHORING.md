@@ -34,13 +34,16 @@ Claude Code, `/new-plugin <name>` scaffolds all of this.
 
 `build` = `rimraf dist && tsc -p tsconfig.build.json`. A package that ships a
 React dashboard extension keeps it in `src/dashboard/`, excludes it from both
-tsconfigs (it gets its own `tsconfig.dashboard.json`), and adds a build step copying
-`src/dashboard/**` into `dist/dashboard` — shipped as `.tsx` on purpose, the host's
-Vite compiles it. The `dashboard` path on `@VendurePlugin()` is resolved relative
-to the compiled plugin file, so it must be a string literal (`'./dashboard/index.tsx'`)
-and the plugin file must sit directly in `src/`. Declare `@vendure/dashboard` and the
-React libraries the extension imports as optional peers. See
-`packages/vendure-plugin-unified-slug`.
+tsconfigs (it gets its own `tsconfig.dashboard.json`), and appends
+`node ../../scripts/copy-dashboard.mjs` to `build`, which copies `src/dashboard/**`
+into `dist/dashboard` minus the `*.spec.ts` files — shipped as `.tsx` on purpose,
+the host's Vite compiles it. The `dashboard` path on `@VendurePlugin()` is resolved
+relative to the compiled plugin file, so it must be a string literal
+(`'./dashboard/index.tsx'`) and the plugin file must sit directly in `src/`. Declare
+`@vendure/dashboard` and the React libraries the extension imports as optional
+peers. Keep the extension's pure logic (anything that does not need React) in a
+plain `.ts` module next to the components, so it is unit-tested like the rest of
+`src/`. See `packages/vendure-plugin-unified-slug`.
 
 The dashboard's plugin discovery does not follow a pnpm workspace symlink into a
 package's sources, so `packages/dev-server` imports a plugin with a dashboard
