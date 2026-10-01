@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { unifySlugs } from './unify-slugs';
 
-// A typical channel: default `en`, also serving `pl` and `uk`.
+// The channel default language.
 const EN = 'en';
 
 const t = (languageCode: string, slug?: string | null, name = `name-${languageCode}`) => ({ languageCode, slug, name });
@@ -65,7 +65,7 @@ describe('unifySlugs', () => {
     });
 
     it('appends a slug-only translation for each existing row the client did not send', () => {
-      // Collection 128 in production: `uk` created first, `en`/`pl` added later with an empty slug.
+      // `uk` created first, `pl` added later with an empty slug.
       const result = unifySlugs(
         [t('uk', 'sukni')],
         [

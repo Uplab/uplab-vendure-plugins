@@ -16,11 +16,7 @@ function isUnifiedSlugEntityName(entityName: string): entityName is UnifiedSlugE
   return (UNIFIED_SLUG_ENTITY_NAMES as readonly string[]).includes(entityName);
 }
 
-/**
- * `Permission.Authenticated`, the same gate core puts on `slugForEntity` — this is the query that
- * replaces it on the dashboard's slug field, and a stricter gate would make the field stop working
- * for the roles core's own field serves.
- */
+/** Gated like core's `slugForEntity`, which this query replaces on the dashboard's slug field. */
 @Resolver()
 export class UnifiedSlugAdminResolver {
   constructor(
@@ -33,11 +29,9 @@ export class UnifiedSlugAdminResolver {
   unifiedSlugGenerate(@Ctx() ctx: RequestContext, @Args() args: { input: UnifiedSlugGenerateInput }): Promise<string> {
     const { entityName, name, entityId, context } = args.input;
     if (!isUnifiedSlugEntityName(entityName)) {
-      // Named rather than swallowed: a typo'd entityName would otherwise answer a slug probed for
-      // uniqueness against the wrong table.
-      throw new UserInputError(
-        `unifiedSlugGenerate does not know the entity «${entityName}»; expected ${UNIFIED_SLUG_ENTITY_NAMES.map((n) => `'${n}'`).join(' or ')}`,
-      );
+      // A typo'd entityName would otherwise be probed for uniqueness against the wrong table.
+      const expected = UNIFIED_SLUG_ENTITY_NAMES.map((n) => `'${n}'`).join(' or ');
+      throw new UserInputError(`unifiedSlugGenerate does not know the entity «${entityName}»; expected ${expected}`);
     }
     if (context != null && (typeof context !== 'object' || Array.isArray(context))) {
       throw new UserInputError('unifiedSlugGenerate expects `context` to be an object keyed by form path');

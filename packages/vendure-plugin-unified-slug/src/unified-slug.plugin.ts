@@ -40,7 +40,7 @@ import { UnifiedSlugInterceptor } from './unified-slug.interceptor';
   ],
   exports: [SlugGenerationService],
   adminApiExtensions: { schema: adminApiExtensions, resolvers: [UnifiedSlugAdminResolver] },
-  // Resolved relative to the compiled plugin file, so the sources ship as `dist/dashboard/`.
+  // Resolved relative to the compiled plugin file; the sources are copied to `dist/dashboard/`.
   dashboard: './dashboard/index.tsx',
 })
 export class UnifiedSlugPlugin implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -60,8 +60,7 @@ export class UnifiedSlugPlugin implements OnApplicationBootstrap, OnApplicationS
     return UnifiedSlugPlugin;
   }
 
-  // Core runs the InjectableStrategy lifecycle only for strategies in the VendureConfig, so a
-  // strategy passed to a plugin is the plugin's to start and stop.
+  // Core runs the InjectableStrategy lifecycle only for strategies in the VendureConfig.
   async onApplicationBootstrap(): Promise<void> {
     await UnifiedSlugPlugin.options.slugStrategy.init?.(new Injector(this.moduleRef));
   }

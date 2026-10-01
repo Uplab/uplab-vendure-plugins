@@ -30,14 +30,11 @@ export interface UnifiedSlugBaseInput {
 
 /**
  * @description
- * Decides what a slug *says*, before uniqueness.
+ * Decides what a slug *says*. The returned base is passed through the host's core `SlugStrategy` and
+ * made unique by core's `EntitySlugService` (`-1`, `-2`…), as `slugForEntity` does. Return `''` when
+ * the input cannot yield a slug: a slug is never invented.
  *
- * The value returned by `generateBase` is passed through the host's configured core `SlugStrategy`
- * and then made unique by core's `EntitySlugService` (which appends `-1`, `-2`…), exactly as core's own
- * `slugForEntity` query does. Return `''` when the input cannot yield a slug: a slug is never invented.
- *
- * Lifecycle: the plugin calls `init(injector)` on bootstrap and `destroy()` on shutdown, so a strategy
- * can resolve services (e.g. `TransactionalConnection`) from the injector.
+ * The plugin calls `init(injector)` on bootstrap and `destroy()` on shutdown.
  *
  * @example
  * ```ts

@@ -1,10 +1,8 @@
 import gql from 'graphql-tag';
 
 /**
- * Admin API. Prefixed `unifiedSlug`: the Admin schema is one namespace shared with core and every
- * other plugin, and a generic `generateSlug` would sit next to core's own `slugForEntity` with nothing
- * to say which is which. Same permission as core's query (`Permission.Authenticated`): it reads no
- * catalogue data a logged-in admin cannot already read, and it writes nothing.
+ * Prefixed `unifiedSlug`, since the Admin schema is shared with core (`slugForEntity`) and every
+ * other plugin. Same permission as core's query: it reads nothing an admin cannot and writes nothing.
  */
 export const adminApiExtensions: ReturnType<typeof gql> = gql`
   input UnifiedSlugGenerateInput {

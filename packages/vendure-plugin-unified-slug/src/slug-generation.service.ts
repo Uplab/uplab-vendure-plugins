@@ -6,12 +6,8 @@ import type { ResolvedUnifiedSlugPluginOptions, UnifiedSlugBaseInput } from './t
 /**
  * @description
  * Generates a slug for a product or collection: the configured {@link UnifiedSlugStrategy} decides
- * what it says, core's `EntitySlugService` makes it unique — the same service core's `slugForEntity`
- * query uses. Exported from the plugin, so an importer or another plugin produces the same URL the
- * dashboard field does.
- *
- * An empty base short-circuits: the name yielded nothing, and a slug is never invented. Core would
- * answer `''` too, but only after a database round trip.
+ * what it says, core's `EntitySlugService` (the one behind `slugForEntity`) makes it unique. Exported
+ * so an importer or another plugin produces the same slug the dashboard field does.
  */
 @Injectable()
 export class SlugGenerationService {
@@ -20,6 +16,7 @@ export class SlugGenerationService {
     private readonly entitySlugService: EntitySlugService,
   ) {}
 
+  /** Answers `''` for a name that yields nothing — a slug is never invented. */
   async generate(ctx: RequestContext, input: UnifiedSlugBaseInput): Promise<string> {
     const base = (await this.options.slugStrategy.generateBase(ctx, input)).trim();
     if (!base) {

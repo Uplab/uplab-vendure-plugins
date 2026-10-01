@@ -5,13 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { UnifiedSlugInterceptor } from './unified-slug.interceptor';
 
 /**
- * The Nest plumbing, not the rule — `unify-slugs.spec.ts` owns the rule. What is asserted here is
- * exactly what an interceptor can get wrong: which fields it acts on, that everything else costs
- * nothing, and that the object the core resolver is about to read is the one that was changed.
- *
- * Hand-built rather than mocked away, so the interceptor is exercised through the same primitive it
- * uses in production (`GqlExecutionContext.create`). That Nest *calls* it for these mutations is
- * proven by the e2e spec.
+ * The Nest plumbing — `unify-slugs.spec.ts` owns the rule: which fields it acts on, that the rest
+ * costs nothing, and that the object the resolver reads is the one that was changed. Built by hand so
+ * the real `GqlExecutionContext.create` runs; that Nest calls it at all is the e2e spec's job.
  */
 function makeExecutionContext(
   fieldName: string,
@@ -169,6 +165,13 @@ describe('UnifiedSlugInterceptor', () => {
   it('reads the channel token from the query string before the header, as core does', async () => {
     const { interceptor, getChannelFromToken } = makeInterceptor();
     const req = { headers: { 'vendure-token': 'header-token' }, query: { 'vendure-token': 'query-token' } };
+    await run(makeExecutionContext('createProduct', { translations: [] }, undefined, req), interceptor);
+    expect(getChannelFromToken).toHaveBeenCalledWith('query-token');
+  });
+
+  it('takes the first value of a repeated channel-token query parameter', async () => {
+    const { interceptor, getChannelFromToken } = makeInterceptor();
+    const req = { headers: {}, query: { 'vendure-token': ['query-token', 'other-token'] } };
     await run(makeExecutionContext('createProduct', { translations: [] }, undefined, req), interceptor);
     expect(getChannelFromToken).toHaveBeenCalledWith('query-token');
   });
