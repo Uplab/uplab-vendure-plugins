@@ -1,5 +1,14 @@
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { Allow, Ctx, ListQueryOptions, PaginatedList, Permission, RequestContext, Transaction } from '@vendure/core';
+import {
+  Allow,
+  Ctx,
+  ID,
+  ListQueryOptions,
+  PaginatedList,
+  Permission,
+  RequestContext,
+  Transaction,
+} from '@vendure/core';
 import { CurrencyExchangeRate } from '../entities/currency-exchange-rate.entity';
 import { CurrencyExchangeRateService } from '../services/currency-exchange-rate.service';
 import { MutationUpdateCurrencyExchangeRateArgs } from '../types';
@@ -19,7 +28,7 @@ export class CurrencyExchangeRateAdminResolver {
 
   @Query()
   @Allow(Permission.ReadSettings)
-  currencyExchangeRate(@Ctx() ctx: RequestContext, @Args() args: { id: string }): Promise<CurrencyExchangeRate | null> {
+  currencyExchangeRate(@Ctx() ctx: RequestContext, @Args() args: { id: ID }): Promise<CurrencyExchangeRate | null> {
     return this.currencyExchangeRateService.findOne(ctx, args.id);
   }
 

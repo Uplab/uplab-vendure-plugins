@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import type { FindOptionsWhere } from 'typeorm';
 import {
   CurrencyCode,
   EventBus,
   ListQueryBuilder,
+  ID,
   ListQueryOptions,
   PaginatedList,
   RequestContext,
@@ -10,7 +12,7 @@ import {
   UserInputError,
   patchEntity,
 } from '@vendure/core';
-import { findEffectiveRate } from '../effective-rate';
+import { effectiveRate } from '../effective-rate';
 import { CurrencyExchangeRate } from '../entities/currency-exchange-rate.entity';
 import { CurrencyExchangeRateEvent } from '../events/currency-exchange-rate.event';
 import { UpdateCurrencyExchangeRateInput } from '../types';
@@ -23,12 +25,14 @@ export class CurrencyExchangeRateService {
     private eventBus: EventBus,
   ) {}
 
+  /** `where` is applied beneath the list options, so no `filter` or `filterOperator` can widen it. */
   async findAll(
     ctx: RequestContext,
     options?: ListQueryOptions<CurrencyExchangeRate>,
+    where?: FindOptionsWhere<CurrencyExchangeRate>,
   ): Promise<PaginatedList<CurrencyExchangeRate>> {
     return this.listQueryBuilder
-      .build(CurrencyExchangeRate, options, { ctx })
+      .build(CurrencyExchangeRate, options, { ctx, where })
       .getManyAndCount()
       .then(([items, totalItems]) => ({
         items,
@@ -36,17 +40,28 @@ export class CurrencyExchangeRateService {
       }));
   }
 
-  async findOne(ctx: RequestContext, id: string): Promise<CurrencyExchangeRate | null> {
+  async findOne(ctx: RequestContext, id: ID): Promise<CurrencyExchangeRate | null> {
     return this.connection.getRepository(ctx, CurrencyExchangeRate).findOne({ where: { id } });
   }
 
-  /** See {@link findEffectiveRate}. */
-  getRate(
+  /**
+   * The {@link effectiveRate} of `currencyCode` — UAH per one unit — or `undefined` when no usable rate
+   * is stored. `requireEnabled` is the caller's policy: whether a currency the admin switched off still
+   * counts (`true` for anything a customer is billed in).
+   */
+  async getRate(
     ctx: RequestContext,
     currencyCode: CurrencyCode,
-    options: { requireEnabled: boolean },
+    { requireEnabled }: { requireEnabled: boolean },
   ): Promise<number | undefined> {
-    return findEffectiveRate(this.connection, ctx, currencyCode, options);
+    const row = await this.connection
+      .getRepository(ctx, CurrencyExchangeRate)
+      .findOne({ where: { code: currencyCode } });
+    if (!row || (requireEnabled && !row.enabled)) {
+      return undefined;
+    }
+    const rate = effectiveRate(row);
+    return Number.isFinite(rate) && rate > 0 ? rate : undefined;
   }
 
   async update(ctx: RequestContext, input: UpdateCurrencyExchangeRateInput): Promise<CurrencyExchangeRate> {
@@ -56,8 +71,6 @@ export class CurrencyExchangeRateService {
     const entity = await this.connection.getEntityOrThrow(ctx, CurrencyExchangeRate, input.id);
     const updated = patchEntity(entity, input);
     const saved = await this.connection.getRepository(ctx, CurrencyExchangeRate).save(updated);
-    // The mutation runs inside a transaction; because the event carries `ctx`, Vendure holds it back
-    // until that transaction commits.
     await this.eventBus.publish(new CurrencyExchangeRateEvent(ctx, [saved], 'updated'));
     return saved;
   }

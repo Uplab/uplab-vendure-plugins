@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SYNC_TASK_ID } from './constants';
 import { CurrencyExchangeRatePlugin } from './currency-exchange-rate.plugin';
 import { CurrencyExchangeRateSyncService } from './services/currency-exchange-rate-sync.service';
-import { MonobankExchangeRateSource } from './sources/monobank-exchange-rate-source';
+import { StaticExchangeRateSource } from './sources/static-exchange-rate-source';
 import { ExchangeRateSource } from './types';
 
 async function configure() {
@@ -38,22 +38,24 @@ function makePlugin(isServer = true) {
 }
 
 describe('CurrencyExchangeRatePlugin options', () => {
-  it('defaults to Monobank and the historical schedule, also without init()', async () => {
-    CurrencyExchangeRatePlugin.init();
+  const source = new StaticExchangeRateSource({ USD: 41.5 });
 
-    expect(CurrencyExchangeRatePlugin.options.source).toBeInstanceOf(MonobankExchangeRateSource);
+  it('refreshes every 3 hours by default', async () => {
+    CurrencyExchangeRatePlugin.init({ source });
+
+    expect(CurrencyExchangeRatePlugin.options.source).toBe(source);
     const task = (await configure()).schedulerOptions.tasks.find((t) => t.id === SYNC_TASK_ID);
     expect(task?.options.schedule).toBe('40 2-23/3 * * *');
   });
 
   it('uses a custom schedule', async () => {
-    CurrencyExchangeRatePlugin.init({ sync: { schedule: '0 6 * * *' } });
+    CurrencyExchangeRatePlugin.init({ source, sync: { schedule: '0 6 * * *' } });
 
     expect((await configure()).schedulerOptions.tasks[0].options.schedule).toBe('0 6 * * *');
   });
 
   it('registers no task when the sync is off', async () => {
-    CurrencyExchangeRatePlugin.init({ sync: false });
+    CurrencyExchangeRatePlugin.init({ source, sync: false });
 
     expect((await configure()).schedulerOptions.tasks).toEqual([]);
   });

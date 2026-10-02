@@ -22,13 +22,13 @@ export interface ExchangeRateSource extends InjectableStrategy {
 }
 
 export interface CurrencyExchangeRatePluginOptions {
-  /** @default new MonobankExchangeRateSource() */
-  source?: ExchangeRateSource;
+  /** Where the rates come from: `MonobankExchangeRateSource`, `NbuExchangeRateSource`, `StaticExchangeRateSource` or your own. */
+  source: ExchangeRateSource;
   /**
    * The scheduled refresh. `false` leaves the task out; `CurrencyExchangeRateSyncService` can still
    * be called.
    *
-   * @default { schedule: '40 2-23/3 * * *' }
+   * @default { schedule: '40 2-23/3 * * *' } — every 3 hours
    */
   sync?: { schedule?: ScheduledTaskConfig['schedule'] } | false;
 }

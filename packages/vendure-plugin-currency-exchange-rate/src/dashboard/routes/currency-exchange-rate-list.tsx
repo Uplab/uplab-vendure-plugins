@@ -11,6 +11,7 @@ export const currencyExchangeRateListRoute: DashboardRouteDefinition = {
     sectionId: 'settings',
     id: 'currency-exchange-rates',
     title: 'Currency exchange rates',
+    requiresPermission: 'ReadSettings',
   },
   loader: () => ({
     breadcrumb: () => <Trans>Currency exchange rates</Trans>,

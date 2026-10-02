@@ -71,3 +71,36 @@ describe('CurrencyExchangeRateService.update', () => {
     expect(save).not.toHaveBeenCalled();
   });
 });
+
+describe('CurrencyExchangeRateService.getRate', () => {
+  const enabledUsd = { code: CurrencyCode.USD, rate: 41, enabled: true, useCustomRate: false, customRate: null };
+
+  function serviceWith(row: Partial<CurrencyExchangeRate> | null) {
+    return new CurrencyExchangeRateService(
+      { getRepository: () => ({ findOne: vi.fn().mockResolvedValue(row) }) } as unknown as TransactionalConnection,
+      {} as ListQueryBuilder,
+      {} as EventBus,
+    );
+  }
+
+  it('returns the effective rate of a stored currency', async () => {
+    await expect(serviceWith(enabledUsd).getRate(ctx, CurrencyCode.USD, { requireEnabled: true })).resolves.toBe(41);
+  });
+
+  it('honours requireEnabled for a disabled currency', async () => {
+    const service = serviceWith({ ...enabledUsd, enabled: false });
+
+    await expect(service.getRate(ctx, CurrencyCode.USD, { requireEnabled: true })).resolves.toBeUndefined();
+    await expect(service.getRate(ctx, CurrencyCode.USD, { requireEnabled: false })).resolves.toBe(41);
+  });
+
+  it.each([null, 0, -1])('returns undefined for a custom rate of %j rather than guessing', async (customRate) => {
+    const service = serviceWith({ ...enabledUsd, useCustomRate: true, customRate });
+
+    await expect(service.getRate(ctx, CurrencyCode.USD, { requireEnabled: false })).resolves.toBeUndefined();
+  });
+
+  it('returns undefined when the currency is not stored', async () => {
+    await expect(serviceWith(null).getRate(ctx, CurrencyCode.USD, { requireEnabled: false })).resolves.toBeUndefined();
+  });
+});

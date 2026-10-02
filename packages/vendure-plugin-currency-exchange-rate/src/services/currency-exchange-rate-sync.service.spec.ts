@@ -33,7 +33,10 @@ function makeService({
 
   const service = new CurrencyExchangeRateSyncService(
     { source: { name: 'test', fetchRates }, sync: false },
-    { getRepository: vi.fn().mockReturnValue(repository) } as unknown as TransactionalConnection,
+    {
+      getRepository: vi.fn().mockReturnValue(repository),
+      withTransaction: (txCtx: RequestContext, work: (c: RequestContext) => unknown) => work(txCtx),
+    } as unknown as TransactionalConnection,
     { publish } as unknown as EventBus,
   );
 
@@ -148,6 +151,6 @@ describe('CurrencyExchangeRateSyncService.backfillIfEmpty', () => {
     const { service } = makeService({ count: 0, quotes: new Error('network down') });
 
     await expect(service.backfillIfEmpty(ctx)).resolves.toBeUndefined();
-    expect(Logger.error).toHaveBeenCalledWith(expect.stringContaining('network down'), expect.any(String));
+    expect(Logger.warn).toHaveBeenCalledWith(expect.stringContaining('network down'), expect.any(String));
   });
 });

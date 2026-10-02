@@ -1,6 +1,8 @@
 import gql from 'graphql-tag';
 
-const commonApiExtensions = gql`
+type Document = ReturnType<typeof gql>;
+
+const commonApiExtensions: Document = gql`
   type CurrencyExchangeRate implements Node {
     id: ID!
     createdAt: DateTime!
@@ -22,11 +24,11 @@ const commonApiExtensions = gql`
   input CurrencyExchangeRateListOptions
 `;
 
-export const shopApiExtensions = gql`
+export const shopApiExtensions: Document = gql`
   ${commonApiExtensions}
 `;
 
-export const adminApiExtensions = gql`
+export const adminApiExtensions: Document = gql`
   ${commonApiExtensions}
 
   extend type CurrencyExchangeRate {

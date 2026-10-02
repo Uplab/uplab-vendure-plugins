@@ -16,12 +16,11 @@ import { createCurrencyExchangeRateSyncTask } from './currency-exchange-rate-syn
 import { CurrencyExchangeRate } from './entities/currency-exchange-rate.entity';
 import { CurrencyExchangeRateSyncService } from './services/currency-exchange-rate-sync.service';
 import { CurrencyExchangeRateService } from './services/currency-exchange-rate.service';
-import { MonobankExchangeRateSource } from './sources/monobank-exchange-rate-source';
 import { CurrencyExchangeRatePluginOptions, ResolvedCurrencyExchangeRatePluginOptions } from './types';
 
-function resolveOptions(options: CurrencyExchangeRatePluginOptions = {}): ResolvedCurrencyExchangeRatePluginOptions {
+function resolveOptions(options: CurrencyExchangeRatePluginOptions): ResolvedCurrencyExchangeRatePluginOptions {
   return {
-    source: options.source ?? new MonobankExchangeRateSource(),
+    source: options.source,
     sync: options.sync === false ? false : { schedule: options.sync?.schedule ?? DEFAULT_SYNC_SCHEDULE },
   };
 }
@@ -29,7 +28,7 @@ function resolveOptions(options: CurrencyExchangeRatePluginOptions = {}): Resolv
 /**
  * @description
  * Exchange rates against the hryvnia for showing and charging prices in other currencies. Rates come
- * from a pluggable {@link ExchangeRateSource} (Monobank by default; NBU and fixed rates are bundled),
+ * from a pluggable {@link ExchangeRateSource} (Monobank, the NBU, fixed rates or your own),
  * are refreshed on a schedule, and can be overridden per currency in the dashboard.
  */
 @VendurePlugin({
@@ -61,8 +60,8 @@ function resolveOptions(options: CurrencyExchangeRatePluginOptions = {}): Resolv
   },
 })
 export class CurrencyExchangeRatePlugin implements OnApplicationBootstrap, OnApplicationShutdown {
-  /** @internal Defaulted so the plugin also works registered without `.init()`. */
-  static options: ResolvedCurrencyExchangeRatePluginOptions = resolveOptions();
+  /** @internal */
+  static options: ResolvedCurrencyExchangeRatePluginOptions;
 
   constructor(
     private readonly moduleRef: ModuleRef,
@@ -71,13 +70,12 @@ export class CurrencyExchangeRatePlugin implements OnApplicationBootstrap, OnApp
     private readonly syncService: CurrencyExchangeRateSyncService,
   ) {}
 
-  static init(options: CurrencyExchangeRatePluginOptions = {}): Type<CurrencyExchangeRatePlugin> {
+  static init(options: CurrencyExchangeRatePluginOptions): Type<CurrencyExchangeRatePlugin> {
     this.options = resolveOptions(options);
     return CurrencyExchangeRatePlugin;
   }
 
-  // Both here, in sequence: a provider's own hook could run before the source's `init()`. The worker's
-  // scheduled sync cannot beat it in practice — the first cron tick is minutes away.
+  // Source first: the backfill needs it.
   async onApplicationBootstrap(): Promise<void> {
     await CurrencyExchangeRatePlugin.options.source.init?.(new Injector(this.moduleRef));
     if (this.processContext.isServer) {

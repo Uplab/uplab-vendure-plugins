@@ -32,3 +32,18 @@ export const UPDATE_RATE: Document = gql`
     updateCurrencyExchangeRate(input: $input) { ${FIELDS} useCustomRate customRate }
   }
 `;
+
+export const SHOP_RATES_OR: Document = gql`
+  query ShopRatesOr($code: String!) {
+    currencyExchangeRates(options: { filter: { code: { eq: $code } }, filterOperator: OR }) {
+      items { ${FIELDS} }
+      totalItems
+    }
+  }
+`;
+
+export const ADMIN_RATE: Document = gql`
+  query AdminRate($id: ID!) {
+    currencyExchangeRate(id: $id) { ${FIELDS} useCustomRate customRate }
+  }
+`;

@@ -9,6 +9,9 @@ in other currencies. Rates come from a **source you choose** — Monobank, the N
 fixed rates or your own — are refreshed on a schedule, served on the Shop API, and can be overridden per
 currency in the dashboard.
 
+The plugin stores and serves rates; it does not touch Vendure prices or orders — your storefront, feed or
+payment code converts with them. Vendure's own per-currency variant prices are unaffected.
+
 ![Currency exchange rates in the dashboard](https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-currency-exchange-rate/assets/screenshot-list.png)
 
 Compatible with **Vendure ^3.7.0**.
@@ -23,9 +26,12 @@ Compatible with **Vendure ^3.7.0**.
 
 ```bash
 npm install @uplab/vendure-plugin-currency-exchange-rate
+# or
+pnpm add @uplab/vendure-plugin-currency-exchange-rate
 ```
 
 ```ts
+import { DefaultSchedulerPlugin, VendureConfig } from '@vendure/core';
 import { CurrencyExchangeRatePlugin, MonobankExchangeRateSource } from '@uplab/vendure-plugin-currency-exchange-rate';
 
 export const config: VendureConfig = {
@@ -37,13 +43,19 @@ export const config: VendureConfig = {
 };
 ```
 
-Generate a migration for the new `currency_exchange_rate` table. On first start the plugin fills it from
-the source; every currency arrives **disabled** — enable the ones you sell in under
-_Settings → Currency exchange rates_.
+`@vendure/core`, `@nestjs/*` and `typeorm` are peers. The dashboard pages need `@vendure/dashboard` (an
+optional peer): its Vite plugin discovers the extension — restart the dashboard dev server after
+installing.
+
+**First deploy.** Generate and run a migration for the new `currency_exchange_rate` table. On the API
+server's first boot the plugin fills the empty table from the source; if the source is unreachable then,
+the table stays empty until the next scheduled refresh. Every currency arrives **disabled** — enable the
+ones you sell in under _Settings → Currency exchange rates_. Until you do, the storefront sees no rates
+and stays in UAH.
 
 ## Use cases
 
-**Show prices in the visitor's currency.** The storefront reads the enabled rates once and divides:
+**Show prices in the visitor's currency.** The storefront reads the enabled rates once:
 
 ```graphql
 query {
@@ -57,32 +69,40 @@ query {
 ```
 
 ```ts
-const priceInUsd = Math.round(priceInUah / rates.USD);
+const { items } = data.currencyExchangeRates; // [] until an admin enables a currency → stay in UAH
+const usd = items.find((r) => r.code === 'USD');
+// Vendure prices are minor units: kopecks ÷ rate = cents
+const priceInUsd = usd ? Math.round(variant.priceWithTax / usd.rate) : undefined;
 ```
 
-**Charge in a foreign currency.** A payment plugin converts the order total with the rate it may bill in:
+**Charge in a foreign currency.** In a `PaymentMethodHandler`, resolve the service in `init(injector)` and
+convert with a rate the customer may be billed in:
 
 ```ts
-const rate = await currencyExchangeRateService.getRate(ctx, CurrencyCode.USD, { requireEnabled: true });
-if (rate !== undefined) amount = Math.round(order.totalWithTax / rate);
+import { CurrencyCode } from '@vendure/core';
+import { CurrencyExchangeRateService } from '@uplab/vendure-plugin-currency-exchange-rate';
+
+// init(injector) { this.rates = injector.get(CurrencyExchangeRateService); }
+const rate = await this.rates.getRate(ctx, CurrencyCode.USD, { requireEnabled: true });
+const amountInCents = rate ? Math.round(order.totalWithTax / rate) : undefined; // undefined → bill in UAH
 ```
 
 **Price a product feed in another currency** (Google Merchant, Meta, …) even if the storefront does not
 offer it: `getRate(ctx, CurrencyCode.EUR, { requireEnabled: false })`.
 
 **Pin a rate.** Turn on _Use custom rate_ for a currency: the storefront and your code use your number
-until you turn it off; the fetched rate keeps updating underneath.
+until you turn it off; the fetched rate keeps updating underneath, and your number is kept for next time.
 
 **Fixed rates only.** No bank at all: `source: new StaticExchangeRateSource({ USD: 41.5, EUR: 45 })` and
 `sync: false`, then manage everything in the dashboard.
 
 ## Sources
 
-| Source                       | Rates                                                                                                                                                  |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `MonobankExchangeRateSource` | Monobank's public rates. `side: 'buy'` (default — what the bank pays, the lower), `'sell'` or `'mid'`. Rate-limited; the endpoint is cached 5 minutes. |
-| `NbuExchangeRateSource`      | The National Bank of Ukraine's official rate, set once per business day.                                                                               |
-| `StaticExchangeRateSource`   | The numbers you pass: `new StaticExchangeRateSource({ USD: 41.5 })`.                                                                                   |
+| Source                       | Rates                                                                                                                                                                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MonobankExchangeRateSource` | Monobank's public rates. `side: 'buy'` (default) is what the bank pays you for the currency — the lower rate, so a UAH price converted with it never comes up short; or `'sell'`, `'mid'`. Rate-limited; cached 5 minutes. |
+| `NbuExchangeRateSource`      | The National Bank of Ukraine's official rate, set once per business day.                                                                                                                                                   |
+| `StaticExchangeRateSource`   | The numbers you pass: `new StaticExchangeRateSource({ USD: 41.5 })`. Also the source for your own e2e tests — no network.                                                                                                  |
 
 Both bank sources take `apiUrl` and `timeout` (default 10 s). Whatever a source returns, only Vendure
 `CurrencyCode`s with a positive finite rate are stored — metals, the SDR and garbage are dropped. If the
@@ -91,6 +111,7 @@ source fails or returns nothing usable, the stored rates stay as they are.
 ### Your own source
 
 ```ts
+import { CurrencyCode } from '@vendure/core';
 import {
   ExchangeRateQuote,
   ExchangeRateSource,
@@ -103,8 +124,10 @@ export class PrivatBankExchangeRateSource implements ExchangeRateSource {
   async fetchRates(): Promise<ExchangeRateQuote[]> {
     const res = await fetch('https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11');
     if (!res.ok) throw new ExchangeRateSourceError(`HTTP ${res.status}`, { source: this.name, status: res.status });
-    const rows: Array<{ ccy: string; buy: string }> = await res.json();
-    return rows.map((r) => ({ currencyCode: r.ccy as CurrencyCode, rate: Number(r.buy) }));
+    const rows: Array<{ ccy: string; base_ccy: string; buy: string }> = await res.json();
+    return rows
+      .filter((r) => r.base_ccy === 'UAH')
+      .map((r) => ({ currencyCode: r.ccy as CurrencyCode, rate: Number(r.buy) }));
   }
 }
 ```
@@ -113,16 +136,35 @@ A quote is `{ currencyCode, rate }`, `rate` being **UAH per one unit**. Throw on
 `[]` to mean "failed". If the source needs services, implement `init(injector)` (and `destroy()`); the
 plugin calls `init` before the first fetch.
 
+### A currency your source does not quote
+
+Rows only come from the source, so combine sources — later ones win:
+
+```ts
+import { RequestContext } from '@vendure/core';
+
+class CombinedExchangeRateSource implements ExchangeRateSource {
+  readonly name = 'combined';
+  constructor(private readonly sources: ExchangeRateSource[]) {}
+
+  async fetchRates(ctx: RequestContext): Promise<ExchangeRateQuote[]> {
+    return (await Promise.all(this.sources.map((s) => s.fetchRates(ctx)))).flat();
+  }
+}
+
+new CombinedExchangeRateSource([new MonobankExchangeRateSource(), new StaticExchangeRateSource({ CZK: 1.9 })]);
+```
+
 ## Options
 
-| Option   | Type                                                      | Default                            |
-| -------- | --------------------------------------------------------- | ---------------------------------- |
-| `source` | `ExchangeRateSource`                                      | `new MonobankExchangeRateSource()` |
-| `sync`   | `{ schedule?: ScheduledTaskConfig['schedule'] } \| false` | `{ schedule: '40 2-23/3 * * *' }`  |
+| Option   | Type                                                      | Default                           |
+| -------- | --------------------------------------------------------- | --------------------------------- |
+| `source` | `ExchangeRateSource` — required                           | —                                 |
+| `sync`   | `{ schedule?: ScheduledTaskConfig['schedule'] } \| false` | `{ schedule: '40 2-23/3 * * *' }` |
 
-`sync` registers the scheduled task `currency-exchange-rate-updater` (every 3 hours by default). It needs
-a scheduler plugin such as `DefaultSchedulerPlugin`. `sync: false` leaves it out; you can still call
-`CurrencyExchangeRateSyncService.syncRates(ctx)` yourself.
+`sync` registers the scheduled task `currency-exchange-rate-updater` (every 3 hours). It needs a scheduler
+plugin such as `DefaultSchedulerPlugin`, and runs in the worker — so the worker needs the plugin in its
+config too. `sync: false` leaves it out; you can still call `CurrencyExchangeRateSyncService.syncRates(ctx)`.
 
 ## Dashboard
 
@@ -132,7 +174,7 @@ custom rate.
 
 ![Editing a currency](https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-currency-exchange-rate/assets/screenshot-detail.png)
 
-Listing needs `ReadSettings`, editing `UpdateSettings`.
+Rates are shop settings: listing needs `ReadSettings`, editing `UpdateSettings` — no extra role setup.
 
 ## GraphQL API
 
@@ -140,17 +182,17 @@ Listing needs `ReadSettings`, editing `UpdateSettings`.
 
 ```graphql
 currencyExchangeRates(options: CurrencyExchangeRateListOptions): CurrencyExchangeRateList!
-# items: { id, code, rate, enabled, createdAt, updatedAt } — enabled currencies only
+# items: { id, code, rate, enabled, createdAt, updatedAt } — enabled currencies only, whatever the filter
 ```
 
-`rate` is the custom rate when one is in use, otherwise the fetched one.
+`rate` is the custom rate while one is in use, otherwise the fetched one.
 
 **Admin**
 
 ```graphql
-currencyExchangeRates(options: CurrencyExchangeRateListOptions): CurrencyExchangeRateList!  # ReadSettings
-currencyExchangeRate(id: ID!): CurrencyExchangeRate                                         # ReadSettings
-updateCurrencyExchangeRate(input: { id, enabled, useCustomRate, customRate }): CurrencyExchangeRate!  # UpdateSettings
+currencyExchangeRates(options: CurrencyExchangeRateListOptions): CurrencyExchangeRateList!          # ReadSettings
+currencyExchangeRate(id: ID!): CurrencyExchangeRate                                                 # ReadSettings
+updateCurrencyExchangeRate(input: { id, enabled, useCustomRate, customRate }): CurrencyExchangeRate! # UpdateSettings
 ```
 
 In the Admin API `rate` is always the fetched rate; `useCustomRate` and `customRate` are separate fields.
@@ -162,15 +204,15 @@ Turning on `useCustomRate` without a positive `customRate` is rejected.
 | --------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `CurrencyExchangeRateService`     | `getRate(ctx, code, { requireEnabled })` → UAH per unit or `undefined`; `findAll`, `findOne`, `update` |
 | `CurrencyExchangeRateSyncService` | `syncRates(ctx)` — refresh now                                                                         |
-| `findEffectiveRate`               | `getRate` without injection, from a `TransactionalConnection`                                          |
-| `effectiveRate(row)`              | The rate to convert with for a row you already loaded                                                  |
+| `effectiveRate(row)`              | The rate to convert with for a row you loaded yourself (`NaN` if its custom rate is on but empty)      |
 
 `requireEnabled` is your policy: `true` for anything the customer is billed in, `false` for internal uses.
 
 ## Event
 
 `CurrencyExchangeRateEvent` is published after every change — `type: 'synced'` with every refreshed row,
-or `'updated'` with the one an admin edited. Use it to drop caches that embed the rates:
+or `'updated'` with the one an admin edited — once the transaction has committed. Use it to drop caches
+that embed the rates:
 
 ```ts
 eventBus.ofType(CurrencyExchangeRateEvent).subscribe(() => cache.delete('currency-rates'));
@@ -180,22 +222,25 @@ eventBus.ofType(CurrencyExchangeRateEvent).subscribe(() => cache.delete('currenc
 
 One table, `currency_exchange_rate`:
 
-| Column          | Type                      |
-| --------------- | ------------------------- |
-| `code`          | varchar, unique           |
-| `rate`          | decimal — the fetched one |
-| `enabled`       | boolean, default `false`  |
-| `useCustomRate` | boolean, default `false`  |
-| `customRate`    | decimal, nullable         |
+| Column          | Type                             |
+| --------------- | -------------------------------- |
+| `code`          | varchar, unique                  |
+| `rate`          | decimal(19, 8) — the fetched one |
+| `enabled`       | boolean, default `false`         |
+| `useCustomRate` | boolean, default `false`         |
+| `customRate`    | decimal(19, 8), nullable         |
 
-A sync only ever writes `rate` and adds new currencies; `enabled` and the custom rate are yours.
+A sync only ever writes `rate` and adds new currencies, in one transaction; `enabled` and the custom rate
+are yours.
 
 ## Limitations
 
 - **The base currency is UAH.** Every source quotes against the hryvnia; a shop priced in another
   currency needs its own source and has to read `rate` accordingly.
-- **Postgres returns decimals as strings.** Use `getRate` / `effectiveRate`, which convert, rather than
-  reading `rate` off the entity.
+- **Rates are global** — one table, not per channel.
+- **Dashboard 3.7.0–3.7.3 in dev mode** can render a blank page with two or more dashboard extensions
+  (for example together with `@uplab/vendure-plugin-unified-slug`). It is a Vendure bug, fixed in 3.7.4
+  ([vendure#5459](https://github.com/vendure-ecommerce/vendure/pull/5459)); production builds are fine.
 
 ## Changelog
 

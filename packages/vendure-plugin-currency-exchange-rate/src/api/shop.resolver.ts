@@ -15,11 +15,7 @@ export class CurrencyExchangeRateShopResolver {
     @Ctx() ctx: RequestContext,
     @Args() args: { options?: ListQueryOptions<CurrencyExchangeRate> },
   ): Promise<PaginatedList<CurrencyExchangeRate>> {
-    const options = args.options ?? {};
-    return this.currencyExchangeRateService.findAll(ctx, {
-      ...options,
-      filter: { ...options.filter, enabled: { eq: true } },
-    });
+    return this.currencyExchangeRateService.findAll(ctx, args.options, { enabled: true });
   }
 }
 

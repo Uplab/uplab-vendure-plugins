@@ -1,6 +1,6 @@
 export { CURRENCY_EXCHANGE_RATE_PLUGIN_OPTIONS, DEFAULT_SYNC_SCHEDULE, SYNC_TASK_ID } from './constants';
 export { CurrencyExchangeRatePlugin } from './currency-exchange-rate.plugin';
-export { effectiveRate, findEffectiveRate } from './effective-rate';
+export { effectiveRate } from './effective-rate';
 export { CurrencyExchangeRate } from './entities/currency-exchange-rate.entity';
 export { CurrencyExchangeRateEvent, type CurrencyExchangeRateEventType } from './events/currency-exchange-rate.event';
 export { ExchangeRateSourceError } from './exchange-rate-source-error';

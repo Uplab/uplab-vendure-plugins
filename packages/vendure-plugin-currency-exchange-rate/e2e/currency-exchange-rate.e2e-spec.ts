@@ -11,7 +11,7 @@ import {
   StaticExchangeRateSource,
 } from '../src';
 import { initialData } from './fixtures/initial-data';
-import { ADMIN_RATES, SHOP_RATES, UPDATE_RATE } from './graphql';
+import { ADMIN_RATE, ADMIN_RATES, SHOP_RATES, SHOP_RATES_OR, UPDATE_RATE } from './graphql';
 
 registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__sqlite-data__')));
 
@@ -42,8 +42,9 @@ describe('CurrencyExchangeRatePlugin', () => {
       expect.objectContaining({ code: 'EUR', rate: 45, enabled: false, useCustomRate: false }),
       expect.objectContaining({ code: 'USD', rate: 41.5, enabled: false, useCustomRate: false }),
     ]);
-    // The Shop API never lists a disabled currency, filter or no filter.
+    // The Shop API never lists a disabled currency, not even through an OR filter.
     expect((await shopClient.query(SHOP_RATES)).currencyExchangeRates.totalItems).toBe(0);
+    expect((await shopClient.query(SHOP_RATES_OR, { code: 'EUR' })).currencyExchangeRates.totalItems).toBe(0);
   });
 
   it('offers an enabled currency in the Shop API, at the custom rate once it is switched on', async () => {
@@ -69,6 +70,18 @@ describe('CurrencyExchangeRatePlugin', () => {
     } finally {
       await adminClient.asSuperAdmin();
     }
+  });
+
+  it('keeps the custom rate stored while it is switched off', async () => {
+    const id = await usdId();
+
+    await adminClient.query(UPDATE_RATE, { input: { id, enabled: true, useCustomRate: false, customRate: 42 } });
+    const { currencyExchangeRate } = await adminClient.query(ADMIN_RATE, { id });
+    const shop = (await shopClient.query(SHOP_RATES)).currencyExchangeRates.items;
+    await adminClient.query(UPDATE_RATE, { input: { id, enabled: true, useCustomRate: true, customRate: 42 } });
+
+    expect(currencyExchangeRate).toMatchObject({ rate: 41.5, useCustomRate: false, customRate: 42 });
+    expect(shop).toEqual([expect.objectContaining({ code: 'USD', rate: 41.5 })]);
   });
 
   it('rejects a custom rate switched on without a positive value', async () => {

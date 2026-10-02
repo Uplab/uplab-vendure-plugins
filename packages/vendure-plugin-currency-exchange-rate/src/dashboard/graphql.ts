@@ -5,6 +5,9 @@ import type { DocumentNode } from 'graphql';
 // hand-written result types instead. The shape matches `TypedDocumentNode`, which the pages expect.
 type TypedDocument<Result, Variables> = DocumentNode & { __apiType?: (variables: Variables) => Result };
 
+const typedDocument = <Result, Variables>(source: string) =>
+  (graphql as (source: string) => DocumentNode)(source) as TypedDocument<Result, Variables>;
+
 export interface CurrencyExchangeRateFields {
   id: string;
   createdAt: string;
@@ -29,7 +32,10 @@ const FIELDS = `
   }
 `;
 
-export const getCurrencyExchangeRateListDocument = (graphql as (source: string) => DocumentNode)(`
+export const getCurrencyExchangeRateListDocument = typedDocument<
+  { currencyExchangeRates: { items: CurrencyExchangeRateFields[]; totalItems: number } },
+  { options?: Record<string, unknown> }
+>(`
   query GetCurrencyExchangeRateList($options: CurrencyExchangeRateListOptions) {
     currencyExchangeRates(options: $options) {
       items {
@@ -39,28 +45,28 @@ export const getCurrencyExchangeRateListDocument = (graphql as (source: string) 
     }
   }
   ${FIELDS}
-`) as TypedDocument<
-  { currencyExchangeRates: { items: CurrencyExchangeRateFields[]; totalItems: number } },
-  { options?: Record<string, unknown> }
->;
+`);
 
-export const getCurrencyExchangeRateDetailDocument = (graphql as (source: string) => DocumentNode)(`
+export const getCurrencyExchangeRateDetailDocument = typedDocument<
+  { currencyExchangeRate: CurrencyExchangeRateFields | null },
+  { id: string }
+>(`
   query GetCurrencyExchangeRateDetail($id: ID!) {
     currencyExchangeRate(id: $id) {
       ...CurrencyExchangeRateFields
     }
   }
   ${FIELDS}
-`) as TypedDocument<{ currencyExchangeRate: CurrencyExchangeRateFields | null }, { id: string }>;
+`);
 
-export const updateCurrencyExchangeRateDocument = (graphql as (source: string) => DocumentNode)(`
+export const updateCurrencyExchangeRateDocument = typedDocument<
+  { updateCurrencyExchangeRate: CurrencyExchangeRateFields },
+  { input: { id: string; enabled: boolean; useCustomRate: boolean; customRate?: number | null } }
+>(`
   mutation UpdateCurrencyExchangeRate($input: UpdateCurrencyExchangeRateInput!) {
     updateCurrencyExchangeRate(input: $input) {
       ...CurrencyExchangeRateFields
     }
   }
   ${FIELDS}
-`) as TypedDocument<
-  { updateCurrencyExchangeRate: CurrencyExchangeRateFields },
-  { input: { id: string; enabled: boolean; useCustomRate: boolean; customRate?: number | null } }
->;
+`);

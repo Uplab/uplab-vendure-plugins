@@ -55,10 +55,6 @@ function CurrencyExchangeRateDetailPage({ route }: { route: Route }) {
       customRate: rate.customRate ?? null,
     }),
     params: { id: params.id },
-    transformUpdateInput: (input) => ({
-      ...input,
-      customRate: input.useCustomRate ? input.customRate : null,
-    }),
     onSuccess: () => {
       toast.success(t`Currency exchange rate updated`);
       resetForm();

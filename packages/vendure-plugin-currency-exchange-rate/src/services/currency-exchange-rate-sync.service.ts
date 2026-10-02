@@ -38,15 +38,17 @@ export class CurrencyExchangeRateSyncService {
       return [];
     }
 
-    const repository = this.connection.getRepository(ctx, CurrencyExchangeRate);
-    const stored = await repository.find();
-    const persisted = await repository.save(
-      usable.map(({ currencyCode, rate }) => {
-        const existing = stored.find((r) => r.code === currencyCode);
-        return existing ? Object.assign(existing, { rate }) : new CurrencyExchangeRate({ code: currencyCode, rate });
-      }),
-    );
-    // Lets the host drop anything that embeds the old rates, such as a cached Shop API response.
+    // One transaction: a failure part-way leaves every rate as it was, not half of them refreshed.
+    const persisted = await this.connection.withTransaction(ctx, async (txCtx) => {
+      const repository = this.connection.getRepository(txCtx, CurrencyExchangeRate);
+      const stored = await repository.find();
+      return repository.save(
+        usable.map(({ currencyCode, rate }) => {
+          const existing = stored.find((r) => r.code === currencyCode);
+          return existing ? Object.assign(existing, { rate }) : new CurrencyExchangeRate({ code: currencyCode, rate });
+        }),
+      );
+    });
     await this.eventBus.publish(new CurrencyExchangeRateEvent(ctx, persisted, 'synced'));
     return persisted;
   }
@@ -60,7 +62,8 @@ export class CurrencyExchangeRateSyncService {
       const persisted = await this.syncRates(ctx);
       Logger.info(`Loaded ${persisted.length} exchange rates from ${this.options.source.name}`, loggerCtx);
     } catch (e) {
-      Logger.error(`Could not load the initial exchange rates: ${(e as Error).message}`, loggerCtx);
+      // Also what a second instance booting at the same time sees: the first one already inserted them.
+      Logger.warn(`Could not load the initial exchange rates: ${(e as Error).message}`, loggerCtx);
     }
   }
 }
