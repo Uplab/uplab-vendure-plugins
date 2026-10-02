@@ -50,7 +50,11 @@ export class NovaPoshtaClient {
         signal: AbortSignal.timeout(this.options.timeout),
       });
     } catch (cause) {
-      throw new NovaPoshtaError(`Nova Poshta ${method} failed: ${describe(cause)}`, { cause });
+      const reason =
+        cause instanceof Error && cause.name === 'TimeoutError'
+          ? `timed out after ${this.options.timeout} ms`
+          : describe(cause);
+      throw new NovaPoshtaError(`Nova Poshta ${method} failed: ${reason}`, { cause });
     }
     // Nova Poshta sends its usual envelope with a non-2xx too: a wrong key is HTTP 401 with
     // `errors: ['API key incorrect']`.

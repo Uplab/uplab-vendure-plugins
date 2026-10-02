@@ -101,6 +101,14 @@ describe('NovaPoshtaClient.request', () => {
     );
   });
 
+  it('reports a timeout with the configured limit', async () => {
+    stubFetch(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+
+    await expect(makeClient().request(ctx, 'Address', 'getCities')).rejects.toThrow(
+      'Nova Poshta Address.getCities failed: timed out after 1000 ms',
+    );
+  });
+
   it('reports a body that is not JSON', async () => {
     stubFetch(new Response('<html>', { status: 200 }));
 

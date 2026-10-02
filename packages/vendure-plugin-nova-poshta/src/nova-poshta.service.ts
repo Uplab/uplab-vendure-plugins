@@ -17,8 +17,6 @@ import type {
 } from './types';
 
 /** Nova Poshta matches `’` and friends only as a plain apostrophe: «Кам’янське». */
-export function normalizeSearchTerm(term: string): string;
-export function normalizeSearchTerm(term: string | null | undefined): string | undefined;
 export function normalizeSearchTerm(term: string | null | undefined): string | undefined {
   return term?.replace(/[’‘`′ʼ]/g, "'") ?? undefined;
 }

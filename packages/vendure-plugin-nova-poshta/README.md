@@ -47,12 +47,12 @@ Get the key in your Nova Poshta business account: _Settings → Security → API
 
 ## Options
 
-| Option        | Type                                                                 | Default                                  | Description                                                                                                        |
-| ------------- | -------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `apiKey`      | `string \| NovaPoshtaApiKeyStrategy`                                 | —                                        | The key, or a strategy that resolves it per request: see [API key per request](#api-key-per-request).              |
-| `apiUrl`      | `string`                                                             | `'https://api.novaposhta.ua/v2.0/json/'` | Nova Poshta's JSON endpoint.                                                                                       |
-| `timeout`     | `number`                                                             | `10000`                                  | Milliseconds before a request is aborted.                                                                          |
-| `countrySync` | `{ schedule?: string \| (cron: CronExpression) => string } \| false` | `{ schedule: '0 7 * * *' }`              | The daily task that syncs country refs. Needs a scheduler plugin. `false` leaves the task out; the mutation stays. |
+| Option        | Type                                                      | Default                                  | Description                                                                                                        |
+| ------------- | --------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `apiKey`      | `string \| NovaPoshtaApiKeyStrategy`                      | —                                        | The key, or a strategy that resolves it per request: see [API key per request](#api-key-per-request).              |
+| `apiUrl`      | `string`                                                  | `'https://api.novaposhta.ua/v2.0/json/'` | Nova Poshta's JSON endpoint.                                                                                       |
+| `timeout`     | `number`                                                  | `10000`                                  | Milliseconds before a request is aborted.                                                                          |
+| `countrySync` | `{ schedule?: ScheduledTaskConfig['schedule'] } \| false` | `{ schedule: '0 7 * * *' }`              | The daily task that syncs country refs. Needs a scheduler plugin. `false` leaves the task out; the mutation stays. |
 
 ## Database
 
@@ -114,20 +114,16 @@ Countries without a ref are the ones Nova Poshta does not deliver to.
 On the country page in the dashboard, _Nova Poshta: warehouse types_ chooses which types
 `novaPoshtaInternationalWarehouses` returns there. Empty means all of them.
 
-| Value         | Meaning                                   | Warsaw, 2026-09-30 |
-| ------------- | ----------------------------------------- | ------------------ |
-| `PostBranch`  | Nova Post's own post branches             | 21                 |
-| `CargoBranch` | Nova Post's cargo branches and fulfilment | 2                  |
-| `PUDO`        | Partner pick-up points                    | 242                |
-| `Poshtomat`   | Parcel lockers                            | 2106               |
+| Value         | Meaning                                   |
+| ------------- | ----------------------------------------- |
+| `PostBranch`  | Nova Post's own post branches             |
+| `CargoBranch` | Nova Post's cargo branches and fulfilment |
+| `PUDO`        | Partner pick-up points                    |
+| `Poshtomat`   | Parcel lockers                            |
 
-These are the values of the `WarehouseCategory` filter of `International.getWarehouses`, which Nova Poshta
-does not document publicly. Checked against the live API on 2026-09-30:
-
-- The four values cover the whole list: their counts add up to the unfiltered total.
-- The filter takes **one value per request**, and the response does not say a warehouse's type. So each
-  selected type is a request of its own, run in parallel; the results are merged in the order the types
-  are stored and capped at `limit`.
+These are the values of the `WarehouseCategory` filter of `International.getWarehouses`. The filter takes one
+value per request and the response does not say a warehouse's type, so each selected type is a request of its
+own, run in parallel; the results are merged in the order the types are stored and capped at `limit`.
 
 ## Admin API
 
