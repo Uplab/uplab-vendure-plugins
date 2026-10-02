@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-nova-poshta/assets/icon.svg" alt="" width="96" height="96">
+</p>
+
 # @uplab/vendure-plugin-nova-poshta
 
 [![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-nova-poshta.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-nova-poshta)
@@ -203,3 +207,6 @@ See [CHANGELOG.md](./CHANGELOG.md).
 ## License
 
 MIT
+
+Nova Poshta and Vendure are trademarks of their respective owners. This is an independent plugin, not
+affiliated with or endorsed by either.
