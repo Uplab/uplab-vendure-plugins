@@ -37,8 +37,7 @@ The uplab.io site palette (its `bluemine` blue scale plus the CTA amber and the 
 Chosen so far:
 
 - `unified-slug` — brand background, brand-500/400 secondary, warm-white mark with a brand slash.
-- `turbosms` predates these rules and uses TurboSMS's own navy and yellow; recolour it the next time
-  it is touched.
+- `turbosms` — keeps TurboSMS's own navy and yellow: it is the vendor's brand, so it stays as is.
 
 ## Flow
 
