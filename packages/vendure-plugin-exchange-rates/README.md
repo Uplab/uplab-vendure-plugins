@@ -190,8 +190,9 @@ export class BankOfCanadaExchangeRateSource implements ExchangeRateSource {
 
 A source returns its `base` and quotes `{ currencyCode, rate }`, `rate` being **base units per one unit**;
 the plugin re-bases them onto the shop's currency. Throw on failure — never return an empty list to mean
-"failed" — and give the request a timeout, since the API server waits for the first fetch on boot. If the source needs services, implement `init(injector)` (and `destroy()`); the plugin calls
-`init` before the first fetch.
+"failed" — and give the request a timeout, since the API server waits for the first fetch on boot. If the
+source needs services, implement `init(injector)` (and `destroy()`); the plugin calls `init` before the
+first fetch.
 
 ### Combining sources
 
@@ -256,13 +257,14 @@ currencies the new base does not cover.
 | `baseCurrency` | `CurrencyCode`                                            | the default channel's currency    |
 | `sync`         | `{ schedule?: ScheduledTaskConfig['schedule'] } \| false` | `{ schedule: '40 2-23/3 * * *' }` |
 
-`sync` registers the scheduled task `currency-exchange-rate-updater` (`SYNC_TASK_ID`, every 3 hours). It needs a scheduler
-plugin such as `DefaultSchedulerPlugin`, and runs in the worker — so the worker needs the plugin in its
-config too. `sync: false` leaves it out; you can still call `CurrencyExchangeRateSyncService.syncRates(ctx)`.
+`sync` registers the scheduled task `currency-exchange-rate-updater` (`SYNC_TASK_ID`, every 3 hours). It
+needs a scheduler plugin such as `DefaultSchedulerPlugin`, and runs in the worker — so the worker needs the
+plugin in its config too. `sync: false` leaves it out; you can still call `CurrencyExchangeRateSyncService.syncRates(ctx)`.
 
-To refresh now, run it under _System → Scheduled tasks_ (or `runScheduledTask(id: "currency-exchange-rate-updater")`);
-its last run there tells you the sync is alive. A row's `updatedAt` moves only when its rate changes. A
-currency the source stops quoting keeps its last rate; if it is enabled, every sync logs a warning.
+To refresh now, run it under _System → Scheduled tasks_ (or
+`runScheduledTask(id: "currency-exchange-rate-updater")`); its last run there tells you the sync is alive.
+A sync moves a row's `updatedAt` only when its rate changes. A currency the source stops quoting keeps its
+last rate; if it is enabled, every sync logs a warning.
 
 ## Dashboard
 
@@ -309,9 +311,9 @@ Turning on `useCustomRate` without a positive `customRate` is rejected.
 
 ## Event
 
-`CurrencyExchangeRateEvent` is published after every change, once the transaction has committed:
-`type: 'synced'` when a sync changed anything, with every rate now stored in the base currency, or
-`'updated'` with the one rate an admin edited. Use it to drop caches
+`CurrencyExchangeRateEvent` is published once the transaction has committed: `type: 'synced'` when a sync
+changed anything, with every rate now stored in the base currency, or `'updated'` with the one rate an
+admin saved. Use it to drop caches
 that embed the rates:
 
 ```ts
@@ -344,7 +346,8 @@ One table, `currency_exchange_rate`:
 | `useCustomRate` | boolean, default `false`                    |
 | `customRate`    | decimal(19, 8), nullable                    |
 
-A sync writes only `rate` (and `baseCurrency` on a [base change](#base-currency)), in one transaction.
+A sync updates `rate` and inserts new currencies, in one transaction; on a [base change](#base-currency) it
+also rewrites `baseCurrency`, clears custom rates and deletes the currencies the new base does not cover.
 
 ## Limitations
 

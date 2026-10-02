@@ -98,7 +98,7 @@ describe('CurrencyExchangeRateService.update', () => {
       const { service, update } = makeService();
 
       await expect(service.update(ctx, { id: '1', enabled: true, useCustomRate: false, customRate })).rejects.toThrow(
-        'A custom rate must be between 0.00000001 and 100000000000',
+        'A custom rate must be at least 0.00000001 and below 100000000000',
       );
       expect(update).not.toHaveBeenCalled();
     },

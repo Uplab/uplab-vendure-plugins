@@ -82,7 +82,7 @@ export class CurrencyExchangeRateService {
     // Stored with 8 decimals: anything that rounds to 0 there would silently stop being a rate.
     const customRate = input.customRate == null ? input.customRate : round8(input.customRate);
     if (customRate != null && !(Number.isFinite(customRate) && customRate > 0 && customRate < MAX_RATE)) {
-      throw new UserInputError('A custom rate must be between 0.00000001 and 100000000000');
+      throw new UserInputError('A custom rate must be at least 0.00000001 and below 100000000000');
     }
     await this.connection.getEntityOrThrow(ctx, CurrencyExchangeRate, input.id);
     const repository = this.connection.getRepository(ctx, CurrencyExchangeRate);
@@ -92,9 +92,7 @@ export class CurrencyExchangeRateService {
         ([, value]) => value !== undefined,
       ),
     );
-    if (Object.keys(changes).length) {
-      await repository.update({ id: input.id }, changes);
-    }
+    await repository.update({ id: input.id }, changes);
     const saved = await this.connection.getEntityOrThrow(ctx, CurrencyExchangeRate, input.id);
     await this.eventBus.publish(new CurrencyExchangeRateEvent(ctx, [saved], 'updated'));
     return saved;

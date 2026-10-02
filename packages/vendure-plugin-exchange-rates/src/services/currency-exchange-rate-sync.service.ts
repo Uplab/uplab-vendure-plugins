@@ -37,7 +37,7 @@ export class CurrencyExchangeRateSyncService {
 
   /**
    * Returns every rate stored in the current base afterwards, and publishes a `synced` event with them when
-   * anything changed. Throws when the source cannot be read or cannot be re-based; the stored rates are then
+   * anything changed — or `[]` when the source returned nothing usable, the stored rates left untouched. Throws when the source cannot be read or cannot be re-based; the stored rates are then
    * left as they were.
    */
   async syncRates(ctx: RequestContext): Promise<CurrencyExchangeRate[]> {
