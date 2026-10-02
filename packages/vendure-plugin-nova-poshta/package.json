@@ -1,6 +1,6 @@
 {
   "name": "@uplab/vendure-plugin-nova-poshta",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Vendure plugin for Nova Poshta: city and warehouse lookups for checkout, in Ukraine and abroad",
   "license": "MIT",
   "author": "Uplab",
