@@ -1,5 +1,5 @@
 import { CacheService, type Injector, Logger } from '@vendure/core';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CHECK_FAILED_ALERTED_CACHE_KEY,
   LOW_BALANCE_ALERTED_CACHE_KEY_PREFIX,
@@ -72,6 +72,12 @@ const outage = () => new TurboSmsTransportError({ endpoint: 'user/balance.json',
 beforeEach(() => {
   vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
   vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
+});
+
+// Vitest 4 hands back the existing spy when a method is spied on again, so without a restore the
+// Logger calls of one test would count in the next.
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe('createLowBalanceTask', () => {
