@@ -42,7 +42,7 @@ Chosen so far:
 
 - `unified-slug` — brand background, brand-500/400 secondary, warm-white mark with a brand slash.
 - `turbosms` — keeps TurboSMS's own navy and yellow: it is the vendor's brand, so it stays as is.
-- `currency-exchange-rate` — two coins (warm white, amber) with brand-400 swap arrows on brand.
+- `exchange-rates` — two coins (warm white, amber) with brand-400 swap arrows on brand.
 - `nova-poshta` — the Nova Poshta symbol (`#ed1c24`) above the Vendure symbol (`#17c9ff`) on
   brand-950, the vendor mark the larger of the two, its down arrow pointing into the Vendure slot.
 
