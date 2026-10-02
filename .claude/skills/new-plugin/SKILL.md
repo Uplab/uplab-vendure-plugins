@@ -27,6 +27,8 @@ Reference implementation: `packages/vendure-plugin-turbosms`. Full contract:
    with a dry-run default.
 5. Write the package `README.md`: install, options table, usage snippet, GraphQL
    surface (if any), changelog link.
+   Give the package an icon with `/package-icon <name>` (concepts → user picks →
+   Uplab colourways → `assets/icon.svg`, linked at the top of the README).
 6. `pnpm install`, then run the full gate: `pnpm build && pnpm typecheck &&
 pnpm lint && pnpm test`.
 7. Add a changeset (`pnpm changeset` — minor, "Initial release: …").
