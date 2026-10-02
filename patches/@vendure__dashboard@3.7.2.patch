@@ -1,0 +1,53 @@
+diff --git a/src/app/main.tsx b/src/app/main.tsx
+index 6bbeaad346f8b5796898819857a89a9f4b3cf195..9b8b3efb7d4153926b6747baa5ef212c298bd81e 100644
+--- a/src/app/main.tsx
++++ b/src/app/main.tsx
+@@ -135,6 +135,7 @@ function BootSplash() {
+ 
+ function App() {
+     const [i18nLoaded, setI18nLoaded] = React.useState(false);
++    const [extensionsRegistered, setExtensionsRegistered] = React.useState(false);
+     const { extensionsLoaded } = useDashboardExtensions();
+     useEffect(() => {
+         // With this method we dynamically load the catalogs
+@@ -147,10 +148,13 @@ function App() {
+     useEffect(() => {
+         if (extensionsLoaded) {
+             executeDashboardExtensionCallbacks();
++            // Backport of the 3.7.4 fix: InnerApp builds the router once, on its first render, so the
++            // extension routes must be registered before it mounts.
++            setExtensionsRegistered(true);
+         }
+     }, [extensionsLoaded]);
+ 
+-    if (!i18nLoaded || !extensionsLoaded) {
++    if (!i18nLoaded || !extensionsRegistered) {
+         // Show a minimal full-screen splash so the user sees that the app is
+         // loading rather than a white screen while i18n catalogs and dashboard
+         // extensions resolve.
+diff --git a/src/lib/framework/extension-api/use-dashboard-extensions.ts b/src/lib/framework/extension-api/use-dashboard-extensions.ts
+index 62306e5360c109834506391094730c709198f24f..5fe51fa01ff12660dc8e53322cd139df92e866d5 100644
+--- a/src/lib/framework/extension-api/use-dashboard-extensions.ts
++++ b/src/lib/framework/extension-api/use-dashboard-extensions.ts
+@@ -10,12 +10,19 @@ import { onExtensionSourceChange } from './define-dashboard-extension.js';
+  *
+  * It should be used in any component whose rendering depends on the content of the dashboard extensions.
+  */
++// Backport of the 3.7.4 fix: a second hook instance must not start from `false`, or the app builds
++// a router without the extension routes that TanStack (dev only) then never loads — a blank page.
++let extensionsLoadedOnce = false;
++
+ export function useDashboardExtensions() {
+-    const [extensionsLoaded, setExtensionsLoaded] = useState(false);
++    const [extensionsLoaded, setExtensionsLoaded] = useState(extensionsLoadedOnce);
+     const [reloadCount, setReloadCount] = useState(0);
+ 
+     useEffect(() => {
+-        void runDashboardExtensions().then(() => setExtensionsLoaded(true));
++        void runDashboardExtensions().then(() => {
++            extensionsLoadedOnce = true;
++            setExtensionsLoaded(true);
++        });
+         onExtensionSourceChange(() => {
+             // Setting this state var is only really done
+             // in order to force a re-render of components using this hook.

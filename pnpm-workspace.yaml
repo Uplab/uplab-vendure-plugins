@@ -12,3 +12,8 @@ allowBuilds:
   msw: true
   sharp: true
   unrs-resolver: true
+
+# Backports the Vendure 3.7.4 fix for a dev-mode race that leaves the dashboard blank with more than
+# one dashboard extension (vendure-ecommerce/vendure, master). Drop when moving to 3.7.4.
+patchedDependencies:
+  '@vendure/dashboard@3.7.2': patches/@vendure__dashboard@3.7.2.patch
