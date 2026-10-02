@@ -4,6 +4,7 @@ import { Injector, PluginCommonModule, type Type, VendurePlugin } from '@vendure
 import { adminApiExtensions } from './api-extensions';
 import { UNIFIED_SLUG_PLUGIN_OPTIONS } from './constants';
 import { DefaultUnifiedSlugStrategy } from './default-unified-slug-strategy';
+import { SlugBackfillService } from './slug-backfill.service';
 import { SlugGenerationService } from './slug-generation.service';
 import type { ResolvedUnifiedSlugPluginOptions, UnifiedSlugPluginOptions } from './types';
 import { UnifiedSlugAdminResolver } from './unified-slug-admin.resolver';
@@ -37,6 +38,7 @@ import { UnifiedSlugInterceptor } from './unified-slug.interceptor';
     { provide: UNIFIED_SLUG_PLUGIN_OPTIONS, useFactory: () => UnifiedSlugPlugin.options },
     { provide: APP_INTERCEPTOR, useClass: UnifiedSlugInterceptor },
     SlugGenerationService,
+    SlugBackfillService,
   ],
   exports: [SlugGenerationService],
   adminApiExtensions: { schema: adminApiExtensions, resolvers: [UnifiedSlugAdminResolver] },

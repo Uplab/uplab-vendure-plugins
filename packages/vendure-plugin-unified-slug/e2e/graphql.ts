@@ -134,3 +134,35 @@ export const ACTIVE_CHANNEL_ZONES: Document = gql`
     }
   }
 `;
+
+export const PRODUCT_SLUGS: Document = gql`
+  query ProductSlugs($id: ID!) {
+    product(id: $id) {
+      translations {
+        languageCode
+        name
+        slug
+      }
+    }
+  }
+`;
+
+export const COLLECTION_SLUGS: Document = gql`
+  query CollectionSlugs($id: ID!) {
+    collection(id: $id) {
+      translations {
+        languageCode
+        name
+        slug
+      }
+    }
+  }
+`;
+
+export const DELETE_PRODUCT: Document = gql`
+  mutation DeleteProduct($id: ID!) {
+    deleteProduct(id: $id) {
+      result
+    }
+  }
+`;
