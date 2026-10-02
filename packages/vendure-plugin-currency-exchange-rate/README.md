@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-currency-exchange-rate/assets/icon.svg" alt="" width="96" height="96">
+</p>
+
 # @uplab/vendure-plugin-currency-exchange-rate
 
 [![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-currency-exchange-rate.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-currency-exchange-rate)
@@ -48,8 +52,9 @@ optional peer): its Vite plugin discovers the extension — restart the dashboar
 installing.
 
 **First deploy.** Generate and run a migration for the new `currency_exchange_rate` table. On the API
-server's first boot the plugin fills the empty table from the source; if the source is unreachable then,
-the table stays empty until the next scheduled refresh. Every currency arrives **disabled** — enable the
+server's first boot the plugin fills the empty table from the source (startup waits for it, up to the
+source's `timeout`); if the source is unreachable then, the table stays empty until the next scheduled
+refresh. Every currency arrives **disabled** — enable the
 ones you sell in under _Settings → Currency exchange rates_. Until you do, the storefront sees no rates
 and stays in UAH.
 
@@ -69,22 +74,43 @@ query {
 ```
 
 ```ts
-const { items } = data.currencyExchangeRates; // [] until an admin enables a currency → stay in UAH
-const usd = items.find((r) => r.code === 'USD');
-// Vendure prices are minor units: kopecks ÷ rate = cents
-const priceInUsd = usd ? Math.round(variant.priceWithTax / usd.rate) : undefined;
+type Rate = { code: string; rate: number };
+
+/** `rates` = the query's items, [] until an admin enables a currency. */
+export function convertPrice(priceInKopecks: number, rates: Rate[], code: string): number | undefined {
+  const rate = rates.find((r) => r.code === code)?.rate;
+  // Vendure prices are minor units: kopecks ÷ rate = cents. undefined → show UAH.
+  return rate ? Math.round(priceInKopecks / rate) : undefined;
+}
 ```
 
-**Charge in a foreign currency.** In a `PaymentMethodHandler`, resolve the service in `init(injector)` and
-convert with a rate the customer may be billed in:
+For a currency whose minor unit is not 1/100 (JPY has none, KWD and BHD have 1/1000), multiply the result
+by 10^(digits − 2).
+
+**Charge in a foreign currency.** A `PaymentMethodHandler` gets the service in `init` and converts the
+amount it is asked to collect:
 
 ```ts
-import { CurrencyCode } from '@vendure/core';
+import { CurrencyCode, LanguageCode, PaymentMethodHandler } from '@vendure/core';
 import { CurrencyExchangeRateService } from '@uplab/vendure-plugin-currency-exchange-rate';
 
-// init(injector) { this.rates = injector.get(CurrencyExchangeRateService); }
-const rate = await this.rates.getRate(ctx, CurrencyCode.USD, { requireEnabled: true });
-const amountInCents = rate ? Math.round(order.totalWithTax / rate) : undefined; // undefined → bill in UAH
+let rates: CurrencyExchangeRateService;
+
+export const usdCardHandler = new PaymentMethodHandler({
+  code: 'usd-card',
+  description: [{ languageCode: LanguageCode.en, value: 'Card, billed in USD' }],
+  args: {},
+  init: (injector) => {
+    rates = injector.get(CurrencyExchangeRateService);
+  },
+  createPayment: async (ctx, _order, amount) => {
+    const rate = await rates.getRate(ctx, CurrencyCode.USD, { requireEnabled: true });
+    const amountInCents = rate ? Math.round(amount / rate) : undefined; // undefined → bill in UAH
+    // …call your payment provider with amountInCents
+    return { amount, state: 'Authorized', metadata: { amountInCents } };
+  },
+  settlePayment: () => ({ success: true }),
+});
 ```
 
 **Price a product feed in another currency** (Google Merchant, Meta, …) even if the storefront does not
@@ -93,8 +119,9 @@ offer it: `getRate(ctx, CurrencyCode.EUR, { requireEnabled: false })`.
 **Pin a rate.** Turn on _Use custom rate_ for a currency: the storefront and your code use your number
 until you turn it off; the fetched rate keeps updating underneath, and your number is kept for next time.
 
-**Fixed rates only.** No bank at all: `source: new StaticExchangeRateSource({ USD: 41.5, EUR: 45 })` and
-`sync: false`, then manage everything in the dashboard.
+**Fixed rates only.** `source: new StaticExchangeRateSource({ USD: 41.5, EUR: 45 })`. Keep the sync on, so
+a number you change in config is picked up on the next refresh; pin any currency in the meantime with
+_Use custom rate_.
 
 ## Sources
 
@@ -124,7 +151,7 @@ export class PrivatBankExchangeRateSource implements ExchangeRateSource {
   async fetchRates(): Promise<ExchangeRateQuote[]> {
     const res = await fetch('https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11');
     if (!res.ok) throw new ExchangeRateSourceError(`HTTP ${res.status}`, { source: this.name, status: res.status });
-    const rows: Array<{ ccy: string; base_ccy: string; buy: string }> = await res.json();
+    const rows = (await res.json()) as Array<{ ccy: string; base_ccy: string; buy: string }>;
     return rows
       .filter((r) => r.base_ccy === 'UAH')
       .map((r) => ({ currencyCode: r.ccy as CurrencyCode, rate: Number(r.buy) }));
@@ -136,24 +163,42 @@ A quote is `{ currencyCode, rate }`, `rate` being **UAH per one unit**. Throw on
 `[]` to mean "failed". If the source needs services, implement `init(injector)` (and `destroy()`); the
 plugin calls `init` before the first fetch.
 
-### A currency your source does not quote
+### Combining sources
 
-Rows only come from the source, so combine sources — later ones win:
+When a bank rate-limits or is down, fall back to another — the first source that answers wins:
 
 ```ts
 import { RequestContext } from '@vendure/core';
+import {
+  ExchangeRateQuote,
+  ExchangeRateSource,
+  MonobankExchangeRateSource,
+  NbuExchangeRateSource,
+} from '@uplab/vendure-plugin-currency-exchange-rate';
 
-class CombinedExchangeRateSource implements ExchangeRateSource {
-  readonly name = 'combined';
+export class FallbackExchangeRateSource implements ExchangeRateSource {
+  readonly name = 'fallback';
   constructor(private readonly sources: ExchangeRateSource[]) {}
 
   async fetchRates(ctx: RequestContext): Promise<ExchangeRateQuote[]> {
-    return (await Promise.all(this.sources.map((s) => s.fetchRates(ctx)))).flat();
+    let lastError: unknown;
+    for (const source of this.sources) {
+      try {
+        return await source.fetchRates(ctx);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    throw lastError;
   }
 }
 
-new CombinedExchangeRateSource([new MonobankExchangeRateSource(), new StaticExchangeRateSource({ CZK: 1.9 })]);
+export const source = new FallbackExchangeRateSource([new MonobankExchangeRateSource(), new NbuExchangeRateSource()]);
 ```
+
+To add a currency your bank does not quote, return the quotes of several sources together instead
+(`(await Promise.all(sources.map((s) => s.fetchRates(ctx)))).flat()`, a `StaticExchangeRateSource` last).
+When two quotes share a code, the last one wins. Forward `init`/`destroy` if the inner sources need them.
 
 ## Options
 
@@ -165,6 +210,10 @@ new CombinedExchangeRateSource([new MonobankExchangeRateSource(), new StaticExch
 `sync` registers the scheduled task `currency-exchange-rate-updater` (every 3 hours). It needs a scheduler
 plugin such as `DefaultSchedulerPlugin`, and runs in the worker — so the worker needs the plugin in its
 config too. `sync: false` leaves it out; you can still call `CurrencyExchangeRateSyncService.syncRates(ctx)`.
+
+To refresh now, run it under _System → Scheduled tasks_ (or `runScheduledTask(id: "currency-exchange-rate-updater")`);
+its last run there tells you the sync is alive. A row's `updatedAt` moves only when its rate changes, and a
+currency the source stops quoting keeps its last rate.
 
 ## Dashboard
 
@@ -204,7 +253,7 @@ Turning on `useCustomRate` without a positive `customRate` is rejected.
 | --------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `CurrencyExchangeRateService`     | `getRate(ctx, code, { requireEnabled })` → UAH per unit or `undefined`; `findAll`, `findOne`, `update` |
 | `CurrencyExchangeRateSyncService` | `syncRates(ctx)` — refresh now                                                                         |
-| `effectiveRate(row)`              | The rate to convert with for a row you loaded yourself (`NaN` if its custom rate is on but empty)      |
+| `effectiveRate(row)`              | The rate to convert with for a row you loaded yourself, or `undefined` if it is not usable             |
 
 `requireEnabled` is your policy: `true` for anything the customer is billed in, `false` for internal uses.
 
@@ -215,7 +264,20 @@ or `'updated'` with the one an admin edited — once the transaction has committ
 that embed the rates:
 
 ```ts
-eventBus.ofType(CurrencyExchangeRateEvent).subscribe(() => cache.delete('currency-rates'));
+import { OnApplicationBootstrap } from '@nestjs/common';
+import { EventBus, PluginCommonModule, VendurePlugin } from '@vendure/core';
+import { CurrencyExchangeRateEvent } from '@uplab/vendure-plugin-currency-exchange-rate';
+
+@VendurePlugin({ imports: [PluginCommonModule] })
+export class RatesCachePlugin implements OnApplicationBootstrap {
+  constructor(private readonly eventBus: EventBus) {}
+
+  onApplicationBootstrap() {
+    this.eventBus.ofType(CurrencyExchangeRateEvent).subscribe(() => {
+      // drop whatever caches the rates, e.g. a cached Shop API response
+    });
+  }
+}
 ```
 
 ## Database
@@ -237,7 +299,9 @@ are yours.
 
 - **The base currency is UAH.** Every source quotes against the hryvnia; a shop priced in another
   currency needs its own source and has to read `rate` accordingly.
-- **Rates are global** — one table, not per channel.
+- **Rates are global** — one table, not per channel: anyone with `UpdateSettings` in any channel can
+  change them.
+- **Filtering and sorting on `rate`** use the fetched rate, while the returned `rate` is the effective one.
 - **Dashboard 3.7.0–3.7.3 in dev mode** can render a blank page with two or more dashboard extensions
   (for example together with `@uplab/vendure-plugin-unified-slug`). It is a Vendure bug, fixed in 3.7.4
   ([vendure#5459](https://github.com/vendure-ecommerce/vendure/pull/5459)); production builds are fine.

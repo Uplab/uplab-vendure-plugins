@@ -2,9 +2,12 @@ import type { CurrencyExchangeRate } from './entities/currency-exchange-rate.ent
 
 /**
  * @description
- * The rate to convert with: the admin's custom rate while it is switched on, otherwise the fetched one.
- * `NaN` when the custom rate is on but empty — check the result before dividing by it.
+ * The rate to convert with — the admin's custom rate while it is switched on, otherwise the fetched
+ * one — or `undefined` when that rate is not a positive number.
  */
-export function effectiveRate(rate: Pick<CurrencyExchangeRate, 'rate' | 'useCustomRate' | 'customRate'>): number {
-  return rate.useCustomRate ? (rate.customRate ?? NaN) : rate.rate;
+export function effectiveRate(
+  rate: Pick<CurrencyExchangeRate, 'rate' | 'useCustomRate' | 'customRate'>,
+): number | undefined {
+  const value = rate.useCustomRate ? rate.customRate : rate.rate;
+  return value != null && Number.isFinite(value) && value > 0 ? value : undefined;
 }

@@ -60,13 +60,19 @@ export class CurrencyExchangeRateService {
     if (!row || (requireEnabled && !row.enabled)) {
       return undefined;
     }
-    const rate = effectiveRate(row);
-    return Number.isFinite(rate) && rate > 0 ? rate : undefined;
+    return effectiveRate(row);
   }
 
   async update(ctx: RequestContext, input: UpdateCurrencyExchangeRateInput): Promise<CurrencyExchangeRate> {
-    if (input.useCustomRate && !(Number(input.customRate) > 0)) {
+    if (input.useCustomRate && input.customRate == null) {
       throw new UserInputError('A custom rate must be a positive number when useCustomRate is on');
+    }
+    // decimal(19, 8) holds up to 11 integer digits.
+    if (
+      input.customRate != null &&
+      !(Number.isFinite(input.customRate) && input.customRate > 0 && input.customRate < 1e11)
+    ) {
+      throw new UserInputError('A custom rate must be a positive number below 100000000000');
     }
     const entity = await this.connection.getEntityOrThrow(ctx, CurrencyExchangeRate, input.id);
     const updated = patchEntity(entity, input);

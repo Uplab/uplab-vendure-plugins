@@ -10,7 +10,7 @@ describe('effectiveRate', () => {
     expect(effectiveRate({ rate: 41, useCustomRate: true, customRate: 45 })).toBe(45);
   });
 
-  it('is NaN rather than a guess when the custom rate is on but empty', () => {
-    expect(effectiveRate({ rate: 41, useCustomRate: true, customRate: null })).toBeNaN();
+  it.each([null, 0, -1])('is undefined rather than a guess when the custom rate is on but %j', (customRate) => {
+    expect(effectiveRate({ rate: 41, useCustomRate: true, customRate })).toBeUndefined();
   });
 });

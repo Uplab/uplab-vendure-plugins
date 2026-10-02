@@ -32,6 +32,14 @@ describe('MonobankExchangeRateSource', () => {
     ]);
   });
 
+  it('maps ISO numbers below 100, which the code table keeps zero-padded', async () => {
+    stubFetch(json([{ currencyCodeA: 36, currencyCodeB: 980, date: 1_790_888_474, rateCross: 29.4 }]));
+
+    await expect(new MonobankExchangeRateSource().fetchRates()).resolves.toEqual([
+      { currencyCode: CurrencyCode.AUD, rate: 29.4 },
+    ]);
+  });
+
   it('reports a 200 whose body is not the list of pairs', async () => {
     stubFetch(json({ errorDescription: 'Too many requests' }));
 

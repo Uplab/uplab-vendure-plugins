@@ -23,6 +23,7 @@ export class CurrencyExchangeRateShopResolver {
 export class CurrencyExchangeRateShopFieldResolver {
   @ResolveField()
   rate(currencyExchangeRate: CurrencyExchangeRate) {
-    return effectiveRate(currencyExchangeRate);
+    // The Admin API forbids a custom rate that is on but empty, so this falls back only for old rows.
+    return effectiveRate(currencyExchangeRate) ?? currencyExchangeRate.rate;
   }
 }

@@ -49,7 +49,7 @@ export class MonobankExchangeRateSource implements ExchangeRateSource {
   async fetchRates(): Promise<ExchangeRateQuote[]> {
     const pairs = await fetchJsonArray<MonobankPair>(this.name, this.apiUrl, this.timeout);
     return pairs.flatMap((pair) => {
-      const currencyCode = currencyCodes.number(String(pair.currencyCodeA))?.code;
+      const currencyCode = currencyCodes.number(String(pair.currencyCodeA).padStart(3, '0'))?.code;
       if (pair.currencyCodeB !== UAH_NUMERIC_CODE || !currencyCode) {
         return [];
       }

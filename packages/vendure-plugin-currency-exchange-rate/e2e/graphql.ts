@@ -47,3 +47,11 @@ export const ADMIN_RATE: Document = gql`
     currencyExchangeRate(id: $id) { ${FIELDS} useCustomRate customRate }
   }
 `;
+
+export const SHOP_RATES_NESTED_OR: Document = gql`
+  query ShopRatesNestedOr($code: String!) {
+    currencyExchangeRates(options: { filter: { _or: [{ code: { eq: $code } }, { enabled: { eq: false } }] } }) {
+      totalItems
+    }
+  }
+`;

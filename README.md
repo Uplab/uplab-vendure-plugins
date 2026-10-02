@@ -18,8 +18,7 @@ All packages are published to npm under the `@uplab` scope and target **Vendure 
 | [`@uplab/vendure-plugin-turbosms`](./packages/vendure-plugin-turbosms)                             | [![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-turbosms.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-turbosms)                             | Send transactional SMS through [TurboSMS](https://turbosms.ua/)                                              | `^3.7.0` |
 | [`@uplab/vendure-plugin-unified-slug`](./packages/vendure-plugin-unified-slug)                     | [![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-unified-slug.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-unified-slug)                     | One slug per product and collection, identical in every language — server-side and in the dashboard          | `^3.7.0` |
 
-Planned, in extraction order: WayForPay,
-Checkbox fiscalization, Monobank acquiring.
+Planned, in extraction order: WayForPay, Checkbox fiscalization, Monobank acquiring.
 
 ## Requirements
 

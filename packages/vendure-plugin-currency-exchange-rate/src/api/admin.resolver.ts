@@ -23,7 +23,7 @@ export class CurrencyExchangeRateAdminResolver {
     @Ctx() ctx: RequestContext,
     @Args() args: { options: ListQueryOptions<CurrencyExchangeRate> },
   ): Promise<PaginatedList<CurrencyExchangeRate>> {
-    return this.currencyExchangeRateService.findAll(ctx, args.options || undefined);
+    return this.currencyExchangeRateService.findAll(ctx, args.options);
   }
 
   @Query()
@@ -38,7 +38,7 @@ export class CurrencyExchangeRateAdminResolver {
   updateCurrencyExchangeRate(
     @Ctx() ctx: RequestContext,
     @Args() args: MutationUpdateCurrencyExchangeRateArgs,
-  ): Promise<CurrencyExchangeRate | undefined> {
+  ): Promise<CurrencyExchangeRate> {
     return this.currencyExchangeRateService.update(ctx, args.input);
   }
 }

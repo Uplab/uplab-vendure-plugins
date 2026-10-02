@@ -88,6 +88,21 @@ describe('CurrencyExchangeRateSyncService.syncRates', () => {
     expect(saved[0].enabled).toBeFalsy();
   });
 
+  it('saves one row per currency when sources quote the same code, the last quote winning', async () => {
+    const { service, save } = makeService({
+      quotes: [
+        { currencyCode: CurrencyCode.USD, rate: 42 },
+        { currencyCode: CurrencyCode.USD, rate: 43 },
+      ],
+    });
+
+    await service.syncRates(ctx);
+
+    const [[saved]] = save.mock.calls as [[CurrencyExchangeRate[]]];
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ code: CurrencyCode.USD, rate: 43 });
+  });
+
   it('publishes only after the rates are persisted', async () => {
     const { service, save, publish } = makeService();
 

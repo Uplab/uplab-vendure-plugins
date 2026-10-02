@@ -12,6 +12,7 @@ import {
   PageBlock,
   PageLayout,
   PageTitle,
+  PermissionGuard,
   Switch,
   detailPageRouteLoader,
   toast,
@@ -88,9 +89,11 @@ function CurrencyExchangeRateDetailPage({ route }: { route: Route }) {
       <PageTitle>{entity?.code ?? t`Currency exchange rate`}</PageTitle>
       <PageActionBar>
         <PageActionBarRight>
-          <Button type="submit" disabled={!form.formState.isDirty || !form.formState.isValid || isPending}>
-            <Trans>Update</Trans>
-          </Button>
+          <PermissionGuard requires={['UpdateSettings']}>
+            <Button type="submit" disabled={!form.formState.isDirty || !form.formState.isValid || isPending}>
+              <Trans>Update</Trans>
+            </Button>
+          </PermissionGuard>
         </PageActionBarRight>
       </PageActionBar>
       <PageLayout>
@@ -144,6 +147,7 @@ function CurrencyExchangeRateDetailPage({ route }: { route: Route }) {
                 control={form.control}
                 name="useCustomRate"
                 label={<Trans>Use custom rate</Trans>}
+                rules={{ deps: ['customRate'] }}
                 render={({ field }) => <Switch checked={!!field.value} onCheckedChange={field.onChange} />}
               />
               <FormFieldWrapper
@@ -156,7 +160,7 @@ function CurrencyExchangeRateDetailPage({ route }: { route: Route }) {
                   <Input
                     type="number"
                     min="0"
-                    step="0.0001"
+                    step="any"
                     value={field.value ?? ''}
                     onChange={(event) => field.onChange(event.target.value === '' ? null : Number(event.target.value))}
                     disabled={!useCustomRate}

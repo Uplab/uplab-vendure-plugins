@@ -43,7 +43,8 @@ export class CurrencyExchangeRateSyncService {
       const repository = this.connection.getRepository(txCtx, CurrencyExchangeRate);
       const stored = await repository.find();
       return repository.save(
-        usable.map(({ currencyCode, rate }) => {
+        // One row per code: the last quote for a code wins, so two sources can quote the same currency.
+        [...new Map(usable.map((q) => [q.currencyCode, q.rate]))].map(([currencyCode, rate]) => {
           const existing = stored.find((r) => r.code === currencyCode);
           return existing ? Object.assign(existing, { rate }) : new CurrencyExchangeRate({ code: currencyCode, rate });
         }),

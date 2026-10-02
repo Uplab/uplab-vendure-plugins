@@ -11,7 +11,7 @@ import {
   StaticExchangeRateSource,
 } from '../src';
 import { initialData } from './fixtures/initial-data';
-import { ADMIN_RATE, ADMIN_RATES, SHOP_RATES, SHOP_RATES_OR, UPDATE_RATE } from './graphql';
+import { ADMIN_RATE, ADMIN_RATES, SHOP_RATES, SHOP_RATES_NESTED_OR, SHOP_RATES_OR, UPDATE_RATE } from './graphql';
 
 registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__sqlite-data__')));
 
@@ -45,6 +45,7 @@ describe('CurrencyExchangeRatePlugin', () => {
     // The Shop API never lists a disabled currency, not even through an OR filter.
     expect((await shopClient.query(SHOP_RATES)).currencyExchangeRates.totalItems).toBe(0);
     expect((await shopClient.query(SHOP_RATES_OR, { code: 'EUR' })).currencyExchangeRates.totalItems).toBe(0);
+    expect((await shopClient.query(SHOP_RATES_NESTED_OR, { code: 'EUR' })).currencyExchangeRates.totalItems).toBe(0);
   });
 
   it('offers an enabled currency in the Shop API, at the custom rate once it is switched on', async () => {

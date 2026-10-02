@@ -64,6 +64,15 @@ describe('CurrencyExchangeRateService.update', () => {
     expect(save.mock.invocationCallOrder[0]).toBeLessThan(publish.mock.invocationCallOrder[0]);
   });
 
+  it('rejects a custom rate too large for the column, even while it is off', async () => {
+    const { service, save } = makeService();
+
+    await expect(
+      service.update(ctx, { id: '1', enabled: true, useCustomRate: false, customRate: 1e12 }),
+    ).rejects.toThrow();
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it.each([null, undefined, 0, -1])('rejects a custom rate of %j when useCustomRate is on', async (customRate) => {
     const { service, save } = makeService();
 
