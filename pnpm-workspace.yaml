@@ -12,3 +12,8 @@ allowBuilds:
   msw: true
   sharp: true
   unrs-resolver: true
+
+# Backports https://github.com/vendure-ecommerce/vendure/pull/5459 (fixed for 3.7.4): in dev mode the
+# dashboard can render blank with more than one dashboard extension. Drop when moving to 3.7.4.
+patchedDependencies:
+  '@vendure/dashboard@3.7.2': patches/@vendure__dashboard@3.7.2.patch

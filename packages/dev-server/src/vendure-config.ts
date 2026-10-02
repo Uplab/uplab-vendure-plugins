@@ -9,9 +9,28 @@ import { TurboSmsPlugin } from '@uplab/vendure-plugin-turbosms';
 // on the server but never compiled into the dashboard. The dashboard loads a compiled copy of these
 // sources from node_modules/.cache, where only this package's own dependencies resolve — hence the
 // plugin's peers (@nestjs/*, graphql-tag) in this package's devDependencies.
+import {
+  CurrencyExchangeRatePlugin,
+  type ExchangeRateSource,
+  MonobankExchangeRateSource,
+  NbuExchangeRateSource,
+  StaticExchangeRateSource,
+} from '../../vendure-plugin-currency-exchange-rate/src';
 import { UnifiedSlugPlugin } from '../../vendure-plugin-unified-slug/src';
 
 const port = +(process.env.APP_PORT ?? 3000);
+
+/** `CURRENCY_RATE_SOURCE=monobank|nbu` reads live rates; anything else keeps fixed ones. */
+function exchangeRateSource(): ExchangeRateSource {
+  switch (process.env.CURRENCY_RATE_SOURCE) {
+    case 'monobank':
+      return new MonobankExchangeRateSource();
+    case 'nbu':
+      return new NbuExchangeRateSource();
+    default:
+      return new StaticExchangeRateSource({ USD: 41.5, EUR: 45, PLN: 10.6 });
+  }
+}
 
 /**
  * The dev server registers every plugin in this repo, so that `pnpm dev` is enough to
@@ -68,6 +87,7 @@ export const config: VendureConfig = {
       dryRun: process.env.TURBOSMS_DRY_RUN !== 'false',
     }),
     UnifiedSlugPlugin.init(),
+    CurrencyExchangeRatePlugin.init({ source: exchangeRateSource() }),
     // With the placeholder key the Shop queries fail with Nova Poshta's "API key incorrect".
     NovaPoshtaPlugin.init({ apiKey: process.env.NOVA_POSHTA_API_KEY ?? 'dev-api-key' }),
   ],

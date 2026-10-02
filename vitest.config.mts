@@ -11,7 +11,8 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],
-      exclude: ['packages/dev-server/**', '**/*.spec.ts', '**/dist/**'],
+      // Dashboard GraphQL documents only run in the browser, parsed by the dashboard itself.
+      exclude: ['packages/dev-server/**', '**/*.spec.ts', '**/dist/**', '**/src/dashboard/graphql.ts'],
       reporter: ['text-summary', 'lcov', 'json-summary'],
       // Enforced locally and in CI; Codecov only reports. Raise as coverage grows.
       thresholds: {
