@@ -13,6 +13,7 @@
     "test": "echo \"no tests in dev-server\" && exit 0"
   },
   "dependencies": {
+    "@uplab/vendure-plugin-nova-poshta": "workspace:*",
     "@uplab/vendure-plugin-turbosms": "workspace:*",
     "@vendure/asset-server-plugin": "3.7.2",
     "@vendure/core": "3.7.2",

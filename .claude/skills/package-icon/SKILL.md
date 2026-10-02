@@ -13,7 +13,11 @@ of its README. All icons follow the same rules and the same flow.
 - Background: `<rect width="512" height="512" rx="112" fill="…"/>` — the same rounded square on
   every package.
 - Flat shapes, 2–3 colours, no gradients, filters, text or external fonts. A short glyph like `/` is
-  fine. Never a third-party logo, a flag, or the Vendure mark.
+  fine. No flags. By default no third-party logo or Vendure mark — but for a vendor integration the
+  user may ask for the vendor's mark, alone or with the Vendure symbol. Then take each mark from a
+  first-hand source (the Vendure symbol from `@vendure/dashboard`'s `logo-mark.tsx`; a vendor mark
+  from its own files or one already in our projects), never redrawn, shape and proportions
+  unaltered, and add a trademark line to the README's License section.
 - Must read at 16 and 32 px (npm, GitHub) and at 96 px (README header): bold geometry, strokes
   ≥ 20 at 512, nothing thinner than ~24 px of fill.
 - Final colours come from the Uplab palette below. Concepts may use any colours; colour is fixed in
@@ -38,6 +42,8 @@ Chosen so far:
 
 - `unified-slug` — brand background, brand-500/400 secondary, warm-white mark with a brand slash.
 - `turbosms` — keeps TurboSMS's own navy and yellow: it is the vendor's brand, so it stays as is.
+- `nova-poshta` — the Nova Poshta symbol (`#ed1c24`) above the Vendure symbol (`#17c9ff`) on
+  brand-950, the vendor mark the larger of the two, its down arrow pointing into the Vendure slot.
 
 ## Flow
 

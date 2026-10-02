@@ -2,6 +2,7 @@ import 'dotenv/config';
 import path from 'path';
 import { AssetServerPlugin } from '@vendure/asset-server-plugin';
 import { DefaultJobQueuePlugin, DefaultSchedulerPlugin, DefaultSearchPlugin, type VendureConfig } from '@vendure/core';
+import { NovaPoshtaPlugin } from '@uplab/vendure-plugin-nova-poshta';
 import { TurboSmsPlugin } from '@uplab/vendure-plugin-turbosms';
 // Imported from source, not by package name: the dashboard's plugin discovery does not follow a pnpm
 // workspace symlink into a package, so a plugin that ships a dashboard extension would be registered
@@ -67,5 +68,7 @@ export const config: VendureConfig = {
       dryRun: process.env.TURBOSMS_DRY_RUN !== 'false',
     }),
     UnifiedSlugPlugin.init(),
+    // With the placeholder key the Shop queries fail with Nova Poshta's "API key incorrect".
+    NovaPoshtaPlugin.init({ apiKey: process.env.NOVA_POSHTA_API_KEY ?? 'dev-api-key' }),
   ],
 };
