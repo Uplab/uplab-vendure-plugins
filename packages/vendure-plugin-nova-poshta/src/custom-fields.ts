@@ -44,6 +44,8 @@ export const regionCustomFields: CustomFieldConfig[] = [
         value: 'Які типи показувати покупцю для цієї країни. Порожньо — показувати всі.',
       },
     ],
+    // Without it the dashboard renders a string list as free-text tags and ignores `options`.
+    ui: { component: 'select-form-input' },
     options: NOVA_POSHTA_WAREHOUSE_CATEGORIES.map((value) => ({
       value,
       label: [
