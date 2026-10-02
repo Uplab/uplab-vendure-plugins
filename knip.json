@@ -26,6 +26,10 @@
     },
     "packages/dev-server": {
       "ignoreDependencies": ["better-sqlite3", "@nestjs/graphql", "graphql-tag"]
+    },
+    "packages/vendure-plugin-currency-exchange-rate": {
+      "entry": ["src/index.ts", "src/dashboard/index.tsx", "e2e/**/*.e2e-spec.ts"],
+      "project": ["src/**", "e2e/**"]
     }
   }
 }
