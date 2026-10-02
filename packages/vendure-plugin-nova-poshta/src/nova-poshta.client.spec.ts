@@ -101,6 +101,22 @@ describe('NovaPoshtaClient.request', () => {
     );
   });
 
+  it('reports a failure that is not an Error', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject('socket hang up'));
+
+    await expect(makeClient().request(ctx, 'Address', 'getCities')).rejects.toThrow(
+      'Nova Poshta Address.getCities failed: socket hang up',
+    );
+  });
+
+  it('says so when a refusal gives no reason', async () => {
+    stubFetch(json({ success: false, data: [] }));
+
+    await expect(makeClient().request(ctx, 'Address', 'getCities')).rejects.toThrow(
+      'Nova Poshta Address.getCities failed: no reason given',
+    );
+  });
+
   it('reports a timeout with the configured limit', async () => {
     stubFetch(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
 
