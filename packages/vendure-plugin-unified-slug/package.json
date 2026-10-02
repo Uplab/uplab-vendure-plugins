@@ -1,7 +1,7 @@
 {
   "name": "@uplab/vendure-plugin-unified-slug",
-  "version": "0.0.0",
-  "description": "Vendure plugin that keeps one slug per product and collection, identical in every language \u2014 on the server and in the dashboard",
+  "version": "0.1.0",
+  "description": "Vendure plugin that keeps one slug per product and collection, identical in every language — on the server and in the dashboard",
   "license": "MIT",
   "author": "Uplab",
   "homepage": "https://github.com/Uplab/uplab-vendure-plugins/tree/main/packages/vendure-plugin-unified-slug#readme",
