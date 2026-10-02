@@ -1,5 +1,11 @@
 # @uplab/vendure-plugin-turbosms
 
+## 0.2.1
+
+### Patch Changes
+
+- [#18](https://github.com/Uplab/uplab-vendure-plugins/pull/18) [`490e94e`](https://github.com/Uplab/uplab-vendure-plugins/commit/490e94eff16714ee087a42910daefc80fa60398e) Thanks [@brmk](https://github.com/brmk)! - Add a package icon and improve the README: badges, a table of contents, a trademark note, and an intro that no longer claims the plugin does segment accounting (it explicitly does not) or enumerates service methods that can drift from the code.
+
 ## 0.2.0
 
 ### Minor Changes
