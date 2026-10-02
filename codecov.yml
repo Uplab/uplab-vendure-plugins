@@ -22,3 +22,7 @@ component_management:
       name: vendure-plugin-unified-slug
       paths:
         - packages/vendure-plugin-unified-slug/**
+    - component_id: nova-poshta
+      name: vendure-plugin-nova-poshta
+      paths:
+        - packages/vendure-plugin-nova-poshta/**
