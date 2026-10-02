@@ -20,6 +20,7 @@ import {
   useLocalFormat,
 } from '@vendure/dashboard';
 import { useMemo } from 'react';
+import { formatRate } from '../format-rate';
 import { getCurrencyExchangeRateDetailDocument, updateCurrencyExchangeRateDocument } from '../graphql';
 
 const pageId = 'currency-exchange-rate-detail';
@@ -40,9 +41,9 @@ export const currencyExchangeRateDetailRoute: DashboardRouteDefinition = {
 type Route = Parameters<DashboardRouteDefinition['component']>[0];
 
 function CurrencyExchangeRateDetailPage({ route }: { route: Route }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const params = route.useParams();
-  const { formatNumber, formatDate } = useLocalFormat();
+  const { formatDate } = useLocalFormat();
 
   const { form, submitHandler, entity, isPending, resetForm } = useDetailPage({
     pageId,
@@ -140,7 +141,9 @@ function CurrencyExchangeRateDetailPage({ route }: { route: Route }) {
               <p className="text-sm font-medium text-muted-foreground">
                 <Trans>Fetched rate</Trans>
               </p>
-              <p className="text-2xl font-semibold">{entity ? formatNumber(entity.rate) : '\u2014'}</p>
+              <p className="text-2xl font-semibold">
+                {entity ? formatRate(i18n.locale, entity.rate, 'full') : '\u2014'}
+              </p>
               {entity && (
                 <p className="text-sm text-muted-foreground">
                   <Trans>

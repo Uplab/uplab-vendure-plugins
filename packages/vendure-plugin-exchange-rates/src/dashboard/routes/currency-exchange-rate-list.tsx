@@ -1,6 +1,7 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Badge, DashboardRouteDefinition, DetailPageButton, ListPage, useLocalFormat } from '@vendure/dashboard';
 import { useMemo } from 'react';
+import { formatRate } from '../format-rate';
 import { getCurrencyExchangeRateListDocument } from '../graphql';
 
 const pageId = 'currency-exchange-rate-list';
@@ -21,8 +22,8 @@ export const currencyExchangeRateListRoute: DashboardRouteDefinition = {
 };
 
 function CurrencyExchangeRateListPage({ route }: { route: Parameters<DashboardRouteDefinition['component']>[0] }) {
-  const { t } = useLingui();
-  const { formatNumber, formatDate } = useLocalFormat();
+  const { t, i18n } = useLingui();
+  const { formatDate } = useLocalFormat();
 
   const booleanOptions = useMemo(
     () => [
@@ -44,9 +45,13 @@ function CurrencyExchangeRateListPage({ route }: { route: Parameters<DashboardRo
         rate: true,
         enabled: true,
         useCustomRate: true,
-        updatedAt: true,
+        // Shown inside the rate cell.
+        baseCurrency: false,
+        customRate: false,
+        // The dashboard pins `updatedAt` to the front; the detail page shows it instead.
+        updatedAt: false,
       }}
-      defaultColumnOrder={['code', 'rate', 'enabled', 'useCustomRate', 'updatedAt']}
+      defaultColumnOrder={['code', 'rate', 'enabled', 'useCustomRate']}
       onSearchTermChange={(term) => (term ? { code: { contains: term } } : {})}
       facetedFilters={{
         enabled: {
@@ -70,7 +75,8 @@ function CurrencyExchangeRateListPage({ route }: { route: Parameters<DashboardRo
               : row.original.rate;
             return (
               <span>
-                {formatNumber(value ?? 0)} <span className="text-muted-foreground">{row.original.baseCurrency}</span>
+                {formatRate(i18n.locale, value ?? 0)}{' '}
+                <span className="text-muted-foreground">{row.original.baseCurrency}</span>
               </span>
             );
           },
@@ -83,6 +89,7 @@ function CurrencyExchangeRateListPage({ route }: { route: Parameters<DashboardRo
           ),
         },
         useCustomRate: {
+          header: () => <Trans>Custom rate</Trans>,
           cell: ({ row }) => (
             <Badge variant={row.original.useCustomRate ? 'success' : 'secondary'}>
               {row.original.useCustomRate ? t`Using custom rate` : t`Fetched rate`}
