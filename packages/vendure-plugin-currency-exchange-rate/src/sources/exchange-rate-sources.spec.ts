@@ -40,6 +40,22 @@ describe('MonobankExchangeRateSource', () => {
     ]);
   });
 
+  it('hands on a pair without any rate for the sync to drop', async () => {
+    stubFetch(json([{ currencyCodeA: 840, currencyCodeB: 980, date: 1_790_888_474 }]));
+
+    await expect(new MonobankExchangeRateSource().fetchRates()).resolves.toEqual([
+      { currencyCode: CurrencyCode.USD, rate: NaN },
+    ]);
+  });
+
+  it('reports a failure that is not an Error', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject('socket hang up'));
+
+    await expect(new MonobankExchangeRateSource().fetchRates()).rejects.toThrow(
+      'monobank rates request failed: socket hang up',
+    );
+  });
+
   it('reports a 200 whose body is not the list of pairs', async () => {
     stubFetch(json({ errorDescription: 'Too many requests' }));
 

@@ -1,10 +1,12 @@
 import { ModuleRef } from '@nestjs/core';
 import {
+  ChannelService,
+  getConfigurationFunction,
+  Injector,
   ProcessContext,
   RequestContext,
   RequestContextService,
   RuntimeVendureConfig,
-  getConfigurationFunction,
 } from '@vendure/core';
 import { describe, expect, it, vi } from 'vitest';
 import { SYNC_TASK_ID } from './constants';
@@ -46,6 +48,23 @@ describe('CurrencyExchangeRatePlugin options', () => {
     expect(CurrencyExchangeRatePlugin.options.source).toBe(source);
     const task = (await configure()).schedulerOptions.tasks.find((t) => t.id === SYNC_TASK_ID);
     expect(task?.options.schedule).toBe('40 2-23/3 * * *');
+  });
+
+  it('registers a task that syncs with the scheduler context', async () => {
+    CurrencyExchangeRatePlugin.init({ source });
+    const task = (await configure()).schedulerOptions.tasks.find((t) => t.id === SYNC_TASK_ID);
+    const scheduledContext = { apiType: 'admin' } as RequestContext;
+    const syncRates = vi.fn().mockResolvedValue([{}, {}]);
+    const services = new Map<unknown, unknown>([
+      [CurrencyExchangeRateSyncService, { syncRates }],
+      [RequestContextService, { create: () => Promise.resolve(scheduledContext) }],
+      [ChannelService, { getDefaultChannel: () => Promise.resolve({}) }],
+    ]);
+
+    const result = await task?.execute({ get: (token: unknown) => services.get(token) } as Injector);
+
+    expect(syncRates).toHaveBeenCalledWith(scheduledContext);
+    expect(result).toEqual({ updated: 2 });
   });
 
   it('uses a custom schedule', async () => {
