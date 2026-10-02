@@ -26,12 +26,15 @@ export function deriveRates(
     const pivot = quotes.find((q) => q.currencyCode === shopBase)?.rate;
     if (!pivot || !Number.isFinite(pivot) || pivot <= 0) {
       throw new ExchangeRateSourceError(
-        `${source} quotes against ${sourceBase} but not ${shopBase}, the shop's base currency; nothing was written`,
+        `${source} quotes against ${sourceBase} but not ${shopBase}, the shop's base currency`,
         { source },
       );
     }
     derived = [
-      ...quotes.map((q) => ({ currencyCode: q.currencyCode, rate: q.rate / pivot })),
+      // A source may list its own base (at 1); it is derived from the pivot below instead.
+      ...quotes
+        .filter((q) => q.currencyCode !== sourceBase)
+        .map((q) => ({ currencyCode: q.currencyCode, rate: q.rate / pivot })),
       { currencyCode: sourceBase, rate: 1 / pivot },
     ];
   }

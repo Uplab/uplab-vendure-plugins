@@ -31,6 +31,15 @@ describe('deriveRates', () => {
     ]);
   });
 
+  it('derives the source base once when the source also lists it', () => {
+    expect(
+      deriveRates('test', USD, EUR, [
+        { currencyCode: EUR, rate: 1 },
+        { currencyCode: USD, rate: 0.8 },
+      ]),
+    ).toEqual([{ currencyCode: EUR, rate: 1.25 }]);
+  });
+
   it('drops a quote for the shop base from a same-base source', () => {
     expect(deriveRates('test', UAH, UAH, [{ currencyCode: UAH, rate: 1 }])).toEqual([]);
   });
@@ -56,7 +65,7 @@ describe('deriveRates', () => {
 
     expect(() => deriveRates('ecb', USD, EUR, quotes)).toThrow(ExchangeRateSourceError);
     expect(() => deriveRates('ecb', USD, EUR, quotes)).toThrow(
-      "ecb quotes against EUR but not USD, the shop's base currency; nothing was written",
+      "ecb quotes against EUR but not USD, the shop's base currency",
     );
   });
 });

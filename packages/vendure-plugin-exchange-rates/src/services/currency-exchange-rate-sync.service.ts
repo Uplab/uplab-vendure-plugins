@@ -23,7 +23,8 @@ function lastPerCode(quotes: ExchangeRateQuote[]): ExchangeRateQuote[] {
  * @description
  * Pulls rates from the configured {@link ExchangeRateSource} into the `CurrencyExchangeRate` table,
  * re-based onto the shop's base currency. A fetched rate only replaces `rate`: whether a currency is
- * enabled and its custom rate stay as the admin left them. New currencies arrive disabled.
+ * enabled and its custom rate stay as the admin left them, unless the base changed. New currencies arrive
+ * disabled.
  */
 @Injectable()
 export class CurrencyExchangeRateSyncService {
@@ -53,25 +54,41 @@ export class CurrencyExchangeRateSyncService {
     const persisted = await this.connection.withTransaction(ctx, async (txCtx) => {
       const repository = this.connection.getRepository(txCtx, CurrencyExchangeRate);
       const stored = await repository.find();
+      const storedByCode = new Map(stored.map((r) => [r.code, r]));
       const rebased: string[] = [];
-      const saved = await repository.save(
-        derived.map(({ currencyCode, rate }) => {
-          const existing = stored.find((r) => r.code === currencyCode);
-          if (!existing) {
-            return new CurrencyExchangeRate({ code: currencyCode, baseCurrency, rate });
-          }
-          if (existing.baseCurrency !== baseCurrency) {
-            // A custom rate in the old base means nothing in the new one.
-            rebased.push(currencyCode);
-            return Object.assign(existing, { baseCurrency, rate, useCustomRate: false, customRate: null });
-          }
-          return Object.assign(existing, { rate });
-        }),
-      );
+      const updated: CurrencyExchangeRate[] = [];
+      const created: CurrencyExchangeRate[] = [];
+      for (const { currencyCode, rate } of derived) {
+        const existing = storedByCode.get(currencyCode);
+        if (!existing) {
+          created.push(new CurrencyExchangeRate({ code: currencyCode, baseCurrency, rate }));
+          continue;
+        }
+        let changes: Partial<Pick<CurrencyExchangeRate, 'baseCurrency' | 'rate' | 'useCustomRate' | 'customRate'>> = {};
+        if (existing.baseCurrency !== baseCurrency) {
+          // A custom rate in the old base means nothing in the new one.
+          changes = { baseCurrency, rate, useCustomRate: false, customRate: null };
+          rebased.push(currencyCode);
+        } else if (existing.rate !== rate) {
+          changes = { rate };
+        }
+        // Only the columns the sync owns, and only when they change: an admin edit made meanwhile stays.
+        if (Object.keys(changes).length) {
+          await repository.update({ id: existing.id }, changes);
+        }
+        updated.push(Object.assign(existing, changes));
+      }
+      const saved = [...updated, ...(await repository.save(created))];
       // Rows the new base did not re-quote, the old row for the new base currency itself among them.
       await repository.delete({ baseCurrency: Not(baseCurrency) });
       if (rebased.length) {
         Logger.warn(`Rates are now in ${baseCurrency}: dropped the custom rates of ${rebased.join(', ')}`, loggerCtx);
+      }
+      const quoted = new Set<string>(derived.map((q) => q.currencyCode));
+      const dropped = stored.filter((r) => r.enabled && r.baseCurrency === baseCurrency && !quoted.has(r.code));
+      if (dropped.length) {
+        const codes = dropped.map((r) => r.code).join(', ');
+        Logger.warn(`${source.name} no longer quotes ${codes}; they keep their last rate`, loggerCtx);
       }
       return saved;
     });
@@ -80,9 +97,13 @@ export class CurrencyExchangeRateSyncService {
     return persisted;
   }
 
-  /** Fills an empty table, e.g. on the first boot. Never throws: a source outage must not stop the server. */
+  /**
+   * Syncs when no rate is stored in the current base: on the first boot, and after a restart that changed
+   * the base. Never throws: a source outage must not stop the server.
+   */
   async backfillIfEmpty(ctx: RequestContext): Promise<void> {
-    if ((await this.connection.getRepository(ctx, CurrencyExchangeRate).count()) > 0) {
+    const baseCurrency = await this.rateService.getBaseCurrency(ctx);
+    if ((await this.connection.getRepository(ctx, CurrencyExchangeRate).count({ where: { baseCurrency } })) > 0) {
       return;
     }
     try {

@@ -68,8 +68,8 @@ query {
   currencyExchangeRates {
     items {
       code
-      rate
-    } # rate = base-currency units per one unit, e.g. a USD shop: EUR → 1.12
+      rate # base-currency units per one unit, e.g. a USD shop: EUR → 1.12
+    }
   }
 }
 ```
@@ -118,7 +118,7 @@ export const eurCardHandler = new PaymentMethodHandler({
 offer it: `getRate(ctx, CurrencyCode.EUR, { requireEnabled: false })`.
 
 **Pin a rate.** Turn on _Use custom rate_ for a currency: the storefront and your code use your number
-until you turn it off; the fetched rate keeps updating underneath, and your number is kept for next time.
+until you turn it off, while the fetched rate keeps updating underneath.
 
 **Fixed rates only.** `source: new StaticExchangeRateSource({ base: CurrencyCode.USD, rates: { EUR: 1.12 } })`.
 Keep the sync on, so a number you change in config is picked up on the next refresh; pin any currency in
@@ -130,7 +130,7 @@ the meantime with _Use custom rate_.
 | ------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `EcbExchangeRateSource`         | EUR            | The ECB's euro reference rates: ~30 major currencies, every working day around 16:00 CET. Free, no key.          |
 | `FrankfurterExchangeRateSource` | EUR, or `base` | [Frankfurter](https://frankfurter.dev): the same ECB rates as JSON. Free, no key, can be self-hosted (`apiUrl`). |
-| `StaticExchangeRateSource`      | yours          | The numbers you pass: `{ base, rates }`. Also the source for your own e2e tests — no network.                    |
+| `StaticExchangeRateSource`      | yours          | The numbers you pass: `{ base, rates }`. In e2e tests, set `source.config` before a sync — no network.           |
 | `MonobankExchangeRateSource`    | UAH            | [Ukrainian](#ukrainian-sources) bank rates, buy/sell/mid.                                                        |
 | `NbuExchangeRateSource`         | UAH            | [Ukrainian](#ukrainian-sources) official rates, ~40 currencies.                                                  |
 
@@ -141,7 +141,7 @@ source fails or returns nothing usable, the stored rates stay as they are.
 **Cross rates.** A source that quotes against another base is re-based onto yours: with the ECB and a USD
 shop, `GBP = (EUR per GBP) / (EUR per USD)`, and EUR itself is added. This needs the source to quote your
 base currency — the ECB does not quote UAH, for instance, so a UAH shop uses a Ukrainian source. Rates are
-stored with 8 decimals; a currency worth less than 0.00000001 of your base is dropped.
+stored with 8 decimals; a rate that does not fit decimal(19, 8) is dropped.
 
 ### Ukrainian sources
 
@@ -240,11 +240,11 @@ channel's `defaultCurrencyCode`, read on every sync and lookup.
 ExchangeRatesPlugin.init({ source: new MonobankExchangeRateSource(), baseCurrency: CurrencyCode.UAH });
 ```
 
-When the base changes (you change the option or the default channel's currency), the Shop API and
-`getRate` return nothing until the next sync re-bases the table. That sync moves every currency to the new
+When the base changes, the Shop API and `getRate` return nothing until a sync re-bases the table. The API
+server does that on boot, so changing the option needs nothing more; after changing the default channel's
+currency, run the task (see [Options](#options)) or restart. The sync moves every currency to the new
 base, keeps whether it is enabled, **drops its custom rate** (it was in the old base) and deletes the
-currencies the new base does not cover. Run the task by hand right after the change — see
-[Options](#options).
+currencies the new base does not cover.
 
 ## Options
 
@@ -254,13 +254,13 @@ currencies the new base does not cover. Run the task by hand right after the cha
 | `baseCurrency` | `CurrencyCode`                                            | the default channel's currency    |
 | `sync`         | `{ schedule?: ScheduledTaskConfig['schedule'] } \| false` | `{ schedule: '40 2-23/3 * * *' }` |
 
-`sync` registers the scheduled task `currency-exchange-rate-updater` (every 3 hours). It needs a scheduler
+`sync` registers the scheduled task `currency-exchange-rate-updater` (`SYNC_TASK_ID`, every 3 hours). It needs a scheduler
 plugin such as `DefaultSchedulerPlugin`, and runs in the worker — so the worker needs the plugin in its
 config too. `sync: false` leaves it out; you can still call `CurrencyExchangeRateSyncService.syncRates(ctx)`.
 
 To refresh now, run it under _System → Scheduled tasks_ (or `runScheduledTask(id: "currency-exchange-rate-updater")`);
-its last run there tells you the sync is alive. A row's `updatedAt` moves only when its rate changes, and a
-currency the source stops quoting keeps its last rate.
+its last run there tells you the sync is alive. A row's `updatedAt` moves only when its rate changes. A
+currency the source stops quoting keeps its last rate; if it is enabled, every sync logs a warning.
 
 ## Dashboard
 
@@ -302,7 +302,6 @@ Turning on `useCustomRate` without a positive `customRate` is rejected.
 | `CurrencyExchangeRateService`     | `getRate(ctx, code, { requireEnabled })` → base units per unit or `undefined`; `getBaseCurrency(ctx)`; `findAll`, `findOne`, `update` |
 | `CurrencyExchangeRateSyncService` | `syncRates(ctx)` — refresh now                                                                                                        |
 | `effectiveRate(row)`              | The rate to convert with for a row you loaded yourself, or `undefined` if it is not usable                                            |
-| `deriveRates(…)`                  | The re-basing the sync applies, for a source that combines several bases                                                              |
 
 `requireEnabled` is your policy: `true` for anything the customer is billed in, `false` for internal uses.
 
@@ -342,8 +341,7 @@ One table, `currency_exchange_rate`:
 | `useCustomRate` | boolean, default `false`                    |
 | `customRate`    | decimal(19, 8), nullable                    |
 
-A sync writes `rate` and adds new currencies, in one transaction; `enabled` and the custom rate are yours
-— except on a [base change](#base-currency).
+A sync writes only `rate` (and `baseCurrency` on a [base change](#base-currency)), in one transaction.
 
 ## Limitations
 

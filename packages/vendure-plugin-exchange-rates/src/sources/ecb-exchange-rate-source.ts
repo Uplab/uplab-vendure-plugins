@@ -10,7 +10,8 @@ export interface EcbExchangeRateSourceOptions {
   timeout?: number;
 }
 
-const CUBE = /<Cube\s+currency=['"]([A-Z]{3})['"]\s+rate=['"]([\d.]+)['"]\s*\/>/g;
+/** `<Cube currency='USD' rate='1.1225'/>`, tolerant of quoting, attribute order and a closing tag. */
+const CUBE = /<Cube\b(?=[^>]*\bcurrency=['"]([A-Z]{3})['"])(?=[^>]*\brate=['"]([\d.]+)['"])[^>]*>/g;
 
 /**
  * @description

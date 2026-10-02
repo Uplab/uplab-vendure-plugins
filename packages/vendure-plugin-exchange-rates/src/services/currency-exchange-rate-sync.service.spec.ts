@@ -24,15 +24,19 @@ function storedRate(overrides: Partial<CurrencyExchangeRate> = {}): CurrencyExch
 function makeService({
   stored = [] as CurrencyExchangeRate[],
   quotes = [{ currencyCode: CurrencyCode.USD, rate: 42 }] as ExchangeRateQuote[] | Error,
-  count = 0,
+  count = 0 as number | Partial<Record<CurrencyCode, number>>,
   shopBase = CurrencyCode.UAH,
   sourceBase = CurrencyCode.UAH,
 } = {}) {
   const find = vi.fn().mockResolvedValue(stored);
   // TypeORM's `save` echoes back what it persisted — that is what the event must carry.
   const save = vi.fn().mockImplementation((entities: unknown) => Promise.resolve(entities));
+  const update = vi.fn().mockResolvedValue(undefined);
   const remove = vi.fn().mockResolvedValue(undefined);
-  const repository = { find, save, delete: remove, count: vi.fn().mockResolvedValue(count) };
+  const countRows = vi.fn(({ where }: { where: { baseCurrency: CurrencyCode } }) =>
+    Promise.resolve(typeof count === 'number' ? count : (count[where.baseCurrency] ?? 0)),
+  );
+  const repository = { find, save, update, delete: remove, count: countRows };
   const publish = vi.fn().mockResolvedValue(undefined);
   const fetchRates = vi.fn(() =>
     quotes instanceof Error ? Promise.reject(quotes) : Promise.resolve({ base: sourceBase, quotes }),
@@ -48,7 +52,7 @@ function makeService({
     { getBaseCurrency: vi.fn().mockResolvedValue(shopBase) } as unknown as CurrencyExchangeRateService,
   );
 
-  return { service, save, remove, publish, fetchRates };
+  return { service, save, update, remove, publish, fetchRates };
 }
 
 /** The single argument of the n-th `publish` call, typed. */
@@ -75,14 +79,42 @@ describe('CurrencyExchangeRateSyncService.syncRates', () => {
     expect(event.entities).toEqual([expect.objectContaining({ code: CurrencyCode.USD, rate: 42 })]);
   });
 
-  it('replaces only the fetched rate of a stored currency, keeping its id and admin overrides', async () => {
-    const { service, save } = makeService({ stored: [storedRate()] });
+  it('writes only the fetched rate of a stored currency, keeping its id and admin overrides', async () => {
+    const { service, update, save } = makeService({ stored: [storedRate()] });
+
+    const persisted = await service.syncRates(ctx);
+
+    expect(update).toHaveBeenCalledWith({ id: '1' }, { rate: 42 });
+    expect(save).toHaveBeenCalledWith([]);
+    expect(persisted).toEqual([
+      expect.objectContaining({ id: '1', rate: 42, enabled: true, useCustomRate: true, customRate: 45 }),
+    ]);
+  });
+
+  it('leaves a row alone when its rate has not changed, so its updatedAt stays', async () => {
+    const { service, update } = makeService({ stored: [storedRate({ rate: 42 })] });
 
     await service.syncRates(ctx);
 
-    expect(save).toHaveBeenCalledWith([
-      expect.objectContaining({ id: '1', rate: 42, enabled: true, useCustomRate: true, customRate: 45 }),
-    ]);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('warns about an enabled currency the source no longer quotes, which keeps its last rate', async () => {
+    const { service, remove } = makeService({
+      stored: [
+        storedRate(),
+        storedRate({ id: '2', code: CurrencyCode.PLN }),
+        storedRate({ id: '3', code: CurrencyCode.CZK, enabled: false }),
+      ],
+    });
+
+    await service.syncRates(ctx);
+
+    expect(Logger.warn).toHaveBeenCalledWith(
+      'test no longer quotes PLN; they keep their last rate',
+      expect.any(String),
+    );
+    expect(remove).toHaveBeenCalledWith({ baseCurrency: expect.objectContaining({ _type: 'not', _value: 'UAH' }) });
   });
 
   it('adds a currency it has not seen before as a new, disabled row', async () => {
@@ -188,25 +220,20 @@ describe('CurrencyExchangeRateSyncService.syncRates across bases', () => {
   });
 
   it('moves a row stored in an old base to the new one and drops its custom rate', async () => {
-    const { service, save } = makeService({
+    const { service, update } = makeService({
       shopBase: CurrencyCode.EUR,
       sourceBase: CurrencyCode.EUR,
       stored: [storedRate({ baseCurrency: CurrencyCode.UAH })],
       quotes: [{ currencyCode: CurrencyCode.USD, rate: 0.9 }],
     });
 
-    await service.syncRates(ctx);
+    const persisted = await service.syncRates(ctx);
 
-    expect(save).toHaveBeenCalledWith([
-      expect.objectContaining({
-        id: '1',
-        baseCurrency: CurrencyCode.EUR,
-        rate: 0.9,
-        enabled: true,
-        useCustomRate: false,
-        customRate: null,
-      }),
-    ]);
+    expect(update).toHaveBeenCalledWith(
+      { id: '1' },
+      { baseCurrency: CurrencyCode.EUR, rate: 0.9, useCustomRate: false, customRate: null },
+    );
+    expect(persisted).toEqual([expect.objectContaining({ id: '1', enabled: true, customRate: null })]);
     expect(Logger.warn).toHaveBeenCalledWith(expect.stringContaining('USD'), expect.any(String));
   });
 
@@ -228,12 +255,26 @@ describe('CurrencyExchangeRateSyncService.backfillIfEmpty', () => {
     expect(publishedEvent(publish).type).toBe('synced');
   });
 
-  it('does nothing when rates are already stored', async () => {
-    const { service, fetchRates } = makeService({ count: 3 });
+  it('does nothing when rates are already stored in the current base', async () => {
+    const { service, fetchRates } = makeService({ count: { UAH: 3 } });
 
     await service.backfillIfEmpty(ctx);
 
     expect(fetchRates).not.toHaveBeenCalled();
+  });
+
+  it('re-bases on boot when the stored rates are only in another base', async () => {
+    const { service, update } = makeService({
+      count: { UAH: 3 },
+      shopBase: CurrencyCode.EUR,
+      sourceBase: CurrencyCode.EUR,
+      stored: [storedRate()],
+      quotes: [{ currencyCode: CurrencyCode.USD, rate: 0.9 }],
+    });
+
+    await service.backfillIfEmpty(ctx);
+
+    expect(update).toHaveBeenCalledWith({ id: '1' }, expect.objectContaining({ baseCurrency: CurrencyCode.EUR }));
   });
 
   it('logs a source failure instead of throwing, so the server still boots', async () => {

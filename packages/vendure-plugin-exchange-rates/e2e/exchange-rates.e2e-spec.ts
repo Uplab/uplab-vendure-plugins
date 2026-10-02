@@ -139,7 +139,11 @@ describe('ExchangeRatesPlugin', () => {
     await adminClient.query(UPDATE_DEFAULT_CURRENCY, { id: activeChannel.id, currency: 'EUR' });
 
     // Until the sync runs, nothing is offered in a base the shop no longer sells in.
+    const ctx = await server.app.get(RequestContextService).create({ apiType: 'admin' });
     expect((await shopClient.query(SHOP_RATES)).currencyExchangeRates.totalItems).toBe(0);
+    await expect(
+      server.app.get(CurrencyExchangeRateService).getRate(ctx, CurrencyCode.GBP, { requireEnabled: false }),
+    ).resolves.toBeUndefined();
     await sync();
 
     const rates = await adminRates();

@@ -155,7 +155,7 @@ const ecbXml = `<?xml version="1.0" encoding="UTF-8"?>
     <Cube time='2026-10-02'>
       <Cube currency='USD' rate='1.25'/>
       <Cube currency='JPY' rate='160.5'/>
-      <Cube currency="GBP" rate="0.8" />
+      <Cube rate="0.8" currency="GBP"></Cube>
     </Cube>
   </Cube>
 </gesmes:Envelope>`;
@@ -220,6 +220,17 @@ describe('FrankfurterExchangeRateSource', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('https://api.frankfurter.dev/v1/latest?base=USD', expect.anything());
     expect(base).toBe(CurrencyCode.USD);
+  });
+
+  it('adds the base to a self-hosted URL that already has a query', async () => {
+    const fetchMock = stubFetch(json(latest));
+
+    await new FrankfurterExchangeRateSource({
+      apiUrl: 'https://fx.test/v1/latest?symbols=USD,GBP',
+      base: CurrencyCode.EUR,
+    }).fetchRates();
+
+    expect(fetchMock).toHaveBeenCalledWith('https://fx.test/v1/latest?symbols=USD%2CGBP&base=EUR', expect.anything());
   });
 
   it.each([

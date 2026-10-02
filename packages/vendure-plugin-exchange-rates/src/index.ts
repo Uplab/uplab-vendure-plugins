@@ -1,5 +1,4 @@
 export { DEFAULT_SYNC_SCHEDULE, EXCHANGE_RATES_PLUGIN_OPTIONS, SYNC_TASK_ID } from './constants';
-export { deriveRates } from './derive-rates';
 export { effectiveRate } from './effective-rate';
 export { CurrencyExchangeRate } from './entities/currency-exchange-rate.entity';
 export { CurrencyExchangeRateEvent, type CurrencyExchangeRateEventType } from './events/currency-exchange-rate.event';

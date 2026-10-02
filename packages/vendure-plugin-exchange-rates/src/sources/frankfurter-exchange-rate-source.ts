@@ -29,8 +29,9 @@ export class FrankfurterExchangeRateSource implements ExchangeRateSource {
   private readonly timeout: number;
 
   constructor(options: FrankfurterExchangeRateSourceOptions = {}) {
-    const apiUrl = options.apiUrl ?? 'https://api.frankfurter.dev/v1/latest';
-    this.url = options.base ? `${apiUrl}?base=${options.base}` : apiUrl;
+    const url = new URL(options.apiUrl ?? 'https://api.frankfurter.dev/v1/latest');
+    if (options.base) url.searchParams.set('base', options.base);
+    this.url = url.toString();
     this.timeout = options.timeout ?? DEFAULT_SOURCE_TIMEOUT;
   }
 
