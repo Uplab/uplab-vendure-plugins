@@ -58,6 +58,7 @@ describe('NovaPoshtaPlugin configuration', () => {
       'novaPoshtaCountryRef',
       'novaPoshtaWarehouseCategories',
     ]);
+    expect(config.customFields.Region?.[1]?.ui).toEqual({ component: 'select-form-input' });
     expect(task?.options.schedule).toBe('0 3 * * *');
     expect(syncCountries).toHaveBeenCalledWith(scheduledContext);
   });
