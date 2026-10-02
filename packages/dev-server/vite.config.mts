@@ -27,6 +27,14 @@ export default defineConfig({
     vendureDashboardPlugin({
       vendureConfigPath: pathToFileURL('./src/vendure-config.ts'),
       vendureConfigExport: 'config',
+      // The config imports plugins from their sibling packages' sources (see vendure-config.ts), so
+      // the compiled copy has to keep paths relative to the repo root, not to this package —
+      // otherwise those plugin files land outside the compile directory and are never scanned.
+      pathAdapter: {
+        sourceRoot: path.resolve(__dirname, '../..'),
+        getCompiledConfigPath: ({ outputPath, configFileName }) =>
+          path.join(outputPath, 'packages/dev-server/src', configFileName),
+      },
       api: { host: apiHost, port: apiPort },
       gqlOutputPath: path.resolve(__dirname, './src/gql'),
     }),

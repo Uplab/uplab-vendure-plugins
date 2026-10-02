@@ -20,8 +20,12 @@
       "entry": ["src/index.ts", "e2e/**/*.e2e-spec.ts"],
       "project": ["src/**", "e2e/**"]
     },
+    "packages/vendure-plugin-unified-slug": {
+      "entry": ["src/index.ts", "src/dashboard/index.tsx", "e2e/**/*.e2e-spec.ts"],
+      "project": ["src/**", "e2e/**"]
+    },
     "packages/dev-server": {
-      "ignoreDependencies": ["better-sqlite3"]
+      "ignoreDependencies": ["better-sqlite3", "@nestjs/graphql", "graphql-tag"]
     }
   }
 }

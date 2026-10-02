@@ -5,15 +5,16 @@
 
 A monorepo of open-source [Vendure](https://www.vendure.io/) plugins maintained by
 [Uplab](https://uplab.io), focused on the Ukrainian market: SMS, delivery, payments,
-fiscalization and exchange rates.
+fiscalization and exchange rates — plus catalogue tooling for multilingual shops.
 
 All packages are published to npm under the `@uplab` scope and target **Vendure 3.7**.
 
 ## Packages
 
-| Package                                                                | npm                                                                                                                                     | Description                                                     | Vendure  |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------- |
-| [`@uplab/vendure-plugin-turbosms`](./packages/vendure-plugin-turbosms) | [![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-turbosms.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-turbosms) | Send transactional SMS through [TurboSMS](https://turbosms.ua/) | `^3.7.0` |
+| Package                                                                        | npm                                                                                                                                             | Description                                                                                         | Vendure  |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------- |
+| [`@uplab/vendure-plugin-turbosms`](./packages/vendure-plugin-turbosms)         | [![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-turbosms.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-turbosms)         | Send transactional SMS through [TurboSMS](https://turbosms.ua/)                                     | `^3.7.0` |
+| [`@uplab/vendure-plugin-unified-slug`](./packages/vendure-plugin-unified-slug) | [![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-unified-slug.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-unified-slug) | One slug per product and collection, identical in every language — server-side and in the dashboard | `^3.7.0` |
 
 Planned, in extraction order: Nova Poshta, Monobank exchange rates, WayForPay,
 Checkbox fiscalization, Monobank acquiring.
@@ -67,7 +68,7 @@ packages/
   dev-server/                  # private: Vendure config + dashboard Vite config
   vendure-plugin-<name>/       # one publishable package per plugin
     src/                       # server code, compiled to dist/ by tsc
-    dashboard/                 # optional React dashboard extension
+      dashboard/               # optional React dashboard extension, copied to dist/ as .tsx
     e2e/                       # @vendure/testing e2e specs (sql.js)
     README.md CHANGELOG.md
 docs/                          # releasing, testing, plugin authoring

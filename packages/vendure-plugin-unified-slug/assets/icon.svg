@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Unified slug">
+  <rect width="512" height="512" rx="112" fill="#255774"/>
+  <rect x="80" y="112" width="288" height="208" rx="32" fill="#4191b6"/>
+  <rect x="112" y="152" width="288" height="208" rx="32" fill="#65abcb"/>
+  <rect x="144" y="192" width="288" height="208" rx="32" fill="#f5f3f5"/>
+  <line x1="260" y1="364" x2="316" y2="228" stroke="#255774" stroke-width="40" stroke-linecap="round"/>
+</svg>
