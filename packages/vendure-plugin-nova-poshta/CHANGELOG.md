@@ -1,5 +1,11 @@
 # @uplab/vendure-plugin-nova-poshta
 
+## 0.1.1
+
+### Patch Changes
+
+- [#26](https://github.com/Uplab/uplab-vendure-plugins/pull/26) [`0e7568c`](https://github.com/Uplab/uplab-vendure-plugins/commit/0e7568c47b3ec126245c88794111d401fabed058) Thanks [@brmk](https://github.com/brmk)! - The warehouse types on the country page are a multi-select of the four Nova Poshta types, not a free-text tag input that ignores them.
+
 ## 0.1.0
 
 ### Minor Changes
