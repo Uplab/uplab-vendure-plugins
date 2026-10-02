@@ -15,11 +15,12 @@ export interface ExchangeRateSourceResult {
 /**
  * @description
  * Where the rates come from. `fetchRates` returns every pair the source has, in whatever base it quotes
- * in; the plugin re-bases them onto the shop's base currency, drops unusable quotes, upserts the rest by
- * code and never touches an admin's custom rate.
+ * in; the plugin re-bases them onto the shop's base currency, drops unusable quotes and upserts the rest
+ * by code. An admin's custom rate is kept unless the base currency changes.
  *
  * Throw (ideally an {@link ExchangeRateSourceError}) when the source cannot be read — never return no
- * quotes to mean "failed". The plugin calls `init(injector)` on bootstrap and `destroy()` on shutdown.
+ * quotes to mean "failed" — and bound the request with a timeout: the API server waits for the first
+ * fetch on boot. The plugin calls `init(injector)` on bootstrap and `destroy()` on shutdown.
  */
 export interface ExchangeRateSource extends InjectableStrategy {
   /** Short name for logs, e.g. `'ecb'`. */

@@ -1,7 +1,7 @@
 import { CurrencyCode } from '@vendure/core';
 import { ExchangeRateSource, ExchangeRateSourceResult } from '../types';
 
-export interface StaticExchangeRates {
+export interface StaticExchangeRateSourceOptions {
   /** The currency `rates` are expressed in. */
   base: CurrencyCode;
   /** Units of `base` per one unit of each currency. */
@@ -16,7 +16,7 @@ export interface StaticExchangeRates {
 export class StaticExchangeRateSource implements ExchangeRateSource {
   readonly name = 'static';
 
-  constructor(public config: StaticExchangeRates) {}
+  constructor(public config: StaticExchangeRateSourceOptions) {}
 
   fetchRates(): Promise<ExchangeRateSourceResult> {
     const quotes = Object.entries(this.config.rates).map(([currencyCode, rate]) => ({

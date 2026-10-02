@@ -14,7 +14,7 @@ import { SYNC_TASK_ID } from './constants';
 import { ExchangeRatesPlugin } from './exchange-rates.plugin';
 import { CurrencyExchangeRateSyncService } from './services/currency-exchange-rate-sync.service';
 import { StaticExchangeRateSource } from './sources/static-exchange-rate-source';
-import { ExchangeRateSource } from './types';
+import { ExchangeRateSource, ExchangeRatesPluginOptions } from './types';
 
 async function configure() {
   const config = { schedulerOptions: { tasks: [] } } as unknown as RuntimeVendureConfig;
@@ -65,7 +65,7 @@ describe('ExchangeRatesPlugin options', () => {
     const result = await task?.execute({ get: (token: unknown) => services.get(token) } as Injector);
 
     expect(syncRates).toHaveBeenCalledWith(scheduledContext);
-    expect(result).toEqual({ updated: 2 });
+    expect(result).toEqual({ rates: 2 });
   });
 
   it('uses a custom schedule', async () => {
@@ -80,6 +80,10 @@ describe('ExchangeRatesPlugin options', () => {
 
     ExchangeRatesPlugin.init({ source, baseCurrency: CurrencyCode.EUR });
     expect(ExchangeRatesPlugin.options.baseCurrency).toBe(CurrencyCode.EUR);
+  });
+
+  it('requires a source', () => {
+    expect(() => ExchangeRatesPlugin.init({} as ExchangeRatesPluginOptions)).toThrow('"source" is required');
   });
 
   it('rejects a base currency that is not a CurrencyCode', () => {

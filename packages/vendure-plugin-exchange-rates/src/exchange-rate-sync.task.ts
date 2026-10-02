@@ -8,8 +8,8 @@ export function createExchangeRateSyncTask(schedule: ScheduledTaskConfig['schedu
     description: 'Refresh currency exchange rates from the configured source',
     schedule,
     async execute({ injector, scheduledContext }) {
-      const persisted = await injector.get(CurrencyExchangeRateSyncService).syncRates(scheduledContext);
-      return { updated: persisted.length };
+      const rates = await injector.get(CurrencyExchangeRateSyncService).syncRates(scheduledContext);
+      return { rates: rates.length };
     },
   });
 }

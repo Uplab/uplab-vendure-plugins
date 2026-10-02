@@ -18,8 +18,6 @@ payment code converts with them. Vendure's own per-currency variant prices are u
 
 ![Exchange rates in the dashboard](https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-exchange-rates/assets/screenshot-list.png)
 
-Compatible with **Vendure ^3.7.0**.
-
 ## Contents
 
 [Install](#install) · [Use cases](#use-cases) · [Sources](#sources) · [Base currency](#base-currency) ·
@@ -141,7 +139,8 @@ source fails or returns nothing usable, the stored rates stay as they are.
 **Cross rates.** A source that quotes against another base is re-based onto yours: with the ECB and a USD
 shop, `GBP = (EUR per GBP) / (EUR per USD)`, and EUR itself is added. This needs the source to quote your
 base currency — the ECB does not quote UAH, for instance, so a UAH shop uses a Ukrainian source. Rates are
-stored with 8 decimals; a rate that does not fit decimal(19, 8) is dropped.
+stored per unit with 8 decimals, so a weak currency against a strong base keeps few significant digits
+(LBP in USD: 0.00001117); a rate that does not fit decimal(19, 8) is dropped.
 
 ### Ukrainian sources
 
@@ -170,9 +169,12 @@ export class BankOfCanadaExchangeRateSource implements ExchangeRateSource {
   readonly name = 'bank-of-canada';
 
   async fetchRates(): Promise<ExchangeRateSourceResult> {
-    const res = await fetch('https://www.bankofcanada.ca/valet/observations/group/FX_RATES_DAILY/json?recent=1');
+    const res = await fetch('https://www.bankofcanada.ca/valet/observations/group/FX_RATES_DAILY/json?recent=1', {
+      signal: AbortSignal.timeout(10_000), // the API server waits for the first fetch on boot
+    });
     if (!res.ok) throw new ExchangeRateSourceError(`HTTP ${res.status}`, { source: this.name, status: res.status });
-    const body = (await res.json()) as { observations: Observation[] };
+    const body = (await res.json()) as { observations?: Observation[] };
+    if (!body.observations?.length) throw new ExchangeRateSourceError('No observations', { source: this.name });
     // `recent=1` is the last value of every series, discontinued ones included: keep the newest day.
     const latest = body.observations.reduce((a, b) => (a.d > b.d ? a : b));
     const quotes = Object.entries(latest)
@@ -188,7 +190,7 @@ export class BankOfCanadaExchangeRateSource implements ExchangeRateSource {
 
 A source returns its `base` and quotes `{ currencyCode, rate }`, `rate` being **base units per one unit**;
 the plugin re-bases them onto the shop's currency. Throw on failure — never return an empty list to mean
-"failed". If the source needs services, implement `init(injector)` (and `destroy()`); the plugin calls
+"failed" — and give the request a timeout, since the API server waits for the first fetch on boot. If the source needs services, implement `init(injector)` (and `destroy()`); the plugin calls
 `init` before the first fetch.
 
 ### Combining sources
@@ -307,8 +309,9 @@ Turning on `useCustomRate` without a positive `customRate` is rejected.
 
 ## Event
 
-`CurrencyExchangeRateEvent` is published after every change — `type: 'synced'` with every refreshed row,
-or `'updated'` with the one an admin edited — once the transaction has committed. Use it to drop caches
+`CurrencyExchangeRateEvent` is published after every change, once the transaction has committed:
+`type: 'synced'` when a sync changed anything, with every rate now stored in the base currency, or
+`'updated'` with the one rate an admin edited. Use it to drop caches
 that embed the rates:
 
 ```ts

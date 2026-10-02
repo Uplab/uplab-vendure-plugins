@@ -20,6 +20,9 @@ import { CurrencyExchangeRateService } from './services/currency-exchange-rate.s
 import { ExchangeRatesPluginOptions, ResolvedExchangeRatesPluginOptions } from './types';
 
 function resolveOptions(options: ExchangeRatesPluginOptions): ResolvedExchangeRatesPluginOptions {
+  if (!options?.source) {
+    throw new Error('ExchangeRatesPlugin: "source" is required, e.g. new EcbExchangeRateSource()');
+  }
   if (options.baseCurrency && !(Object.values(CurrencyCode) as string[]).includes(options.baseCurrency)) {
     throw new Error(`ExchangeRatesPlugin: "${options.baseCurrency}" is not a CurrencyCode`);
   }

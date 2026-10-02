@@ -14,7 +14,6 @@ import { CurrencyExchangeRateEvent } from '../events/currency-exchange-rate.even
 const ctx = {} as RequestContext;
 
 function makeService(existing: Partial<CurrencyExchangeRate> = {}) {
-  // Every column is present, including the nullable one: `patchEntity` copies only keys the entity already has.
   const entity = {
     id: '1',
     code: CurrencyCode.USD,
@@ -24,21 +23,25 @@ function makeService(existing: Partial<CurrencyExchangeRate> = {}) {
     customRate: null,
     ...existing,
   } as unknown as CurrencyExchangeRate;
-  const save = vi.fn().mockImplementation((updated: unknown) => Promise.resolve(updated));
+  // Stands in for the database: `update` writes the row that `getEntityOrThrow` reads back.
+  const update = vi.fn().mockImplementation((_where: unknown, changes: object) => {
+    Object.assign(entity, changes);
+    return Promise.resolve();
+  });
   const publish = vi.fn().mockResolvedValue(undefined);
 
   const service = new CurrencyExchangeRateService(
     { source: { name: 'test', fetchRates: vi.fn() }, sync: false },
     {
-      getEntityOrThrow: vi.fn().mockResolvedValue(entity),
-      getRepository: vi.fn().mockReturnValue({ save }),
+      getEntityOrThrow: vi.fn().mockImplementation(() => Promise.resolve({ ...entity })),
+      getRepository: vi.fn().mockReturnValue({ update }),
     } as unknown as TransactionalConnection,
     {} as ListQueryBuilder,
     { publish } as unknown as EventBus,
     {} as ChannelService,
   );
 
-  return { service, publish, save };
+  return { service, publish, update };
 }
 
 describe('CurrencyExchangeRateService.update', () => {
@@ -66,27 +69,46 @@ describe('CurrencyExchangeRateService.update', () => {
   });
 
   it('publishes only after the change is persisted', async () => {
-    const { service, save, publish } = makeService();
+    const { service, update, publish } = makeService();
 
     await service.update(ctx, { id: '1', enabled: true, useCustomRate: false });
 
-    expect(save.mock.invocationCallOrder[0]).toBeLessThan(publish.mock.invocationCallOrder[0]);
+    expect(update.mock.invocationCallOrder[0]).toBeLessThan(publish.mock.invocationCallOrder[0]);
   });
 
-  it('rejects a custom rate too large for the column, even while it is off', async () => {
-    const { service, save } = makeService();
+  it('writes only the admin columns, so a concurrent sync keeps its rate and base', async () => {
+    const { service, update } = makeService();
 
-    await expect(
-      service.update(ctx, { id: '1', enabled: true, useCustomRate: false, customRate: 1e12 }),
-    ).rejects.toThrow();
-    expect(save).not.toHaveBeenCalled();
+    await service.update(ctx, { id: '1', enabled: true, useCustomRate: true, customRate: 44 });
+
+    expect(update).toHaveBeenCalledWith({ id: '1' }, { enabled: true, useCustomRate: true, customRate: 44 });
   });
+
+  it('stores a custom rate with the 8 decimals of the column', async () => {
+    const { service, update } = makeService();
+
+    await service.update(ctx, { id: '1', enabled: true, useCustomRate: true, customRate: 1.123456789 });
+
+    expect(update).toHaveBeenCalledWith({ id: '1' }, expect.objectContaining({ customRate: 1.12345679 }));
+  });
+
+  it.each([1e12, 1e-9])(
+    'rejects a custom rate of %j that the column cannot hold, even while it is off',
+    async (customRate) => {
+      const { service, update } = makeService();
+
+      await expect(service.update(ctx, { id: '1', enabled: true, useCustomRate: false, customRate })).rejects.toThrow(
+        'A custom rate must be between 0.00000001 and 100000000000',
+      );
+      expect(update).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([null, undefined, 0, -1])('rejects a custom rate of %j when useCustomRate is on', async (customRate) => {
-    const { service, save } = makeService();
+    const { service, update } = makeService();
 
     await expect(service.update(ctx, { id: '1', enabled: true, useCustomRate: true, customRate })).rejects.toThrow();
-    expect(save).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
   });
 });
 

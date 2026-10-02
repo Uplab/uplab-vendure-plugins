@@ -103,3 +103,7 @@ msgstr "{0} per 1 {1}"
 #: src/dashboard/routes/currency-exchange-rate-detail.tsx
 msgid "In the same units, used instead of the fetched rate while “Use custom rate” is on"
 msgstr "In the same units, used instead of the fetched rate while “Use custom rate” is on"
+
+#: src/dashboard/routes/currency-exchange-rate-detail.tsx
+msgid "Unknown error"
+msgstr "Unknown error"

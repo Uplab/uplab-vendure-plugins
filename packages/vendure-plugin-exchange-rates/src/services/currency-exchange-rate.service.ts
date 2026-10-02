@@ -11,9 +11,9 @@ import {
   RequestContext,
   TransactionalConnection,
   UserInputError,
-  patchEntity,
 } from '@vendure/core';
 import { EXCHANGE_RATES_PLUGIN_OPTIONS, MAX_RATE } from '../constants';
+import { round8 } from '../derive-rates';
 import { effectiveRate } from '../effective-rate';
 import { CurrencyExchangeRate } from '../entities/currency-exchange-rate.entity';
 import { CurrencyExchangeRateEvent } from '../events/currency-exchange-rate.event';
@@ -79,15 +79,23 @@ export class CurrencyExchangeRateService {
     if (input.useCustomRate && input.customRate == null) {
       throw new UserInputError('A custom rate must be a positive number when useCustomRate is on');
     }
-    if (
-      input.customRate != null &&
-      !(Number.isFinite(input.customRate) && input.customRate > 0 && input.customRate < MAX_RATE)
-    ) {
-      throw new UserInputError('A custom rate must be a positive number below 100000000000');
+    // Stored with 8 decimals: anything that rounds to 0 there would silently stop being a rate.
+    const customRate = input.customRate == null ? input.customRate : round8(input.customRate);
+    if (customRate != null && !(Number.isFinite(customRate) && customRate > 0 && customRate < MAX_RATE)) {
+      throw new UserInputError('A custom rate must be between 0.00000001 and 100000000000');
     }
-    const entity = await this.connection.getEntityOrThrow(ctx, CurrencyExchangeRate, input.id);
-    const updated = patchEntity(entity, input);
-    const saved = await this.connection.getRepository(ctx, CurrencyExchangeRate).save(updated);
+    await this.connection.getEntityOrThrow(ctx, CurrencyExchangeRate, input.id);
+    const repository = this.connection.getRepository(ctx, CurrencyExchangeRate);
+    // Only the admin's columns: a sync committed meanwhile keeps its rate and base.
+    const changes = Object.fromEntries(
+      Object.entries({ enabled: input.enabled, useCustomRate: input.useCustomRate, customRate }).filter(
+        ([, value]) => value !== undefined,
+      ),
+    );
+    if (Object.keys(changes).length) {
+      await repository.update({ id: input.id }, changes);
+    }
+    const saved = await this.connection.getEntityOrThrow(ctx, CurrencyExchangeRate, input.id);
     await this.eventBus.publish(new CurrencyExchangeRateEvent(ctx, [saved], 'updated'));
     return saved;
   }

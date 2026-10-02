@@ -135,6 +135,8 @@ describe('ExchangeRatesPlugin', () => {
   });
 
   it('follows a change of the default currency on the next sync, dropping rates of the old base', async () => {
+    const gbpId = (await adminRates()).find((r: { code: string }) => r.code === 'GBP').id;
+    await adminClient.query(UPDATE_RATE, { input: { id: gbpId, enabled: true, useCustomRate: true, customRate: 1.4 } });
     const { activeChannel } = await adminClient.query(ACTIVE_CHANNEL);
     await adminClient.query(UPDATE_DEFAULT_CURRENCY, { id: activeChannel.id, currency: 'EUR' });
 
@@ -153,6 +155,12 @@ describe('ExchangeRatesPlugin', () => {
       ['UAH', 'EUR'],
       ['USD', 'EUR'],
     ]);
-    expect(rates.find((r: { code: string }) => r.code === 'GBP')).toMatchObject({ rate: 1.18181818 });
+    // Still enabled, but a custom rate in USD means nothing in EUR.
+    expect(rates.find((r: { code: string }) => r.code === 'GBP')).toMatchObject({
+      rate: 1.18181818,
+      enabled: true,
+      useCustomRate: false,
+      customRate: null,
+    });
   });
 });

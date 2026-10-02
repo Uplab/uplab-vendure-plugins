@@ -28,11 +28,28 @@ function makeService({
   shopBase = CurrencyCode.UAH,
   sourceBase = CurrencyCode.UAH,
 } = {}) {
-  const find = vi.fn().mockResolvedValue(stored);
-  // TypeORM's `save` echoes back what it persisted — that is what the event must carry.
-  const save = vi.fn().mockImplementation((entities: unknown) => Promise.resolve(entities));
-  const update = vi.fn().mockResolvedValue(undefined);
-  const remove = vi.fn().mockResolvedValue(undefined);
+  // A tiny in-memory table, so what the service reads back reflects what it wrote.
+  let table = stored.map((row) => ({ ...row }) as CurrencyExchangeRate);
+  type Where = { where?: { baseCurrency?: CurrencyCode } };
+  const find = vi.fn(({ where }: Where = {}) =>
+    Promise.resolve(
+      table
+        .filter((r) => !where?.baseCurrency || r.baseCurrency === where.baseCurrency)
+        .sort((x, y) => x.code.localeCompare(y.code)),
+    ),
+  );
+  const save = vi.fn((entities: CurrencyExchangeRate[]) => {
+    table.push(...entities);
+    return Promise.resolve(entities);
+  });
+  const update = vi.fn(({ id }: { id: string }, changes: Partial<CurrencyExchangeRate>) => {
+    Object.assign(table.find((r) => r.id === id) ?? {}, changes);
+    return Promise.resolve();
+  });
+  const remove = vi.fn(({ baseCurrency }: { baseCurrency: { value: CurrencyCode } }) => {
+    table = table.filter((r) => r.baseCurrency === baseCurrency.value);
+    return Promise.resolve();
+  });
   const countRows = vi.fn(({ where }: { where: { baseCurrency: CurrencyCode } }) =>
     Promise.resolve(typeof count === 'number' ? count : (count[where.baseCurrency] ?? 0)),
   );
@@ -97,6 +114,29 @@ describe('CurrencyExchangeRateSyncService.syncRates', () => {
     await service.syncRates(ctx);
 
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it('publishes nothing when the source repeats the stored rates', async () => {
+    const { service, publish } = makeService({ stored: [storedRate({ rate: 42 })] });
+
+    await expect(service.syncRates(ctx)).resolves.toEqual([expect.objectContaining({ id: '1', rate: 42 })]);
+
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('announces a base change with the rows the table now holds, not the ones it deleted', async () => {
+    const { service, publish } = makeService({
+      shopBase: CurrencyCode.EUR,
+      sourceBase: CurrencyCode.EUR,
+      stored: [storedRate(), storedRate({ id: '2', code: CurrencyCode.PLN })],
+      quotes: [{ currencyCode: CurrencyCode.USD, rate: 0.9 }],
+    });
+
+    await service.syncRates(ctx);
+
+    expect(publishedEvent(publish).entities).toEqual([
+      expect.objectContaining({ id: '1', code: CurrencyCode.USD, baseCurrency: CurrencyCode.EUR, rate: 0.9 }),
+    ]);
   });
 
   it('warns about an enabled currency the source no longer quotes, which keeps its last rate', async () => {

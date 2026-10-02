@@ -35,7 +35,11 @@ export class CurrencyExchangeRateSyncService {
     private readonly rateService: CurrencyExchangeRateService,
   ) {}
 
-  /** Throws when the source cannot be read or cannot be re-based; the stored rates are then left as they were. */
+  /**
+   * Returns every rate stored in the current base afterwards, and publishes a `synced` event with them when
+   * anything changed. Throws when the source cannot be read or cannot be re-based; the stored rates are then
+   * left as they were.
+   */
   async syncRates(ctx: RequestContext): Promise<CurrencyExchangeRate[]> {
     const { source } = this.options;
     const baseCurrency = await this.rateService.getBaseCurrency(ctx);
@@ -51,13 +55,13 @@ export class CurrencyExchangeRateSyncService {
     }
 
     // One transaction: a failure part-way leaves every rate as it was, not half of them refreshed.
-    const persisted = await this.connection.withTransaction(ctx, async (txCtx) => {
+    const { rows, changed } = await this.connection.withTransaction(ctx, async (txCtx) => {
       const repository = this.connection.getRepository(txCtx, CurrencyExchangeRate);
       const stored = await repository.find();
       const storedByCode = new Map(stored.map((r) => [r.code, r]));
       const rebased: string[] = [];
-      const updated: CurrencyExchangeRate[] = [];
       const created: CurrencyExchangeRate[] = [];
+      let updated = 0;
       for (const { currencyCode, rate } of derived) {
         const existing = storedByCode.get(currencyCode);
         if (!existing) {
@@ -75,10 +79,10 @@ export class CurrencyExchangeRateSyncService {
         // Only the columns the sync owns, and only when they change: an admin edit made meanwhile stays.
         if (Object.keys(changes).length) {
           await repository.update({ id: existing.id }, changes);
+          updated++;
         }
-        updated.push(Object.assign(existing, changes));
       }
-      const saved = [...updated, ...(await repository.save(created))];
+      await repository.save(created);
       // Rows the new base did not re-quote, the old row for the new base currency itself among them.
       await repository.delete({ baseCurrency: Not(baseCurrency) });
       if (rebased.length) {
@@ -90,11 +94,18 @@ export class CurrencyExchangeRateSyncService {
         const codes = dropped.map((r) => r.code).join(', ');
         Logger.warn(`${source.name} no longer quotes ${codes}; they keep their last rate`, loggerCtx);
       }
-      return saved;
+      const deleted = stored.some((r) => r.baseCurrency !== baseCurrency);
+      return {
+        // Read back, so `updatedAt` and the rest are what the database now holds.
+        rows: await repository.find({ where: { baseCurrency }, order: { code: 'ASC' } }),
+        changed: created.length > 0 || updated > 0 || deleted,
+      };
     });
-    Logger.verbose(`Stored ${persisted.length} rates in ${baseCurrency} from ${source.name} (base ${base})`, loggerCtx);
-    await this.eventBus.publish(new CurrencyExchangeRateEvent(ctx, persisted, 'synced'));
-    return persisted;
+    Logger.verbose(`Synced ${rows.length} rates in ${baseCurrency} from ${source.name} (base ${base})`, loggerCtx);
+    if (changed) {
+      await this.eventBus.publish(new CurrencyExchangeRateEvent(ctx, rows, 'synced'));
+    }
+    return rows;
   }
 
   /**

@@ -1,7 +1,10 @@
 import { RequestContext, VendureEvent } from '@vendure/core';
 import { CurrencyExchangeRate } from '../entities/currency-exchange-rate.entity';
 
-/** `synced`: refreshed from the source (task or backfill). `updated`: an admin changed one rate. */
+/**
+ * `synced`: a sync changed something; `entities` are then every rate stored in the current base.
+ * `updated`: an admin changed one rate, which is `entities[0]`.
+ */
 export type CurrencyExchangeRateEventType = 'synced' | 'updated';
 
 /**

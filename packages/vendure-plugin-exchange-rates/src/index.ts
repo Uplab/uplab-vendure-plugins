@@ -1,4 +1,4 @@
-export { DEFAULT_SYNC_SCHEDULE, EXCHANGE_RATES_PLUGIN_OPTIONS, SYNC_TASK_ID } from './constants';
+export { DEFAULT_SYNC_SCHEDULE, SYNC_TASK_ID } from './constants';
 export { effectiveRate } from './effective-rate';
 export { CurrencyExchangeRate } from './entities/currency-exchange-rate.entity';
 export { CurrencyExchangeRateEvent, type CurrencyExchangeRateEventType } from './events/currency-exchange-rate.event';
@@ -16,12 +16,11 @@ export {
   type MonobankExchangeRateSourceOptions,
 } from './sources/monobank-exchange-rate-source';
 export { NbuExchangeRateSource, type NbuExchangeRateSourceOptions } from './sources/nbu-exchange-rate-source';
-export { StaticExchangeRateSource, type StaticExchangeRates } from './sources/static-exchange-rate-source';
+export { StaticExchangeRateSource, type StaticExchangeRateSourceOptions } from './sources/static-exchange-rate-source';
 export type {
   ExchangeRateQuote,
   ExchangeRateSource,
   ExchangeRateSourceResult,
   ExchangeRatesPluginOptions,
-  ResolvedExchangeRatesPluginOptions,
   UpdateCurrencyExchangeRateInput,
 } from './types';

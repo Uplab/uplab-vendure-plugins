@@ -30,7 +30,7 @@ msgstr "Курс обміну валюти оновлено"
 #: src/dashboard/routes/currency-exchange-rate-list.tsx
 #: src/dashboard/routes/currency-exchange-rate-list.tsx
 msgid "Currency exchange rates"
-msgstr "Курси обміну валюти"
+msgstr "Курси обміну валют"
 
 #: src/dashboard/routes/currency-exchange-rate-detail.tsx
 #: src/dashboard/routes/currency-exchange-rate-list.tsx
@@ -103,3 +103,7 @@ msgstr "{0} за 1 {1}"
 #: src/dashboard/routes/currency-exchange-rate-detail.tsx
 msgid "In the same units, used instead of the fetched rate while “Use custom rate” is on"
 msgstr "У тих самих одиницях; застосовується замість курсу із джерела, поки ввімкнено «Використовувати власний курс»"
+
+#: src/dashboard/routes/currency-exchange-rate-detail.tsx
+msgid "Unknown error"
+msgstr "Невідома помилка"

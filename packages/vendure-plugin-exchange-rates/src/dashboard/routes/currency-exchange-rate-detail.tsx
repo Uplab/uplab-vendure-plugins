@@ -63,7 +63,7 @@ function CurrencyExchangeRateDetailPage({ route }: { route: Route }) {
     },
     onError: (error) => {
       toast.error(t`Failed to update currency exchange rate`, {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: error instanceof Error ? error.message : t`Unknown error`,
       });
     },
   });
