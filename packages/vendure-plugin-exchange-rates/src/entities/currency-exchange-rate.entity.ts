@@ -17,8 +17,11 @@ export class CurrencyExchangeRate extends VendureEntity {
   @Index({ unique: true })
   code: CurrencyCode;
 
-  /** The currency `rate` and `customRate` are expressed in. */
-  @Column({ type: 'varchar' })
+  /**
+   * The currency `rate` and `customRate` are expressed in. Nullable only so that a host's generated
+   * migration can add the column to a filled table; the plugin fills it before any rate is read.
+   */
+  @Column({ type: 'varchar', nullable: true })
   baseCurrency: CurrencyCode;
 
   @Column({ default: false })

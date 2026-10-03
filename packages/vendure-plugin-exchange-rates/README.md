@@ -337,14 +337,17 @@ export class RatesCachePlugin implements OnApplicationBootstrap {
 
 One table, `currency_exchange_rate`:
 
-| Column          | Type                                        |
-| --------------- | ------------------------------------------- |
-| `code`          | varchar, unique                             |
-| `baseCurrency`  | varchar — the currency `rate` is counted in |
-| `rate`          | decimal(19, 8) — the fetched one            |
-| `enabled`       | boolean, default `false`                    |
-| `useCustomRate` | boolean, default `false`                    |
-| `customRate`    | decimal(19, 8), nullable                    |
+| Column          | Type                                         |
+| --------------- | -------------------------------------------- |
+| `code`          | varchar, unique                              |
+| `baseCurrency`  | varchar — the currency `rate` is counted in¹ |
+| `rate`          | decimal(19, 8) — the fetched one             |
+| `enabled`       | boolean, default `false`                     |
+| `useCustomRate` | boolean, default `false`                     |
+| `customRate`    | decimal(19, 8), nullable                     |
+
+¹ Nullable so that a generated migration can add it to a filled table: on the next boot the plugin gives
+rows without one the current base, keeping their custom rates.
 
 A sync updates `rate` and inserts new currencies, in one transaction; on a [base change](#base-currency) it
 also rewrites `baseCurrency`, clears custom rates and deletes the currencies the new base does not cover.

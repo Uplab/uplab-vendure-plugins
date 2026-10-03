@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CurrencyCode, EventBus, Logger, RequestContext, TransactionalConnection } from '@vendure/core';
-import { Not } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { CurrencyExchangeRateService } from './currency-exchange-rate.service';
 import { EXCHANGE_RATES_PLUGIN_OPTIONS, loggerCtx } from '../constants';
 import { deriveRates } from '../derive-rates';
@@ -17,6 +17,17 @@ function isUsable(quote: ExchangeRateQuote): boolean {
 /** One quote per code: the last one wins, so a combining source can override another. */
 function lastPerCode(quotes: ExchangeRateQuote[]): ExchangeRateQuote[] {
   return [...new Map(quotes.map((q) => [q.currencyCode, q]))].map(([, q]) => q);
+}
+
+/**
+ * A row without a base predates the `baseCurrency` column. Its rates are in the base the shop used then,
+ * taken to be the current one, so it keeps its custom rate.
+ */
+async function adoptRowsWithoutBase(repository: Repository<CurrencyExchangeRate>, baseCurrency: CurrencyCode) {
+  const { affected } = await repository.update({ baseCurrency: IsNull() }, { baseCurrency });
+  if (affected) {
+    Logger.info(`Took ${affected} stored rates without a base currency to be in ${baseCurrency}`, loggerCtx);
+  }
 }
 
 /**
@@ -57,6 +68,7 @@ export class CurrencyExchangeRateSyncService {
     // One transaction: a failure part-way leaves every rate as it was, not half of them refreshed.
     const { rows, changed } = await this.connection.withTransaction(ctx, async (txCtx) => {
       const repository = this.connection.getRepository(txCtx, CurrencyExchangeRate);
+      await adoptRowsWithoutBase(repository, baseCurrency);
       const stored = await repository.find();
       const storedByCode = new Map(stored.map((r) => [r.code, r]));
       const rebased: string[] = [];
@@ -109,12 +121,19 @@ export class CurrencyExchangeRateSyncService {
   }
 
   /**
-   * Syncs when no rate is stored in the current base: on the first boot, and after a restart that changed
-   * the base. Never throws: a source outage must not stop the server.
+   * Gives rows from before the `baseCurrency` column the current base, then syncs when no rate is stored in
+   * it: on the first boot, and after a restart that changed the base. Never throws: a source outage must
+   * not stop the server.
    */
   async backfillIfEmpty(ctx: RequestContext): Promise<void> {
     const baseCurrency = await this.rateService.getBaseCurrency(ctx);
-    if ((await this.connection.getRepository(ctx, CurrencyExchangeRate).count({ where: { baseCurrency } })) > 0) {
+    const repository = this.connection.getRepository(ctx, CurrencyExchangeRate);
+    try {
+      await adoptRowsWithoutBase(repository, baseCurrency);
+    } catch (e) {
+      Logger.warn(`Could not give the stored rates a base currency: ${(e as Error).message}`, loggerCtx);
+    }
+    if ((await repository.count({ where: { baseCurrency } })) > 0) {
       return;
     }
     try {

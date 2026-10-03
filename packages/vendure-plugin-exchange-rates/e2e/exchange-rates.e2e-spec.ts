@@ -1,5 +1,5 @@
 import path from 'path';
-import { CurrencyCode, EventBus, RequestContextService, mergeConfig } from '@vendure/core';
+import { CurrencyCode, EventBus, RequestContextService, TransactionalConnection, mergeConfig } from '@vendure/core';
 import { createTestEnvironment, registerInitializer, SqljsInitializer, testConfig } from '@vendure/testing';
 import { firstValueFrom, take, toArray } from 'rxjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -162,5 +162,26 @@ describe('ExchangeRatesPlugin', () => {
       useCustomRate: false,
       customRate: null,
     });
+  });
+
+  it('gives rows from before the baseCurrency column the current base on boot, keeping custom rates', async () => {
+    const usdId = (await adminRates()).find((r: { code: string }) => r.code === 'USD').id;
+    await adminClient.query(UPDATE_RATE, {
+      input: { id: usdId, enabled: true, useCustomRate: true, customRate: 0.95 },
+    });
+    // What a table looks like right after a generated migration added the column.
+    await server.app
+      .get(TransactionalConnection)
+      .rawConnection.query('UPDATE currency_exchange_rate SET "baseCurrency" = NULL');
+    expect((await shopClient.query(SHOP_RATES)).currencyExchangeRates.totalItems).toBe(0);
+
+    const ctx = await server.app.get(RequestContextService).create({ apiType: 'admin' });
+    await server.app.get(CurrencyExchangeRateSyncService).backfillIfEmpty(ctx);
+
+    expect((await adminRates()).every((r: { baseCurrency: string }) => r.baseCurrency === 'EUR')).toBe(true);
+    expect((await shopClient.query(SHOP_RATES)).currencyExchangeRates.items).toEqual([
+      expect.objectContaining({ code: 'GBP' }),
+      expect.objectContaining({ code: 'USD', baseCurrency: 'EUR', rate: 0.95 }),
+    ]);
   });
 });

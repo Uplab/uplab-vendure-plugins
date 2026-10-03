@@ -29,6 +29,13 @@ Claude Code, `/new-plugin <name>` scaffolds all of this.
 - A published plugin exposes provider capability, not application copy: message
   text, localization and audience rules belong to the host application. Keep the
   surface to what is genuinely specific to the vendor.
+- **Schema changes must migrate without hand edits.** Hosts generate their migrations
+  from our entities, and TypeORM cannot fill a new `NOT NULL` column on a table that
+  already has rows (Postgres rejects the `ALTER TABLE`). A column added after a
+  package's first release is therefore `nullable: true` or has a static `default`,
+  and the plugin fills existing rows itself (on bootstrap or in the code path that
+  first reads them) — see `adoptRowsWithoutBase` in the exchange-rates plugin. Never
+  ask hosts to edit a generated migration.
 
 ## Build
 
