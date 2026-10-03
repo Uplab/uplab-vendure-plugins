@@ -3,8 +3,10 @@ import { ModuleRef } from '@nestjs/core';
 import {
   CurrencyCode,
   Injector,
+  Logger,
   PluginCommonModule,
   ProcessContext,
+  RequestContext,
   RequestContextService,
   Type,
   VendurePlugin,
@@ -12,7 +14,7 @@ import {
 import { CurrencyExchangeRateAdminFieldResolver, CurrencyExchangeRateAdminResolver } from './api/admin.resolver';
 import { adminApiExtensions, shopApiExtensions } from './api/api-extensions';
 import { CurrencyExchangeRateShopFieldResolver, CurrencyExchangeRateShopResolver } from './api/shop.resolver';
-import { EXCHANGE_RATES_PLUGIN_OPTIONS, DEFAULT_SYNC_SCHEDULE } from './constants';
+import { EXCHANGE_RATES_PLUGIN_OPTIONS, DEFAULT_SYNC_SCHEDULE, loggerCtx } from './constants';
 import { createExchangeRateSyncTask } from './exchange-rate-sync.task';
 import { CurrencyExchangeRate } from './entities/currency-exchange-rate.entity';
 import { CurrencyExchangeRateSyncService } from './services/currency-exchange-rate-sync.service';
@@ -89,11 +91,17 @@ export class ExchangeRatesPlugin implements OnApplicationBootstrap, OnApplicatio
   // Source first: the backfill needs it.
   async onApplicationBootstrap(): Promise<void> {
     await ExchangeRatesPlugin.options.source.init?.(new Injector(this.moduleRef));
-    const ctx = await this.requestContextService.create({ apiType: 'admin' });
+    let ctx: RequestContext;
+    try {
+      ctx = await this.requestContextService.create({ apiType: 'admin' });
+    } catch (e) {
+      Logger.warn(`Could not check the stored exchange rates: ${(e as Error).message}`, loggerCtx);
+      return;
+    }
     if (this.processContext.isServer) {
       await this.syncService.backfillIfEmpty(ctx);
     } else {
-      // The worker converts too (feeds, jobs): rows without a base must not wait for the next sync there.
+      // The worker converts too (feeds, jobs): it must not depend on the server having booted first.
       await this.syncService.adoptRowsWithoutBase(ctx);
     }
   }

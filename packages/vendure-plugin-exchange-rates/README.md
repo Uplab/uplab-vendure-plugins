@@ -314,7 +314,10 @@ Turning on `useCustomRate` without a positive `customRate` is rejected.
 `CurrencyExchangeRateEvent` is published once the transaction has committed: `type: 'synced'` when a sync
 changed anything, or when the plugin adopts rows without a base on boot, with every rate now stored in the
 base currency; `'updated'` with the one rate an admin saved. Use it to drop caches that embed the rates —
-subscribe in `onModuleInit`, which runs before any plugin's bootstrap, so the boot event is not missed:
+subscribe in `onModuleInit`, which runs before any plugin's bootstrap, so the boot event is not missed.
+Events stay in the process that published them: a scheduled sync publishes in the worker, the boot adoption
+in whichever process adopted the rows. Register the subscriber in both, and keep a cache it must drop
+shared between them (e.g. Redis), or let it expire:
 
 ```ts
 import { OnModuleInit } from '@nestjs/common';

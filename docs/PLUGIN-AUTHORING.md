@@ -35,7 +35,7 @@ Claude Code, `/new-plugin <name>` scaffolds all of this.
   SQLite's table rebuild fails, MySQL silently fills `''`. A column added after a package's first
   release therefore has a static `default`, or is `nullable: true` and the plugin
   fills existing rows itself (on bootstrap and in the code path that first reads
-  them, treating `''` like NULL) — see `adoptRowsWithoutBase` in the exchange-rates
+  them, treating `''` like NULL) — see `fillMissingBase` in the exchange-rates
   plugin. Until filled, such a row must not break a non-null GraphQL field. Never ask
   hosts to edit a generated migration.
 

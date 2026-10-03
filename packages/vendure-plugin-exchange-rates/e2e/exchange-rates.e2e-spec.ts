@@ -164,7 +164,7 @@ describe('ExchangeRatesPlugin', () => {
     });
   });
 
-  it('gives rows from before the baseCurrency column the current base on boot, keeping custom rates', async () => {
+  it('gives rows from before the baseCurrency column the current base in the boot backfill, keeping custom rates', async () => {
     const usdId = (await adminRates()).find((r: { code: string }) => r.code === 'USD').id;
     await adminClient.query(UPDATE_RATE, {
       input: { id: usdId, enabled: true, useCustomRate: true, customRate: 0.95 },
