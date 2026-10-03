@@ -24,7 +24,7 @@ function storedRate(overrides: Partial<CurrencyExchangeRate> = {}): CurrencyExch
 function makeService({
   stored = [] as CurrencyExchangeRate[],
   quotes = [{ currencyCode: CurrencyCode.USD, rate: 42 }] as ExchangeRateQuote[] | Error,
-  count = 0 as number | Partial<Record<CurrencyCode, number>>,
+  count = 0 as number | Partial<Record<CurrencyCode, number>> | 'table',
   shopBase = CurrencyCode.UAH,
   sourceBase = CurrencyCode.UAH,
 } = {}) {
@@ -42,16 +42,29 @@ function makeService({
     table.push(...entities);
     return Promise.resolve(entities);
   });
-  const update = vi.fn(({ id }: { id: string }, changes: Partial<CurrencyExchangeRate>) => {
-    Object.assign(table.find((r) => r.id === id) ?? {}, changes);
-    return Promise.resolve();
-  });
+  const update = vi.fn(
+    (where: { id?: string; baseCurrency?: { type: string } }, changes: Partial<CurrencyExchangeRate>) => {
+      const matches =
+        where.baseCurrency?.type === 'isNull'
+          ? (r: CurrencyExchangeRate) => r.baseCurrency == null
+          : (r: CurrencyExchangeRate) => r.id === where.id;
+      const rows = table.filter(matches);
+      rows.forEach((row) => Object.assign(row, changes));
+      return Promise.resolve({ affected: rows.length });
+    },
+  );
   const remove = vi.fn(({ baseCurrency }: { baseCurrency: { value: CurrencyCode } }) => {
     table = table.filter((r) => r.baseCurrency === baseCurrency.value);
     return Promise.resolve();
   });
   const countRows = vi.fn(({ where }: { where: { baseCurrency: CurrencyCode } }) =>
-    Promise.resolve(typeof count === 'number' ? count : (count[where.baseCurrency] ?? 0)),
+    Promise.resolve(
+      count === 'table'
+        ? table.filter((r) => r.baseCurrency === where.baseCurrency).length
+        : typeof count === 'number'
+          ? count
+          : (count[where.baseCurrency] ?? 0),
+    ),
   );
   const repository = { find, save, update, delete: remove, count: countRows };
   const publish = vi.fn().mockResolvedValue(undefined);
@@ -69,7 +82,7 @@ function makeService({
     { getBaseCurrency: vi.fn().mockResolvedValue(shopBase) } as unknown as CurrencyExchangeRateService,
   );
 
-  return { service, save, update, remove, publish, fetchRates };
+  return { service, save, update, remove, publish, fetchRates, rows: () => table };
 }
 
 /** The single argument of the n-th `publish` call, typed. */
@@ -113,7 +126,7 @@ describe('CurrencyExchangeRateSyncService.syncRates', () => {
 
     await service.syncRates(ctx);
 
-    expect(update).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalledWith({ id: '1' }, expect.anything());
   });
 
   it('publishes nothing when the source repeats the stored rates', async () => {
@@ -283,6 +296,31 @@ describe('CurrencyExchangeRateSyncService.syncRates across bases', () => {
     await service.syncRates(ctx);
 
     expect(remove).toHaveBeenCalledWith({ baseCurrency: expect.objectContaining({ _type: 'not', _value: 'EUR' }) });
+  });
+});
+
+describe('rows from before the baseCurrency column', () => {
+  const legacy = () => storedRate({ baseCurrency: null as unknown as CurrencyCode });
+
+  it('takes them to be in the current base on boot, keeping custom rates and fetching nothing', async () => {
+    const { service, fetchRates, rows } = makeService({ count: 'table', stored: [legacy()] });
+
+    await service.backfillIfEmpty(ctx);
+
+    expect(fetchRates).not.toHaveBeenCalled();
+    expect(rows()).toEqual([
+      expect.objectContaining({ baseCurrency: CurrencyCode.UAH, useCustomRate: true, customRate: 45 }),
+    ]);
+  });
+
+  it('adopts them in a sync too, instead of treating them as another base', async () => {
+    const { service, rows } = makeService({ stored: [legacy()] });
+
+    await service.syncRates(ctx);
+
+    expect(rows()).toEqual([
+      expect.objectContaining({ baseCurrency: CurrencyCode.UAH, rate: 42, useCustomRate: true, customRate: 45 }),
+    ]);
   });
 });
 
