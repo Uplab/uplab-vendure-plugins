@@ -312,20 +312,20 @@ Turning on `useCustomRate` without a positive `customRate` is rejected.
 ## Event
 
 `CurrencyExchangeRateEvent` is published once the transaction has committed: `type: 'synced'` when a sync
-changed anything, with every rate now stored in the base currency, or `'updated'` with the one rate an
-admin saved. Use it to drop caches
-that embed the rates:
+changed anything, or when the plugin adopts rows without a base on boot, with every rate now stored in the
+base currency; `'updated'` with the one rate an admin saved. Use it to drop caches that embed the rates —
+subscribe in `onModuleInit`, which runs before any plugin's bootstrap, so the boot event is not missed:
 
 ```ts
-import { OnApplicationBootstrap } from '@nestjs/common';
+import { OnModuleInit } from '@nestjs/common';
 import { EventBus, PluginCommonModule, VendurePlugin } from '@vendure/core';
 import { CurrencyExchangeRateEvent } from '@uplab/vendure-plugin-exchange-rates';
 
 @VendurePlugin({ imports: [PluginCommonModule] })
-export class RatesCachePlugin implements OnApplicationBootstrap {
+export class RatesCachePlugin implements OnModuleInit {
   constructor(private readonly eventBus: EventBus) {}
 
-  onApplicationBootstrap() {
+  onModuleInit() {
     this.eventBus.ofType(CurrencyExchangeRateEvent).subscribe(() => {
       // drop whatever caches the rates, e.g. a cached Shop API response
     });
@@ -348,7 +348,7 @@ One table, `currency_exchange_rate`:
 
 ¹ Nullable so that a generated migration can add it to a filled table. On the next boot (and in every
 sync) the plugin gives rows without one the current base, keeping their custom rates — it assumes they are
-already in that base, so upgrade first and change the base in a later release.
+already in that base, so change the base only after the upgrade has booted once.
 
 A sync updates `rate` and inserts new currencies, in one transaction; on a [base change](#base-currency) it
 also rewrites `baseCurrency`, clears custom rates and deletes the currencies the new base does not cover.

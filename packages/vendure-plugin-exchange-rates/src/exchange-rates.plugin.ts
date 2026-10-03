@@ -89,8 +89,12 @@ export class ExchangeRatesPlugin implements OnApplicationBootstrap, OnApplicatio
   // Source first: the backfill needs it.
   async onApplicationBootstrap(): Promise<void> {
     await ExchangeRatesPlugin.options.source.init?.(new Injector(this.moduleRef));
+    const ctx = await this.requestContextService.create({ apiType: 'admin' });
     if (this.processContext.isServer) {
-      await this.syncService.backfillIfEmpty(await this.requestContextService.create({ apiType: 'admin' }));
+      await this.syncService.backfillIfEmpty(ctx);
+    } else {
+      // The worker converts too (feeds, jobs): rows without a base must not wait for the next sync there.
+      await this.syncService.adoptRowsWithoutBase(ctx);
     }
   }
 

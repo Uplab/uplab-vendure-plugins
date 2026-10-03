@@ -50,7 +50,8 @@ export class CurrencyExchangeRateAdminFieldResolver {
   /**
    * A row from before the `baseCurrency` column is adopted on boot and in every sync; one that is listed
    * before that (e.g. while an older instance still runs a rolling deploy) shows the base it will get,
-   * instead of failing the whole non-null list.
+   * instead of failing the whole non-null list. Filtering and sorting on `baseCurrency` still see the
+   * stored value until then.
    */
   @ResolveField()
   async baseCurrency(@Ctx() ctx: RequestContext, @Parent() row: CurrencyExchangeRate) {

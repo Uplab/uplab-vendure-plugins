@@ -31,8 +31,8 @@ Claude Code, `/new-plugin <name>` scaffolds all of this.
   surface to what is genuinely specific to the vendor.
 - **Schema changes must migrate without hand edits.** Hosts generate their migrations
   from our entities, and a new `NOT NULL` column without a default cannot be added
-  cleanly to a table that already has rows: Postgres and SQLite reject the
-  `ALTER TABLE`, MySQL silently fills `''`. A column added after a package's first
+  cleanly to a table that already has rows: Postgres rejects the `ALTER TABLE`,
+  SQLite's table rebuild fails, MySQL silently fills `''`. A column added after a package's first
   release therefore has a static `default`, or is `nullable: true` and the plugin
   fills existing rows itself (on bootstrap and in the code path that first reads
   them, treating `''` like NULL) — see `adoptRowsWithoutBase` in the exchange-rates

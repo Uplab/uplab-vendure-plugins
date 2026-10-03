@@ -328,6 +328,15 @@ describe('rows from before the baseCurrency column', () => {
     expect(rows()).toEqual([expect.objectContaining({ baseCurrency: CurrencyCode.UAH, customRate: 45 })]);
   });
 
+  it('adopts them on its own too (the worker bootstrap), returning the base', async () => {
+    const { service, fetchRates, rows } = makeService({ stored: [legacy()] });
+
+    await expect(service.adoptRowsWithoutBase(ctx)).resolves.toBe(CurrencyCode.UAH);
+
+    expect(fetchRates).not.toHaveBeenCalled();
+    expect(rows()).toEqual([expect.objectContaining({ baseCurrency: CurrencyCode.UAH, customRate: 45 })]);
+  });
+
   it('announces the rows it adopted on boot, which only now show on the Shop API', async () => {
     const { service, publish } = makeService({ count: 'table', stored: [legacy()] });
 
@@ -337,6 +346,7 @@ describe('rows from before the baseCurrency column', () => {
   });
 
   it('counts an adoption as a change in a sync, so the synced event goes out', async () => {
+    // The source repeats the stored rate: the adoption is the only change.
     const { service, publish } = makeService({
       stored: [legacy()],
       quotes: [{ currencyCode: CurrencyCode.USD, rate: 40 }],

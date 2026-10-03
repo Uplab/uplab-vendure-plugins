@@ -30,7 +30,10 @@ function makePlugin(isServer = true) {
     fetchRates: vi.fn(),
   };
   ExchangeRatesPlugin.init({ source });
-  const syncService = { backfillIfEmpty: vi.fn(() => Promise.resolve(void order.push('backfill'))) };
+  const syncService = {
+    backfillIfEmpty: vi.fn(() => Promise.resolve(void order.push('backfill'))),
+    adoptRowsWithoutBase: vi.fn(() => Promise.resolve(void order.push('adopt'))),
+  };
   const plugin = new ExchangeRatesPlugin(
     {} as ModuleRef,
     { isServer } as ProcessContext,
@@ -108,13 +111,12 @@ describe('ExchangeRatesPlugin lifecycle', () => {
     expect(order).toEqual(['init', 'backfill']);
   });
 
-  it('does not backfill in the worker', async () => {
-    const { plugin, source, syncService } = makePlugin(false);
+  it('only adopts rows without a base in the worker, without backfilling', async () => {
+    const { plugin, order } = makePlugin(false);
 
     await plugin.onApplicationBootstrap();
 
-    expect(source.init).toHaveBeenCalled();
-    expect(syncService.backfillIfEmpty).not.toHaveBeenCalled();
+    expect(order).toEqual(['init', 'adopt']);
   });
 
   it('destroys the source on shutdown', async () => {

@@ -129,28 +129,40 @@ export class CurrencyExchangeRateSyncService {
   }
 
   /**
-   * Gives rows from before the `baseCurrency` column the current base, then syncs when no rate is stored in
-   * it: on the first boot, and after a restart that changed the base. Never throws: neither a source outage
-   * nor a database hiccup may stop the server.
+   * Gives rows from before the `baseCurrency` column the current base, and announces them: they only now
+   * show on the Shop API and in `getRate`. Run on bootstrap in every process, so the worker does not wait
+   * for the next sync either. Returns the base, or `undefined` when the database could not be read; never
+   * throws.
    */
-  async backfillIfEmpty(ctx: RequestContext): Promise<void> {
-    let baseCurrency: CurrencyCode;
+  async adoptRowsWithoutBase(ctx: RequestContext): Promise<CurrencyCode | undefined> {
     try {
-      baseCurrency = await this.rateService.getBaseCurrency(ctx);
+      const baseCurrency = await this.rateService.getBaseCurrency(ctx);
       const repository = this.connection.getRepository(ctx, CurrencyExchangeRate);
       if (await adoptRowsWithoutBase(repository, baseCurrency)) {
-        // They just became visible on the Shop API: let caches of its earlier, emptier answer go.
         const rows = await repository.find({ where: { baseCurrency }, order: { code: 'ASC' } });
         await this.eventBus.publish(new CurrencyExchangeRateEvent(ctx, rows, 'synced'));
       }
-      if ((await repository.count({ where: { baseCurrency } })) > 0) {
-        return;
-      }
+      return baseCurrency;
     } catch (e) {
       Logger.warn(`Could not check the stored exchange rates: ${(e as Error).message}`, loggerCtx);
+      return undefined;
+    }
+  }
+
+  /**
+   * {@link adoptRowsWithoutBase}, then syncs when no rate is stored in the current base: on the first boot,
+   * and after a restart that changed the base. Never throws: neither a source outage nor a database hiccup
+   * may stop the server.
+   */
+  async backfillIfEmpty(ctx: RequestContext): Promise<void> {
+    const baseCurrency = await this.adoptRowsWithoutBase(ctx);
+    if (!baseCurrency) {
       return;
     }
     try {
+      if ((await this.connection.getRepository(ctx, CurrencyExchangeRate).count({ where: { baseCurrency } })) > 0) {
+        return;
+      }
       const persisted = await this.syncRates(ctx);
       Logger.info(`Loaded ${persisted.length} exchange rates from ${this.options.source.name}`, loggerCtx);
     } catch (e) {
