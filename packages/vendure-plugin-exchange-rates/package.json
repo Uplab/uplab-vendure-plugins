@@ -1,6 +1,6 @@
 {
   "name": "@uplab/vendure-plugin-exchange-rates",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Exchange rates for Vendure in any base currency, from the ECB, Frankfurter, Monobank, the NBU or your own source, overridable per currency in the dashboard",
   "license": "MIT",
   "author": "Uplab",
