@@ -1,4 +1,4 @@
-import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import {
   Allow,
   Ctx,
@@ -40,5 +40,21 @@ export class CurrencyExchangeRateAdminResolver {
     @Args() args: MutationUpdateCurrencyExchangeRateArgs,
   ): Promise<CurrencyExchangeRate> {
     return this.currencyExchangeRateService.update(ctx, args.input);
+  }
+}
+
+@Resolver('CurrencyExchangeRate')
+export class CurrencyExchangeRateAdminFieldResolver {
+  constructor(private currencyExchangeRateService: CurrencyExchangeRateService) {}
+
+  /**
+   * A row from before the `baseCurrency` column is adopted on boot and in every sync; one that is listed
+   * before that (e.g. while an older instance still runs a rolling deploy) shows the base it will get,
+   * instead of failing the whole non-null list. Filtering and sorting on `baseCurrency` still see the
+   * stored value until then.
+   */
+  @ResolveField()
+  async baseCurrency(@Ctx() ctx: RequestContext, @Parent() row: CurrencyExchangeRate) {
+    return row.baseCurrency || this.currencyExchangeRateService.getBaseCurrency(ctx);
   }
 }

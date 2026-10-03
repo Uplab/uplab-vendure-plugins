@@ -16,6 +16,7 @@ paths:
 - Every observable behaviour change needs: a unit or e2e test, a README update in
   the same package, and a changeset.
 - e2e specs must mock the vendor HTTP client; no real network calls, ever.
-- A column added to an entity after the package's first release is `nullable: true`
-  or has a static `default`, and the plugin fills existing rows itself: hosts'
-  generated migrations must run on filled tables without hand edits.
+- A column added to an entity after the package's first release has a static
+  `default`, or is `nullable: true` and the plugin fills existing rows itself (NULL
+  and MySQL's implicit `''`): hosts' generated migrations must run on filled tables
+  without hand edits. See docs/PLUGIN-AUTHORING.md.

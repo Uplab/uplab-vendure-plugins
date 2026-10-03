@@ -21,13 +21,21 @@ function lastPerCode(quotes: ExchangeRateQuote[]): ExchangeRateQuote[] {
 
 /**
  * A row without a base predates the `baseCurrency` column. Its rates are in the base the shop used then,
- * taken to be the current one, so it keeps its custom rate.
+ * taken to be the current one, so it keeps its custom rate. "Without" is NULL, or `''` where MySQL filled
+ * a NOT NULL column added to a filled table. Returns how many rows it adopted.
  */
-async function adoptRowsWithoutBase(repository: Repository<CurrencyExchangeRate>, baseCurrency: CurrencyCode) {
-  const { affected } = await repository.update({ baseCurrency: IsNull() }, { baseCurrency });
-  if (affected) {
-    Logger.info(`Took ${affected} stored rates without a base currency to be in ${baseCurrency}`, loggerCtx);
+async function fillMissingBase(
+  repository: Repository<CurrencyExchangeRate>,
+  baseCurrency: CurrencyCode,
+): Promise<number> {
+  let adopted = 0;
+  for (const missing of [IsNull(), '' as CurrencyCode]) {
+    adopted += (await repository.update({ baseCurrency: missing }, { baseCurrency })).affected ?? 0;
   }
+  if (adopted) {
+    Logger.info(`Took ${adopted} stored rates without a base currency to be in ${baseCurrency}`, loggerCtx);
+  }
+  return adopted;
 }
 
 /**
@@ -68,7 +76,7 @@ export class CurrencyExchangeRateSyncService {
     // One transaction: a failure part-way leaves every rate as it was, not half of them refreshed.
     const { rows, changed } = await this.connection.withTransaction(ctx, async (txCtx) => {
       const repository = this.connection.getRepository(txCtx, CurrencyExchangeRate);
-      await adoptRowsWithoutBase(repository, baseCurrency);
+      const adopted = await fillMissingBase(repository, baseCurrency);
       const stored = await repository.find();
       const storedByCode = new Map(stored.map((r) => [r.code, r]));
       const rebased: string[] = [];
@@ -110,7 +118,7 @@ export class CurrencyExchangeRateSyncService {
       return {
         // Read back, so `updatedAt` and the rest are what the database now holds.
         rows: await repository.find({ where: { baseCurrency }, order: { code: 'ASC' } }),
-        changed: created.length > 0 || updated > 0 || deleted,
+        changed: adopted > 0 || created.length > 0 || updated > 0 || deleted,
       };
     });
     Logger.verbose(`Synced ${rows.length} rates in ${baseCurrency} from ${source.name} (base ${base})`, loggerCtx);
@@ -121,22 +129,42 @@ export class CurrencyExchangeRateSyncService {
   }
 
   /**
-   * Gives rows from before the `baseCurrency` column the current base, then syncs when no rate is stored in
-   * it: on the first boot, and after a restart that changed the base. Never throws: a source outage must
-   * not stop the server.
+   * Gives rows from before the `baseCurrency` column the current base, and announces them: they only now
+   * show on the Shop API and in `getRate`. Run on bootstrap in every process, so neither depends on the
+   * other having booted first. Returns the base, or `undefined` when the database could not be read; never
+   * throws.
+   *
+   * @internal the plugin runs it on bootstrap; there is no need to call it.
+   */
+  async adoptRowsWithoutBase(ctx: RequestContext): Promise<CurrencyCode | undefined> {
+    try {
+      const baseCurrency = await this.rateService.getBaseCurrency(ctx);
+      const repository = this.connection.getRepository(ctx, CurrencyExchangeRate);
+      if (await fillMissingBase(repository, baseCurrency)) {
+        const rows = await repository.find({ where: { baseCurrency }, order: { code: 'ASC' } });
+        await this.eventBus.publish(new CurrencyExchangeRateEvent(ctx, rows, 'synced'));
+      }
+      return baseCurrency;
+    } catch (e) {
+      Logger.warn(`Could not check the stored exchange rates: ${(e as Error).message}`, loggerCtx);
+      return undefined;
+    }
+  }
+
+  /**
+   * {@link CurrencyExchangeRateSyncService.adoptRowsWithoutBase}, then syncs when no rate is stored in the
+   * current base: on the first boot, and after a restart that changed the base. Never throws: neither a
+   * source outage nor a database hiccup may stop the server.
    */
   async backfillIfEmpty(ctx: RequestContext): Promise<void> {
-    const baseCurrency = await this.rateService.getBaseCurrency(ctx);
-    const repository = this.connection.getRepository(ctx, CurrencyExchangeRate);
-    try {
-      await adoptRowsWithoutBase(repository, baseCurrency);
-    } catch (e) {
-      Logger.warn(`Could not give the stored rates a base currency: ${(e as Error).message}`, loggerCtx);
-    }
-    if ((await repository.count({ where: { baseCurrency } })) > 0) {
+    const baseCurrency = await this.adoptRowsWithoutBase(ctx);
+    if (!baseCurrency) {
       return;
     }
     try {
+      if ((await this.connection.getRepository(ctx, CurrencyExchangeRate).count({ where: { baseCurrency } })) > 0) {
+        return;
+      }
       const persisted = await this.syncRates(ctx);
       Logger.info(`Loaded ${persisted.length} exchange rates from ${this.options.source.name}`, loggerCtx);
     } catch (e) {

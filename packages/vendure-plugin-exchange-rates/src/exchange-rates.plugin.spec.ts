@@ -4,6 +4,7 @@ import {
   CurrencyCode,
   getConfigurationFunction,
   Injector,
+  Logger,
   ProcessContext,
   RequestContext,
   RequestContextService,
@@ -30,7 +31,10 @@ function makePlugin(isServer = true) {
     fetchRates: vi.fn(),
   };
   ExchangeRatesPlugin.init({ source });
-  const syncService = { backfillIfEmpty: vi.fn(() => Promise.resolve(void order.push('backfill'))) };
+  const syncService = {
+    backfillIfEmpty: vi.fn(() => Promise.resolve(void order.push('backfill'))),
+    adoptRowsWithoutBase: vi.fn(() => Promise.resolve(void order.push('adopt'))),
+  };
   const plugin = new ExchangeRatesPlugin(
     {} as ModuleRef,
     { isServer } as ProcessContext,
@@ -108,13 +112,25 @@ describe('ExchangeRatesPlugin lifecycle', () => {
     expect(order).toEqual(['init', 'backfill']);
   });
 
-  it('does not backfill in the worker', async () => {
-    const { plugin, source, syncService } = makePlugin(false);
+  it('only adopts rows without a base in the worker, without backfilling', async () => {
+    const { plugin, order } = makePlugin(false);
 
     await plugin.onApplicationBootstrap();
 
-    expect(source.init).toHaveBeenCalled();
+    expect(order).toEqual(['init', 'adopt']);
+  });
+
+  it('still boots when no request context can be created, skipping the backfill', async () => {
+    const { plugin, syncService, order } = makePlugin();
+    vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    (plugin as unknown as { requestContextService: { create: () => Promise<never> } }).requestContextService.create =
+      () => Promise.reject(new Error('no default channel'));
+
+    await expect(plugin.onApplicationBootstrap()).resolves.toBeUndefined();
+
+    expect(order).toEqual(['init']);
     expect(syncService.backfillIfEmpty).not.toHaveBeenCalled();
+    expect(syncService.adoptRowsWithoutBase).not.toHaveBeenCalled();
   });
 
   it('destroys the source on shutdown', async () => {
