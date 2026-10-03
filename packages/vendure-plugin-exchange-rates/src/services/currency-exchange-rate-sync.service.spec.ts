@@ -337,6 +337,16 @@ describe('rows from before the baseCurrency column', () => {
     expect(rows()).toEqual([expect.objectContaining({ baseCurrency: CurrencyCode.UAH, customRate: 45 })]);
   });
 
+  it('adopting returns undefined and announces nothing when the database fails', async () => {
+    const { service, publish } = makeService();
+    (service as unknown as { connection: { getRepository: () => unknown } }).connection.getRepository = () => {
+      throw new Error('connection reset');
+    };
+
+    await expect(service.adoptRowsWithoutBase(ctx)).resolves.toBeUndefined();
+    expect(publish).not.toHaveBeenCalled();
+  });
+
   it('announces the rows it adopted on boot, which only now show on the Shop API', async () => {
     const { service, publish } = makeService({ count: 'table', stored: [legacy()] });
 
@@ -369,16 +379,6 @@ describe('rows from before the baseCurrency column', () => {
 });
 
 describe('CurrencyExchangeRateSyncService.backfillIfEmpty', () => {
-  it('adopting returns undefined and announces nothing when the database fails', async () => {
-    const { service, publish } = makeService();
-    (service as unknown as { connection: { getRepository: () => unknown } }).connection.getRepository = () => {
-      throw new Error('connection reset');
-    };
-
-    await expect(service.adoptRowsWithoutBase(ctx)).resolves.toBeUndefined();
-    expect(publish).not.toHaveBeenCalled();
-  });
-
   it('never throws, not even when the database fails', async () => {
     const { service, fetchRates } = makeService();
     (service as unknown as { connection: { getRepository: () => unknown } }).connection.getRepository = () => {

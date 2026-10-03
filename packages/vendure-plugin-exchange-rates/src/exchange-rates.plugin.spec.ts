@@ -4,6 +4,7 @@ import {
   CurrencyCode,
   getConfigurationFunction,
   Injector,
+  Logger,
   ProcessContext,
   RequestContext,
   RequestContextService,
@@ -117,6 +118,19 @@ describe('ExchangeRatesPlugin lifecycle', () => {
     await plugin.onApplicationBootstrap();
 
     expect(order).toEqual(['init', 'adopt']);
+  });
+
+  it('still boots when no request context can be created, skipping the backfill', async () => {
+    const { plugin, syncService, order } = makePlugin();
+    vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    (plugin as unknown as { requestContextService: { create: () => Promise<never> } }).requestContextService.create =
+      () => Promise.reject(new Error('no default channel'));
+
+    await expect(plugin.onApplicationBootstrap()).resolves.toBeUndefined();
+
+    expect(order).toEqual(['init']);
+    expect(syncService.backfillIfEmpty).not.toHaveBeenCalled();
+    expect(syncService.adoptRowsWithoutBase).not.toHaveBeenCalled();
   });
 
   it('destroys the source on shutdown', async () => {
