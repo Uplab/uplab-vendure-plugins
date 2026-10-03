@@ -1,5 +1,11 @@
 # @uplab/vendure-plugin-exchange-rates
 
+## 0.1.1
+
+### Patch Changes
+
+- [#31](https://github.com/Uplab/uplab-vendure-plugins/pull/31) [`a1899fe`](https://github.com/Uplab/uplab-vendure-plugins/commit/a1899fe1422faec3f96b0f4259f713ab26b5deaf) Thanks [@brmk](https://github.com/brmk)! - The `baseCurrency` column is nullable, so a generated migration adds it to a table that already has rows without hand edits. On boot (and in every sync) rows without a base are given the current one and keep their custom rates.
+
 ## 0.1.0
 
 ### Minor Changes
