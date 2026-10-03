@@ -1,7 +1,13 @@
 import 'dotenv/config';
 import path from 'path';
 import { AssetServerPlugin } from '@vendure/asset-server-plugin';
-import { DefaultJobQueuePlugin, DefaultSchedulerPlugin, DefaultSearchPlugin, type VendureConfig } from '@vendure/core';
+import {
+  CurrencyCode,
+  DefaultJobQueuePlugin,
+  DefaultSchedulerPlugin,
+  DefaultSearchPlugin,
+  type VendureConfig,
+} from '@vendure/core';
 import { NovaPoshtaPlugin } from '@uplab/vendure-plugin-nova-poshta';
 import { TurboSmsPlugin } from '@uplab/vendure-plugin-turbosms';
 // Imported from source, not by package name: the dashboard's plugin discovery does not follow a pnpm
@@ -10,25 +16,31 @@ import { TurboSmsPlugin } from '@uplab/vendure-plugin-turbosms';
 // sources from node_modules/.cache, where only this package's own dependencies resolve — hence the
 // plugin's peers (@nestjs/*, graphql-tag) in this package's devDependencies.
 import {
-  CurrencyExchangeRatePlugin,
+  EcbExchangeRateSource,
   type ExchangeRateSource,
+  ExchangeRatesPlugin,
+  FrankfurterExchangeRateSource,
   MonobankExchangeRateSource,
   NbuExchangeRateSource,
   StaticExchangeRateSource,
-} from '../../vendure-plugin-currency-exchange-rate/src';
+} from '../../vendure-plugin-exchange-rates/src';
 import { UnifiedSlugPlugin } from '../../vendure-plugin-unified-slug/src';
 
 const port = +(process.env.APP_PORT ?? 3000);
 
-/** `CURRENCY_RATE_SOURCE=monobank|nbu` reads live rates; anything else keeps fixed ones. */
+/** `EXCHANGE_RATE_SOURCE=ecb|frankfurter|monobank|nbu` reads live rates; anything else keeps fixed ones. */
 function exchangeRateSource(): ExchangeRateSource {
-  switch (process.env.CURRENCY_RATE_SOURCE) {
+  switch (process.env.EXCHANGE_RATE_SOURCE) {
+    case 'ecb':
+      return new EcbExchangeRateSource();
+    case 'frankfurter':
+      return new FrankfurterExchangeRateSource();
     case 'monobank':
       return new MonobankExchangeRateSource();
     case 'nbu':
       return new NbuExchangeRateSource();
     default:
-      return new StaticExchangeRateSource({ USD: 41.5, EUR: 45, PLN: 10.6 });
+      return new StaticExchangeRateSource({ base: CurrencyCode.USD, rates: { EUR: 1.12, GBP: 1.32, UAH: 0.024 } });
   }
 }
 
@@ -87,7 +99,7 @@ export const config: VendureConfig = {
       dryRun: process.env.TURBOSMS_DRY_RUN !== 'false',
     }),
     UnifiedSlugPlugin.init(),
-    CurrencyExchangeRatePlugin.init({ source: exchangeRateSource() }),
+    ExchangeRatesPlugin.init({ source: exchangeRateSource() }),
     // With the placeholder key the Shop queries fail with Nova Poshta's "API key incorrect".
     NovaPoshtaPlugin.init({ apiKey: process.env.NOVA_POSHTA_API_KEY ?? 'dev-api-key' }),
   ],

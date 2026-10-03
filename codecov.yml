@@ -26,7 +26,7 @@ component_management:
       name: vendure-plugin-nova-poshta
       paths:
         - packages/vendure-plugin-nova-poshta/**
-    - component_id: currency-exchange-rate
-      name: vendure-plugin-currency-exchange-rate
+    - component_id: exchange-rates
+      name: vendure-plugin-exchange-rates
       paths:
-        - packages/vendure-plugin-currency-exchange-rate/**
+        - packages/vendure-plugin-exchange-rates/**
