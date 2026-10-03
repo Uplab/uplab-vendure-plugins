@@ -9,7 +9,7 @@ import {
   Type,
   VendurePlugin,
 } from '@vendure/core';
-import { CurrencyExchangeRateAdminResolver } from './api/admin.resolver';
+import { CurrencyExchangeRateAdminFieldResolver, CurrencyExchangeRateAdminResolver } from './api/admin.resolver';
 import { adminApiExtensions, shopApiExtensions } from './api/api-extensions';
 import { CurrencyExchangeRateShopFieldResolver, CurrencyExchangeRateShopResolver } from './api/shop.resolver';
 import { EXCHANGE_RATES_PLUGIN_OPTIONS, DEFAULT_SYNC_SCHEDULE } from './constants';
@@ -46,7 +46,10 @@ function resolveOptions(options: ExchangeRatesPluginOptions): ResolvedExchangeRa
     resolvers: [CurrencyExchangeRateShopResolver, CurrencyExchangeRateShopFieldResolver],
     schema: shopApiExtensions,
   },
-  adminApiExtensions: { resolvers: [CurrencyExchangeRateAdminResolver], schema: adminApiExtensions },
+  adminApiExtensions: {
+    resolvers: [CurrencyExchangeRateAdminResolver, CurrencyExchangeRateAdminFieldResolver],
+    schema: adminApiExtensions,
+  },
   // Resolved relative to the compiled plugin file; the sources are copied to `dist/dashboard/`.
   dashboard: './dashboard/index.tsx',
   providers: [

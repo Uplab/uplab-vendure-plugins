@@ -346,8 +346,9 @@ One table, `currency_exchange_rate`:
 | `useCustomRate` | boolean, default `false`                     |
 | `customRate`    | decimal(19, 8), nullable                     |
 
-¹ Nullable so that a generated migration can add it to a filled table: on the next boot the plugin gives
-rows without one the current base, keeping their custom rates.
+¹ Nullable so that a generated migration can add it to a filled table. On the next boot (and in every
+sync) the plugin gives rows without one the current base, keeping their custom rates — it assumes they are
+already in that base, so upgrade first and change the base in a later release.
 
 A sync updates `rate` and inserts new currencies, in one transaction; on a [base change](#base-currency) it
 also rewrites `baseCurrency`, clears custom rates and deletes the currencies the new base does not cover.

@@ -174,6 +174,8 @@ describe('ExchangeRatesPlugin', () => {
       .get(TransactionalConnection)
       .rawConnection.query('UPDATE currency_exchange_rate SET "baseCurrency" = NULL');
     expect((await shopClient.query(SHOP_RATES)).currencyExchangeRates.totalItems).toBe(0);
+    // The Admin API still lists them, with the base they are about to get, rather than failing on a null.
+    expect((await adminRates()).every((r: { baseCurrency: string }) => r.baseCurrency === 'EUR')).toBe(true);
 
     const ctx = await server.app.get(RequestContextService).create({ apiType: 'admin' });
     await server.app.get(CurrencyExchangeRateSyncService).backfillIfEmpty(ctx);

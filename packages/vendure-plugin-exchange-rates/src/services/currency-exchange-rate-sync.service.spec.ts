@@ -43,11 +43,14 @@ function makeService({
     return Promise.resolve(entities);
   });
   const update = vi.fn(
-    (where: { id?: string; baseCurrency?: { type: string } }, changes: Partial<CurrencyExchangeRate>) => {
+    (where: { id?: string; baseCurrency?: string | { type: string } }, changes: Partial<CurrencyExchangeRate>) => {
+      const base = where.baseCurrency;
       const matches =
-        where.baseCurrency?.type === 'isNull'
-          ? (r: CurrencyExchangeRate) => r.baseCurrency == null
-          : (r: CurrencyExchangeRate) => r.id === where.id;
+        typeof base === 'string'
+          ? (r: CurrencyExchangeRate) => r.baseCurrency === base
+          : base?.type === 'isNull'
+            ? (r: CurrencyExchangeRate) => r.baseCurrency == null
+            : (r: CurrencyExchangeRate) => r.id === where.id;
       const rows = table.filter(matches);
       rows.forEach((row) => Object.assign(row, changes));
       return Promise.resolve({ affected: rows.length });
@@ -126,7 +129,8 @@ describe('CurrencyExchangeRateSyncService.syncRates', () => {
 
     await service.syncRates(ctx);
 
-    expect(update).not.toHaveBeenCalledWith({ id: '1' }, expect.anything());
+    // Only the adoption of rows without a base, which finds none here.
+    expect(update.mock.calls.every(([where]) => 'baseCurrency' in where)).toBe(true);
   });
 
   it('publishes nothing when the source repeats the stored rates', async () => {
@@ -313,6 +317,36 @@ describe('rows from before the baseCurrency column', () => {
     ]);
   });
 
+  it("adopts MySQL's implicit '' like NULL", async () => {
+    const { service, rows } = makeService({
+      count: 'table',
+      stored: [storedRate({ baseCurrency: '' as CurrencyCode })],
+    });
+
+    await service.backfillIfEmpty(ctx);
+
+    expect(rows()).toEqual([expect.objectContaining({ baseCurrency: CurrencyCode.UAH, customRate: 45 })]);
+  });
+
+  it('announces the rows it adopted on boot, which only now show on the Shop API', async () => {
+    const { service, publish } = makeService({ count: 'table', stored: [legacy()] });
+
+    await service.backfillIfEmpty(ctx);
+
+    expect(publishedEvent(publish).entities).toEqual([expect.objectContaining({ baseCurrency: CurrencyCode.UAH })]);
+  });
+
+  it('counts an adoption as a change in a sync, so the synced event goes out', async () => {
+    const { service, publish } = makeService({
+      stored: [legacy()],
+      quotes: [{ currencyCode: CurrencyCode.USD, rate: 40 }],
+    });
+
+    await service.syncRates(ctx);
+
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
   it('adopts them in a sync too, instead of treating them as another base', async () => {
     const { service, rows } = makeService({ stored: [legacy()] });
 
@@ -325,6 +359,17 @@ describe('rows from before the baseCurrency column', () => {
 });
 
 describe('CurrencyExchangeRateSyncService.backfillIfEmpty', () => {
+  it('never throws, not even when the database fails', async () => {
+    const { service, fetchRates } = makeService();
+    (service as unknown as { connection: { getRepository: () => unknown } }).connection.getRepository = () => {
+      throw new Error('connection reset');
+    };
+
+    await expect(service.backfillIfEmpty(ctx)).resolves.toBeUndefined();
+    expect(fetchRates).not.toHaveBeenCalled();
+    expect(Logger.warn).toHaveBeenCalledWith(expect.stringContaining('connection reset'), expect.any(String));
+  });
+
   it('fills an empty table', async () => {
     const { service, publish } = makeService({ count: 0 });
 
