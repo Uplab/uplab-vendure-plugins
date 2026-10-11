@@ -417,6 +417,16 @@ msgstr "додано"
 msgid "change-history.count.removed"
 msgstr "вилучено"
 
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.moved"
+msgstr "переміщено"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.total"
+msgstr "усього"
+
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
 msgid "(shortened)"
@@ -593,6 +603,11 @@ msgstr "с"
 msgctxt "change-history"
 msgid "Scope"
 msgstr "Склад"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "show all"
+msgstr "показати всі"
 
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"

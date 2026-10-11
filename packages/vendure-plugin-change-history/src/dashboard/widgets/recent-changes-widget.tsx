@@ -15,7 +15,7 @@ import { ActorName, actorOf } from '../components/actor';
 import { EntryDialog } from '../components/entry-dialog';
 import { EntryAction, EntryObject, EntrySummary } from '../components/summary';
 import { useLabels } from '../components/use-labels';
-import { feedFilter, feedSearchParams } from '../format';
+import { feedFilter, feedSearchParams, periodBounds } from '../format';
 import { changeHistoryEntriesDocument } from '../graphql';
 
 export const RECENT_CHANGES_WIDGET_ID = 'change-history-recent';
@@ -30,8 +30,8 @@ export function RecentChangesWidget() {
   const { formatDate } = useLocalFormat();
   const { dateRange } = useWidgetFilters();
   const [entryId, setEntryId] = useState<string>();
-  const from = dateRange.from.toISOString();
-  const to = dateRange.to.toISOString();
+  // Whole days: the Insights picker gives local midnights, which would leave the last day out.
+  const { from, to } = periodBounds(dateRange.from, dateRange.to);
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['change-history-recent', from, to],
     queryFn: () =>

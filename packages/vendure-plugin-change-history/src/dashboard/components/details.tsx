@@ -30,13 +30,15 @@ const objectOf = (row: ChangeHistoryDetailData) => row.sku ?? row.entityLabel ??
  * dialog, «[SKU] Scope  was → became» in a timeline, «Variants: 3 · Rows: 4» as the count line (numbers next
  * to the nouns, so no plural forms are needed). A host overrides it per kind.
  */
-function DefaultDetailRenderer({ rows, mode }: ChangeHistoryDetailRendererProps) {
+function DefaultDetailRenderer({ rows, entry, mode }: ChangeHistoryDetailRendererProps) {
   const labels = useLabels();
   const entities = rowEntities(rows);
   if (mode === 'summary') {
+    // A timeline item carries its first rows only; the server counts them all.
     return (
       <span>
-        {labels.typePlural(entities.type)}: {entities.count} · {labels.tr(ROWS_LABEL)}: {rows.length}
+        {labels.typePlural(entities.type)}: {entry.detailsEntityCount ?? entities.count} · {labels.tr(ROWS_LABEL)}:{' '}
+        {entry.detailsTotal ?? rows.length}
       </span>
     );
   }

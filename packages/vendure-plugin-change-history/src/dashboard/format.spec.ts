@@ -5,19 +5,26 @@ import {
   clipText,
   COLLAPSE_BATCHES_FILTER,
   countEntries,
+  countsLine,
   diffLines,
   durationSeconds,
   encodeActor,
   feedFilter,
   feedSearchParams,
+  flatEntries,
   formatDelta,
   groupByKind,
+  guessKind,
   HIDE_SYSTEM_FILTER,
   idList,
   isStripped,
+  jsonDiff,
   jsonLines,
+  lastStateChange,
   numericDelta,
   parseFeedSearch,
+  parseListSearch,
+  periodBounds,
   rowEntities,
   stripHtml,
 } from './format';
@@ -95,6 +102,19 @@ describe('numbers', () => {
     ).toBe(123);
     expect(batchTotal(null)).toBe(0);
   });
+
+  it('puts the total of a count line last', () => {
+    expect(countsLine({ moved: 3, added: 0, removed: 1, total: 12 })).toEqual({
+      parts: [
+        ['moved', 3],
+        ['removed', 1],
+      ],
+      total: 12,
+    });
+    expect(countsLine({ total: 4 })).toEqual({ parts: [], total: 4 });
+    expect(countsLine({ moved: 2 })).toEqual({ parts: [['moved', 2]] });
+    expect(countsLine(undefined)).toEqual({ parts: [] });
+  });
 });
 
 describe('values', () => {
@@ -118,7 +138,38 @@ describe('values', () => {
     expect(jsonLines({ ids: ['31', '99'], text: '[not json' }, { 31: 'X' }).join('')).toContain('"99"');
     expect(jsonLines({ text: '[not json' }, { 31: 'X' }).join('')).toContain('[not json');
     expect(jsonLines(null, undefined)).toEqual([]);
-    expect(jsonLines({ a: 1 }, {})).toEqual(['{', '  "a": 1', '}']);
+    expect(jsonLines({ a: [1] }, {})).toEqual(['{', '  "a": [', '    1', '  ]', '}']);
+  });
+
+  it('labels the ids of facet value arguments only', () => {
+    const conditions = [
+      {
+        code: 'buy_x_get_y',
+        args: [
+          { name: 'productIds', value: '["12"]' },
+          { name: 'facetValueIds', value: '["12"]' },
+          { name: 'facets', value: ['12'] },
+        ],
+      },
+    ];
+    const text = jsonLines(conditions, { 12: 'Color: Red' }).join('\n');
+    // A product id that collides with a facet value id is not shown as that facet value.
+    expect(text).toContain('"value": "[\\"12\\"]"');
+    expect(text.match(/Color: Red/g)).toHaveLength(2);
+    expect(jsonLines({ productIds: ['12'] }, { 12: 'Color: Red' }).join('')).not.toContain('Color');
+  });
+
+  it('shows an object of scalars as key: value lines', () => {
+    expect(flatEntries({ Kyiv: 3, Lviv: null, open: true })).toEqual([
+      ['Kyiv', '3'],
+      ['Lviv', '—'],
+      ['open', 'true'],
+    ]);
+    expect(flatEntries({ nested: { a: 1 } })).toBeUndefined();
+    expect(flatEntries({})).toBeUndefined();
+    expect(flatEntries(['a'])).toBeUndefined();
+    expect(flatEntries('text')).toBeUndefined();
+    expect(jsonLines({ Kyiv: 3, Lviv: 0 }, undefined)).toEqual(['Kyiv: 3', 'Lviv: 0']);
   });
 
   it('marks the lines outside the common subsequence', () => {
@@ -126,6 +177,49 @@ describe('values', () => {
     expect(from.map((line) => line.changed)).toEqual([false, true, false]);
     expect(to.map((line) => line.changed)).toEqual([false, true, false, true]);
     expect(diffLines([], ['a']).to).toEqual([{ text: 'a', changed: true }]);
+  });
+
+  it('keeps only the common head and tail of texts too long for the subsequence', () => {
+    const from = Array.from({ length: 600 }, (_, i) => `line ${i}`);
+    const to = [...from.slice(0, 10), 'new', ...from.slice(11)];
+    const diff = diffLines(from, to);
+    expect(diff.from.filter((line) => line.changed).map((line) => line.text)).toEqual(['line 10']);
+    expect(diff.to.filter((line) => line.changed).map((line) => line.text)).toEqual(['new']);
+    // One side a prefix of the other: only the extra lines are marked.
+    const longer = diffLines(from, [...from, 'tail']);
+    expect(longer.from.some((line) => line.changed)).toBe(false);
+    expect(longer.to.filter((line) => line.changed).map((line) => line.text)).toEqual(['tail']);
+  });
+
+  it('computes the diff of a JSON change once per change', () => {
+    const change = { kind: 'json', from: { a: [1] }, to: { a: [2] } };
+    const first = jsonDiff(change);
+    expect(jsonDiff(change)).toBe(first);
+    expect(first.to.filter((line) => line.changed).map((line) => line.text.trim())).toEqual(['2']);
+    expect(jsonDiff({ ...change })).not.toBe(first);
+  });
+});
+
+describe("a deleted entity's last state", () => {
+  it('reads the kind and labels the server kept', () => {
+    const fields = { price: { kind: 'money' }, facetValues: { kind: 'refs', labels: { 3: 'Color: Red' } } };
+    expect(lastStateChange('price', 1250, fields)).toEqual({ kind: 'money', to: 1250 });
+    expect(lastStateChange('facetValues', ['3'], fields)).toEqual({
+      kind: 'refs',
+      to: ['3'],
+      labels: { 3: 'Color: Red' },
+    });
+    // A key the server left out is text, whatever it looks like.
+    expect(lastStateChange('sku', '<b>A</b>', fields)).toEqual({ kind: 'text', to: '<b>A</b>' });
+  });
+
+  it('guesses the kind of an older entry without kinds', () => {
+    expect(lastStateChange('description.en', '<p>Soft</p>', undefined).kind).toBe('richtext');
+    expect(lastStateChange('enabled', false, null).kind).toBe('bool');
+    expect(lastStateChange('focalPoint', { x: 1 }, 'odd').kind).toBe('json');
+    expect(guessKind(['1', '2'])).toBe('text');
+    expect(guessKind('a < b')).toBe('text');
+    expect(lastStateChange('x', 1, { x: { kind: 3, labels: 'no' } })).toEqual({ kind: 'text', to: 1 });
   });
 });
 
@@ -206,6 +300,29 @@ describe('the feed URL', () => {
       hideSystem: true,
     });
     expect(parseFeedSearch({ collapse: 'maybe' }).collapseBatches).toBe(true);
+  });
+
+  it('turns a picked period into whole local days', () => {
+    const day = new Date(2026, 9, 11);
+    const { from, to } = periodBounds(day, day);
+    expect(new Date(from)).toEqual(new Date(2026, 9, 11, 0, 0, 0, 0));
+    expect(new Date(to)).toEqual(new Date(2026, 9, 11, 23, 59, 59, 999));
+    const range = periodBounds(new Date(2026, 9, 1, 13, 30), new Date(2026, 9, 3));
+    expect(new Date(range.from)).toEqual(new Date(2026, 9, 1));
+    expect(new Date(range.to)).toEqual(new Date(2026, 9, 3, 23, 59, 59, 999));
+  });
+
+  it('keeps the table state of the URL within bounds', () => {
+    expect(parseListSearch(undefined)).toEqual({ page: 1, perPage: 20, filters: [] });
+    expect(parseListSearch({ page: '-3', perPage: '0' })).toEqual({ page: 1, perPage: 20, filters: [] });
+    expect(parseListSearch({ page: '2.7', perPage: 5000 })).toMatchObject({ page: 2, perPage: 100 });
+    expect(parseListSearch({ page: 'x', perPage: '50' })).toMatchObject({ page: 1, perPage: 50 });
+    expect(
+      parseListSearch({
+        filters: [null, 'x', [], { id: 3, value: 1 }, { id: 'action' }, { id: 'action', value: { in: ['deleted'] } }],
+      }).filters,
+    ).toEqual([{ id: 'action', value: { in: ['deleted'] } }]);
+    expect(parseListSearch({ filters: 'oops' }).filters).toEqual([]);
   });
 
   it('writes only what differs from the defaults', () => {

@@ -61,23 +61,38 @@ describe('change history dashboard registry', () => {
     expect(pub.CHANGE_HISTORY_NAV_ORDER).toBe(600);
   });
 
-  it('rejects registrations it could not render', async () => {
+  it('reports and skips registrations it could not render, without throwing', async () => {
     const pub = await import('./public');
+    const { getChangeHistoryRegistry } = await import('./registry');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const bad = <T>(value: unknown) => value as T;
+    const rejects = (register: () => void, message: RegExp) => {
+      error.mockClear();
+      expect(register).not.toThrow();
+      expect(error).toHaveBeenCalledWith(expect.stringMatching(message));
+    };
 
-    expect(() => pub.registerChangeHistoryFieldLabels('', {})).toThrow(/entityType must be a non-empty string/);
-    expect(() => pub.registerChangeHistoryFieldLabels('Product', { name: bad({}) })).toThrow(/needs a label/);
-    expect(() => pub.registerChangeHistoryValueRenderer('color', bad(undefined))).toThrow(/React component/);
-    expect(() => pub.registerChangeHistoryDetailRenderer('stock', bad('table'))).toThrow(/React component/);
-    expect(() => pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'loud' }))).toThrow(/tone must be/);
-    expect(() => pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'system', icon: 'plug' }))).toThrow(
+    rejects(() => pub.registerChangeHistoryFieldLabels('', {}), /entityType must be a non-empty string/);
+    rejects(() => pub.registerChangeHistoryFieldLabels('Product', { sku: 'SKU', name: bad({}) }), /needs a label/);
+    rejects(() => pub.registerChangeHistoryValueRenderer('color', bad(undefined)), /React component/);
+    rejects(() => pub.registerChangeHistoryDetailRenderer('stock', bad('table')), /React component/);
+    rejects(() => pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'loud' })), /tone must be/);
+    rejects(
+      () => pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'system', icon: 'plug' })),
       /icon of source "erp" must be a React component/,
     );
-    expect(() =>
-      pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'system', countLabels: { zeroed: 3 } })),
-    ).toThrow(/count "zeroed" of source "erp" needs a label/);
-    expect(() => pub.registerChangeHistoryAction('archived', bad({}))).toThrow(/needs a label/);
-    expect(() => pub.registerChangeHistoryBatchKind(bad(1), { label: 'x' })).toThrow(/kind must be/);
-    expect(() => pub.registerChangeHistoryEntityType('Order', bad(undefined))).toThrow(/needs a label/);
+    rejects(
+      () => pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'system', countLabels: { zeroed: 3 } })),
+      /count "zeroed" of source "erp" needs a label/,
+    );
+    rejects(() => pub.registerChangeHistoryAction('archived', bad({})), /needs a label/);
+    rejects(() => pub.registerChangeHistoryBatchKind(bad(1), { label: 'x' }), /kind must be/);
+    rejects(() => pub.registerChangeHistoryEntityType('Order', bad(undefined)), /needs a label/);
+
+    // Nothing of a rejected registration is kept, not even its valid part.
+    const store = getChangeHistoryRegistry();
+    expect(store.fieldLabels.get('Product')?.has('sku')).toBeFalsy();
+    expect(store.sources.has('erp')).toBe(false);
+    expect(store.valueRenderers.has('color')).toBe(false);
   });
 });

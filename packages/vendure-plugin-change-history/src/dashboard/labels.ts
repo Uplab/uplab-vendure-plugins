@@ -120,7 +120,7 @@ const BATCH_KIND_LABELS: Record<string, BuiltInLabel> = {
   collection_rules: label('batch.collection_rules', 'Collection contents updated'),
 };
 
-/** Keys of a run's `counts` and of a collection-rules batch's `meta.counts`. */
+/** Keys of the `counts` of a run, of a collection-rules batch and of a host action (a reorder's `moved` / `total`). */
 const COUNT_LABELS: Record<string, BuiltInLabel> = {
   created: label('count.created', 'created'),
   updated: label('count.updated', 'updated'),
@@ -128,6 +128,8 @@ const COUNT_LABELS: Record<string, BuiltInLabel> = {
   failed: label('count.failed', 'failed'),
   added: label('count.added', 'added'),
   removed: label('count.removed', 'removed'),
+  moved: label('count.moved', 'moved'),
+  total: label('count.total', 'total'),
 };
 
 /** Every built-in descriptor, for the catalog test. */

@@ -51,8 +51,14 @@ export interface ChangeHistoryEntryData {
   batchCounts: ChangeHistoryBatchCount[] | null;
   /** The recorded catalogue entity no longer exists. */
   entityDeleted: boolean;
-  /** Only on a run item of an entity timeline: the rows of that entity (and its children). */
+  /** The parent (a rules batch head's or a membership row's collection, a variant's product) no longer exists. */
+  parentDeleted: boolean;
+  /** Only on a run item of an entity timeline: the first 50 rows of that entity (and its children). */
   details?: ChangeHistoryDetailData[] | null;
+  /** Only on a run item of an entity timeline: how many rows of that entity (and its children) the run has. */
+  detailsTotal?: number | null;
+  /** Only on a run item of an entity timeline: how many entities those rows touch. */
+  detailsEntityCount?: number | null;
 }
 
 export interface ChangeHistoryBatchCount {
@@ -94,7 +100,8 @@ export interface ChangeHistoryValueRendererProps {
  * - `dialog`: one page of the whole run, in the entry dialog (the dialog pages it).
  * - `timeline`: the rows of the page's entity (and its children) inside its history block.
  * - `summary`: the count line of the collapsed timeline item («3 variants · 4 rows»), inline text —
- *   render your own plural forms here.
+ *   render your own plural forms here. `rows` may be the first 50 only: count from `entry.detailsTotal` and
+ *   `entry.detailsEntityCount`.
  */
 export interface ChangeHistoryDetailRendererProps {
   rows: ChangeHistoryDetailData[];

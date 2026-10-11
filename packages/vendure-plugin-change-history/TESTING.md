@@ -55,8 +55,10 @@ entries and paged batch members. Timelines through real mutations: a product sho
 variants', its collection contents and one item per run with only its variants' rows (sorted by SKU, then
 location); a variant shows its own entries and its rows of each run; a just-saved change is the first item at
 once; a collection shows its rules batch (members collapsed) and its child collection; a facet shows its values'
-changes. Run details are labelled, sorted and paged; `entityDeleted` marks a deleted product's entries; filter
-options include new values at once. Five entries written in one transaction are paged two at a time without a
+changes. A run of 60 rows gives a timeline item its first 50 with `detailsTotal` and `detailsEntityCount`.
+Run details are labelled, sorted and paged; `entityDeleted` marks a deleted product's entries, whose
+`meta.lastStateFields` carry the kinds and facet value labels; `parentDeleted` is true for a batch head whose
+collection is gone and false for a host parent type; filter options include new values at once. Five entries written in one transaction are paged two at a time without a
 gap — on Postgres they share one timestamp to the microsecond, the R5-2 regression. Every query is refused
 without `ReadChangeHistory` and allowed with it alone; an administrator holding it in one channel only sees
 that channel's entries in the feed, one entry, a timeline, run details and filter options, while a SuperAdmin

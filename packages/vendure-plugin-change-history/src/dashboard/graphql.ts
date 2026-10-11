@@ -49,6 +49,7 @@ const ENTRY_FIELDS = `
       count
     }
     entityDeleted
+    parentDeleted
   }
 `;
 
@@ -146,6 +147,8 @@ export const changeHistoryEntityTimelineDocument = typedDocument<
         details {
           ...ChangeHistoryDetailFields
         }
+        detailsTotal
+        detailsEntityCount
       }
       endCursor
       hasMore

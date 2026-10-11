@@ -104,7 +104,9 @@ without values (`meta.noBefore = "evicted"`) rather than with a diff that would 
 - **`updated`** lists only the fields that changed, with the value from before the save and after it. A save
   that changes nothing writes nothing.
 - **`created`** lists every value the entity was created with; **`deleted`** keeps the last state in
-  `meta.lastState`. Deleting a product records its variants' deletions too.
+  `meta.lastState`, and in `meta.lastStateFields` the kind of each non-text value with the labels of the ids
+  in it (`{ facetValues: { kind: 'refs', labels: { '3': 'Color: Red' } } }`), so the dashboard renders it like a
+  change. Deleting a product records its variants' deletions too.
 - **`stock_adjusted`**: a manual stock change (an `ADJUSTMENT` movement), with the location and stock on hand
   before → after. Sales and allocations are not recorded, nor is the initial stock of a new variant.
 - **Collection contents.** A product is in a collection when one of its variants is. Every change of a
@@ -313,13 +315,15 @@ Everything needs the **ReadChangeHistory** permission. The dashboard is in Engli
   period and the open entry are in the URL, so a view is a link you can send. Clicking a row opens the entry.
 - **Entry window** — who, when, from where, a link to the entity; the changed fields as _field · was · became_;
   the derived entries (variant prices a product save rewrote), a batch's members and a run's rows, each paged;
-  for a deleted entity its last state and **Full history**, the entity's timeline in the same window.
+  for a deleted entity its last state, rendered like a change (rich text as text, money formatted, references
+  by name), and **Full history**, the entity's timeline in the same window.
 - **History block** — at the bottom of the product, variant, collection, facet and promotion pages: the
   entity's history newest first, 20 at a time with **Show more**, the changes of its children (variants, facet
   values, child collections) marked with their name, derived entries folded under their cause, collection
   rules batches with their counts and members, and each external run as one collapsed item with its count
-  line («Variants: 3 · Rows: 4») that unfolds into this entity's rows. On a page whose entity a run touched
-  alone (a variant), the rows show directly.
+  line («Variants: 3 · Rows: 4») that unfolds into this entity's rows — the first 50, with **show all (240)**
+  opening the whole run in the entry window. On a page whose entity a run touched alone (a variant), the rows
+  show directly.
 - **Insights widget «Recent changes»** — the last 10 rows of the feed's default view in the Insights date
   range, with **All changes →** opening the feed for the same period.
 
@@ -327,7 +331,9 @@ Values are drawn by their `kind`: `text`, `enum`, `bool`, `date`, `money` (the c
 `ref` / `refs` (labels, removed on the left and added on the right), `assets` (thumbnails, added and removed
 outlined, «order changed»), `richtext` (plain text, collapsed, «show in full»), `json` (side by side, changed
 lines highlighted, facet value ids shown by name), `stock` (with the delta), and a compacted value as
-«changed (3,412 → 3,587 characters)». The feed's navigation `order` is `CHANGE_HISTORY_NAV_ORDER`; give an
+«changed (3,412 → 3,587 characters)». An object of plain values (stock thresholds per location) reads as
+`key: value` lines. A host action with `meta.counts` shows them with the count labels, the `total` last:
+«moved 3 (total 48)». The feed's navigation `order` is `CHANGE_HISTORY_NAV_ORDER`; give an
 item of your own `order: CHANGE_HISTORY_NAV_ORDER + 1` to place it right after.
 
 ### Your labels, sources and renderers
@@ -387,8 +393,9 @@ registerChangeHistoryValueRenderer('color', Swatch);
 
 // Rows of an external run of your kind: `dialog` (a page of the whole run), `timeline` (this entity's rows),
 // `summary` (the inline count line of the collapsed item — your own plural forms go here).
-function StockRows({ rows, mode }: ChangeHistoryDetailRendererProps) {
-  if (mode === 'summary') return <span>{rows.length} rows</span>;
+// In a timeline `rows` are the first 50: count from `entry.detailsTotal`.
+function StockRows({ rows, entry, mode }: ChangeHistoryDetailRendererProps) {
+  if (mode === 'summary') return <span>{entry.detailsTotal ?? rows.length} rows</span>;
   return <table>{/* … */}</table>;
 }
 registerChangeHistoryDetailRenderer('stock', StockRows);
@@ -398,7 +405,9 @@ defineDashboardExtension({});
 
 Without a renderer of its own, a run's rows use the package's table: _SKU / ID · name · scope · was · became
 (±delta)_, sorted by SKU, with the count line «Variants: 3 · Rows: 4». A field nobody labelled shows its key in
-words (`customFields.fullPrice` → «Full price»), a source nobody registered its value in words.
+words (`customFields.fullPrice` → «Full price»), a source nobody registered its value in words. A registration
+the dashboard cannot use (an empty key, a missing label, an unknown tone) is reported with `console.error` and
+skipped — it never throws, so a mistake in your extension cannot leave the dashboard blank.
 
 Exclude the package from Vite's dependency pre-bundling in your dashboard's `vite.config`, so the entry is
 compiled like the rest of your extension (the registry lives on `globalThis`, so a second copy would still
@@ -440,7 +449,10 @@ type ChangeHistoryEntry implements Node {
   derivedCount: Int!
   batchCounts: [ChangeHistoryBatchCount!] # batch heads only
   entityDeleted: Boolean!
-  details: [ChangeHistoryDetail!] # run items of a timeline only
+  parentDeleted: Boolean! # the parent (a rules batch's or membership row's collection) is gone
+  details: [ChangeHistoryDetail!] # run items of a timeline only: the first 50 rows
+  detailsTotal: Int # run items of a timeline only: all rows of the entity
+  detailsEntityCount: Int # run items of a timeline only: entities those rows touch
   derivedEntries(options: ChangeHistoryEntryListOptions): ChangeHistoryEntryList!
   batchMembers(options: ChangeHistoryEntryListOptions): ChangeHistoryEntryList!
 }
@@ -515,8 +527,8 @@ extend type Query {
   | one batch            | `batchId: { eq }`                                                       |
   | collapse batches     | `_or: [{ batchId: { isNull: true } }, { entityType: { eq: "Batch" } }]` |
 
-  `derivedCount`, `batchCounts`, `entityDeleted` and `isCompacted` are computed, so they cannot be filtered or
-  sorted on.
+  `derivedCount`, `batchCounts`, `entityDeleted`, `parentDeleted` and `isCompacted` are computed, so they
+  cannot be filtered or sorted on.
 
 - **`changeHistoryEntry`** is one entry. `derivedEntries` and `batchMembers` page with the same list options.
 - **`changeHistoryEntityTimeline`** is one entity's history, newest first, paged with `first` (1–100) and
@@ -525,7 +537,8 @@ extend type Query {
   its children's non-derived entries: a product's variants, a facet's values, a collection's child
   collections and its rules batches (the products that entered or left are collapsed into the batch). Each
   external run that changed the entity, or one of its children, is a single item whose `details` hold only
-  those rows. The timeline is read from the primary database, so a change shows right after its save, even
+  those rows — the first 50, with `detailsTotal` and `detailsEntityCount` counting them all (page the rest with
+  `changeHistoryRunDetails`). The timeline is read from the primary database, so a change shows right after its save, even
   with read replicas.
 - **`changeHistoryRunDetails`** returns a run's rows with the current name (and a variant's SKU), sorted by
   SKU or name, then name, then scope. `take` is at most 500.

@@ -55,17 +55,47 @@ export function idList(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [String(value)];
 }
 
+/** Whether a value is a string, a number, a boolean or null. */
+const isScalar = (value: unknown) => value === null || ['string', 'number', 'boolean'].includes(typeof value);
+
 /**
- * Pretty-printed JSON lines of a value, with id lists replaced by their labels (`"[\"31\"]"` inside an
- * operation argument becomes `["Season: Winter"]`), so a filter or condition reads as names.
+ * `{ "Kyiv": 3, "Lviv": 0 }` → `[['Kyiv', '3'], ['Lviv', '0']]`: a non-empty plain object whose values are all
+ * scalars, as key / value text; `undefined` for anything else (shown as JSON).
+ */
+export function flatEntries(value: unknown): Array<[string, string]> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0 || !entries.every(([, inner]) => isScalar(inner))) {
+    return undefined;
+  }
+  return entries.map(([key, inner]) => [key, inner === null ? '—' : String(inner)]);
+}
+
+/**
+ * The lines of a JSON value: `key: value` per line for an object of scalars, else pretty-printed JSON with the
+ * facet value ids of operation arguments replaced by their labels (`"[\"31\"]"` in a `facetValueIds` argument
+ * becomes `["Season: Winter"]`), so a filter or condition reads as names.
  */
 export function jsonLines(value: unknown, labels: Record<string, string> | undefined): string[] {
   if (value === null || value === undefined) {
     return [];
   }
+  const flat = flatEntries(value);
+  if (flat) {
+    return flat.map(([key, text]) => `${key}: ${text}`);
+  }
   const withLabels = labels && Object.keys(labels).length > 0 ? relabel(value, labels) : value;
   return JSON.stringify(withLabels, null, 2).split('\n');
 }
+
+/**
+ * Arguments of core's operations that hold facet value ids — the only ids the server labels inside a JSON
+ * value. Ids in any other argument (`productIds`, `variantIds`, …) stay as they are, even when a facet value
+ * happens to have the same id.
+ */
+const FACET_VALUE_ARGS = new Set(['facetValueIds', 'facets']);
 
 function labelIds(ids: unknown[], labels: Record<string, string>): string[] | undefined {
   if (ids.length === 0 || !ids.every((id) => (typeof id === 'string' || typeof id === 'number') && labels[id])) {
@@ -74,12 +104,9 @@ function labelIds(ids: unknown[], labels: Record<string, string>): string[] | un
   return ids.map((id) => labels[String(id)]);
 }
 
-function relabel(value: unknown, labels: Record<string, string>): unknown {
+function labelArgument(value: unknown, labels: Record<string, string>): unknown {
   if (Array.isArray(value)) {
-    return labelIds(value, labels) ?? value.map((item) => relabel(item, labels));
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, relabel(inner, labels)]));
+    return labelIds(value, labels) ?? value;
   }
   if (typeof value === 'string' && value.startsWith('[')) {
     try {
@@ -94,18 +121,39 @@ function relabel(value: unknown, labels: Record<string, string>): unknown {
   return value;
 }
 
+function relabel(value: unknown, labels: Record<string, string>): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => relabel(item, labels));
+  }
+  if (value && typeof value === 'object') {
+    const object = value as Record<string, unknown>;
+    if (typeof object.name === 'string' && FACET_VALUE_ARGS.has(object.name) && 'value' in object) {
+      return { ...object, value: labelArgument(object.value, labels) };
+    }
+    return Object.fromEntries(Object.entries(object).map(([key, inner]) => [key, relabel(inner, labels)]));
+  }
+  return value;
+}
+
 export interface DiffLine {
   text: string;
   changed: boolean;
 }
 
+/** Above this many line pairs the longest common subsequence is not computed (it is O(n·m) in time and memory). */
+const MAX_LCS_CELLS = 250_000;
+
 /**
  * Marks the lines of two texts that are not part of their longest common subsequence: what was removed on
- * the left, what was added on the right.
+ * the left, what was added on the right. Texts too long for that keep only their common head and tail
+ * unmarked.
  */
 export function diffLines(from: string[], to: string[]): { from: DiffLine[]; to: DiffLine[] } {
   const n = from.length;
   const m = to.length;
+  if (n * m > MAX_LCS_CELLS) {
+    return diffEnds(from, to);
+  }
   const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
@@ -132,6 +180,40 @@ export function diffLines(from: string[], to: string[]): { from: DiffLine[]; to:
   };
 }
 
+/** The common head and tail unmarked, everything between marked: linear, for texts too long for the LCS. */
+function diffEnds(from: string[], to: string[]): { from: DiffLine[]; to: DiffLine[] } {
+  let head = 0;
+  while (head < from.length && head < to.length && from[head] === to[head]) {
+    head++;
+  }
+  let tail = 0;
+  while (
+    tail < from.length - head &&
+    tail < to.length - head &&
+    from[from.length - 1 - tail] === to[to.length - 1 - tail]
+  ) {
+    tail++;
+  }
+  const mark = (lines: string[]) =>
+    lines.map((text, index) => ({ text, changed: index >= head && index < lines.length - tail }));
+  return { from: mark(from), to: mark(to) };
+}
+
+const jsonDiffs = new WeakMap<object, { from: DiffLine[]; to: DiffLine[] }>();
+
+/**
+ * The line diff of a JSON change, computed once per change object: both sides of a row and every re-render
+ * share it (the query cache keeps the object).
+ */
+export function jsonDiff(change: ChangeHistoryFieldChange): { from: DiffLine[]; to: DiffLine[] } {
+  let diff = jsonDiffs.get(change);
+  if (!diff) {
+    diff = diffLines(jsonLines(change.from, change.labels), jsonLines(change.to, change.labels));
+    jsonDiffs.set(change, diff);
+  }
+  return diff;
+}
+
 /** Whether a change's values were replaced by their lengths at compaction (shown as one «changed» line). */
 export function isStripped(change: ChangeHistoryFieldChange): boolean {
   return change.stripped === true;
@@ -150,6 +232,16 @@ export function countEntries(counts: unknown, includeZero = false): Array<[strin
   return Object.entries(counts as Record<string, unknown>)
     .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
     .filter(([, count]) => includeZero || count !== 0);
+}
+
+/**
+ * `{ moved: 3, added: 0, total: 12 }` → the non-zero counts to show and the `total`, which reads as «(total 12)»
+ * after them.
+ */
+export function countsLine(counts: unknown): { parts: Array<[string, number]>; total?: number } {
+  const entries = countEntries(counts);
+  const total = entries.find(([key]) => key === 'total')?.[1];
+  return { parts: entries.filter(([key]) => key !== 'total'), ...(total !== undefined ? { total } : {}) };
 }
 
 /** Milliseconds as whole seconds (at least 1 for a run that took any time), or `undefined`. */
@@ -176,6 +268,42 @@ export function rowEntities(rows: ChangeHistoryDetailData[]): { count: number; t
   const keys = new Set(rows.map((row) => `${row.entityType}:${row.entityId}`));
   const types = new Set(rows.map((row) => row.entityType));
   return { count: keys.size, type: types.size === 1 ? rows[0]?.entityType : undefined };
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// A deleted entity's last state
+
+interface LastStateField {
+  kind?: unknown;
+  labels?: unknown;
+}
+
+/** The kind of a value of a last state recorded before kinds were kept: markup is rich text, an object JSON. */
+export function guessKind(value: unknown): string {
+  if (typeof value === 'boolean') {
+    return 'bool';
+  }
+  if (typeof value === 'string' && /<\/?[a-z][^>]*>/i.test(value)) {
+    return 'richtext';
+  }
+  return value && typeof value === 'object' && !Array.isArray(value) ? 'json' : 'text';
+}
+
+/**
+ * One value of `meta.lastState` as a change whose «became» side is the value, with the kind and labels the
+ * server kept in `meta.lastStateFields` — so the value renderers of a diff render it. Without
+ * `lastStateFields` (an older entry) the kind is guessed from the value.
+ */
+export function lastStateChange(key: string, value: unknown, fields: unknown): ChangeHistoryFieldChange {
+  const known =
+    fields && typeof fields === 'object' && !Array.isArray(fields)
+      ? (fields as Record<string, LastStateField | undefined>)
+      : undefined;
+  const field = known?.[key];
+  const kind = typeof field?.kind === 'string' ? field.kind : known ? 'text' : guessKind(value);
+  const labels =
+    field?.labels && typeof field.labels === 'object' ? (field.labels as Record<string, string>) : undefined;
+  return { kind, to: value, ...(labels ? { labels } : {}) };
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -263,6 +391,46 @@ const flag = (value: unknown, fallback: boolean): boolean => {
 
 const isoDate = (value: unknown): string | undefined =>
   typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : undefined;
+
+/**
+ * A picked period as whole local days: the picker gives local midnights (one click: `to` = `from`), so the
+ * last day would be left out — `from` becomes the start of its day, `to` the end of its day.
+ */
+export function periodBounds(from: Date, to: Date): { from: string; to: string } {
+  const start = new Date(from);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(to);
+  end.setHours(23, 59, 59, 999);
+  return { from: start.toISOString(), to: end.toISOString() };
+}
+
+export interface ListSearch {
+  page: number;
+  perPage: number;
+  filters: Array<{ id: string; value: unknown }>;
+}
+
+const MAX_PER_PAGE = 100;
+
+/** The table's state in the URL, made safe: page ≥ 1, 1 ≤ perPage ≤ 100, only `{ id, value }` filters. */
+export function parseListSearch(search: Record<string, unknown> | undefined): ListSearch {
+  const whole = (value: unknown) => Math.trunc(Number(value));
+  const page = whole(search?.page);
+  const perPage = whole(search?.perPage);
+  const filters = Array.isArray(search?.filters) ? (search.filters as unknown[]) : [];
+  return {
+    page: page >= 1 ? page : 1,
+    perPage: perPage >= 1 ? Math.min(perPage, MAX_PER_PAGE) : 20,
+    filters: filters.filter(
+      (filter): filter is { id: string; value: unknown } =>
+        !!filter &&
+        typeof filter === 'object' &&
+        !Array.isArray(filter) &&
+        typeof (filter as { id?: unknown }).id === 'string' &&
+        'value' in filter,
+    ),
+  };
+}
 
 export function parseFeedSearch(search: Record<string, unknown> | undefined): FeedSearch {
   const from = isoDate(search?.from);

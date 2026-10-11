@@ -8,7 +8,8 @@ import type { ChangeHistoryDetailData, ChangeHistoryEntryData } from '../registr
 import { ActorBadge, actorOf, TONE_ICON_CLASSES } from './actor';
 import { DetailRows } from './details';
 import { DeletedBadge, EntityLink } from './entity-link';
-import { BatchSummary, batchSubject, EntryAction, EntrySummary } from './summary';
+import { EntryDialog } from './entry-dialog';
+import { BatchSummary, batchSubject, EntryAction, EntryCounts, EntrySummary, hasCounts } from './summary';
 import { useLabels } from './use-labels';
 import { CreatedValues, FieldChangesTable } from './values';
 
@@ -179,9 +180,27 @@ function BatchItem({ entry }: { entry: ChangeHistoryEntryData }) {
   );
 }
 
+/** «show all (240)»: the whole run, paged, in the entry window — the item carries its first rows only. */
+function AllRows({ entry, shown }: { entry: TimelineEntry; shown: number }) {
+  const [open, setOpen] = useState(false);
+  const total = entry.detailsTotal ?? 0;
+  if (total <= shown) {
+    return null;
+  }
+  return (
+    <>
+      <button type="button" className="mt-1 text-sm text-primary hover:underline" onClick={() => setOpen(true)}>
+        <Trans context="change-history">show all</Trans> ({total})
+      </button>
+      <EntryDialog entryId={open ? entry.id : undefined} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
 /**
  * An external run: one collapsed item with its count line when it touched several entities (a product
- * page), the rows themselves when they are all the subject's (a variant page).
+ * page), the rows themselves when they are all the subject's (a variant page). The server sends the first
+ * rows only; the rest open in the entry window.
  */
 function RunItem({ entry, subject }: { entry: TimelineEntry; subject: TimelineSubject }) {
   const rows = entry.details ?? [];
@@ -194,6 +213,7 @@ function RunItem({ entry, subject }: { entry: TimelineEntry; subject: TimelineSu
     return (
       <ItemFrame entry={entry} title={null}>
         <DetailRows rows={rows} entry={entry} mode="timeline" />
+        <AllRows entry={entry} shown={rows.length} />
       </ItemFrame>
     );
   }
@@ -211,7 +231,12 @@ function RunItem({ entry, subject }: { entry: TimelineEntry; subject: TimelineSu
         </Toggle>
       }
     >
-      {open ? <DetailRows rows={rows} entry={entry} mode="timeline" /> : null}
+      {open ? (
+        <>
+          <DetailRows rows={rows} entry={entry} mode="timeline" />
+          <AllRows entry={entry} shown={rows.length} />
+        </>
+      ) : null}
     </ItemFrame>
   );
 }
@@ -233,7 +258,12 @@ function EntryItem({ entry, subject }: { entry: ChangeHistoryEntryData; subject:
             <>
               {' '}
               <EntityLink
-                entry={{ ...entry, entityType: 'Collection', entityId: entry.parentId, entityDeleted: false }}
+                entry={{
+                  ...entry,
+                  entityType: 'Collection',
+                  entityId: entry.parentId,
+                  entityDeleted: entry.parentDeleted === true,
+                }}
                 className="text-foreground"
               >
                 «{typeof entry.meta?.collectionLabel === 'string' ? entry.meta.collectionLabel : entry.parentId}»
@@ -269,6 +299,11 @@ function EntryItem({ entry, subject }: { entry: ChangeHistoryEntryData; subject:
       {hasChanges && entry.action === 'created' && <CreatedValues entityType={entry.entityType} changes={changes} />}
       {hasChanges && entry.action !== 'created' && (
         <FieldChangesTable entityType={entry.entityType} changes={changes} />
+      )}
+      {!hasChanges && hasCounts(entry) && (
+        <div className="text-sm">
+          <EntryCounts entry={entry} />
+        </div>
       )}
       {!hasChanges && !!entry.meta?.noBefore && entry.action !== 'created' && entry.action !== 'deleted' && (
         <span className="text-sm text-muted-foreground">

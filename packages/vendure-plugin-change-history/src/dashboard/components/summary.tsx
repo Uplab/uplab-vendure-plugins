@@ -1,7 +1,7 @@
 import { Trans } from '@lingui/react/macro';
 import { Badge } from '@vendure/dashboard';
 import { Layers } from 'lucide-react';
-import { batchTotal, countEntries, durationSeconds, formatDelta, numericDelta } from '../format';
+import { batchTotal, countEntries, countsLine, durationSeconds, formatDelta, numericDelta } from '../format';
 import type { ChangeHistoryEntryData, ChangeHistoryFieldChange } from '../registry';
 import { EntityLink } from './entity-link';
 import { useLabels } from './use-labels';
@@ -15,7 +15,12 @@ export function batchSubject(entry: ChangeHistoryEntryData): ChangeHistoryEntryD
   if (entry.entityType !== 'Batch' || !entry.parentType || !entry.parentId) {
     return undefined;
   }
-  return { ...entry, entityType: entry.parentType, entityId: entry.parentId, entityDeleted: false };
+  return {
+    ...entry,
+    entityType: entry.parentType,
+    entityId: entry.parentId,
+    entityDeleted: entry.parentDeleted === true,
+  };
 }
 
 const kindOf = (entry: ChangeHistoryEntryData) =>
@@ -79,6 +84,25 @@ export function RunCounts({
           {seconds} <Trans context="change-history">s</Trans>
         </span>
       )}
+    </span>
+  );
+}
+
+/** Whether a host action's entry carries counts to show (`meta.counts`, e.g. a reorder's moved / total). */
+export function hasCounts(entry: ChangeHistoryEntryData): boolean {
+  const { parts, total } = countsLine(entry.meta?.counts);
+  return parts.length > 0 || total !== undefined;
+}
+
+/** «moved 3 (total 12)»: the counts of a host action with the source's labels, the total last. */
+export function EntryCounts({ entry }: { entry: ChangeHistoryEntryData }) {
+  const labels = useLabels();
+  const { parts, total } = countsLine(entry.meta?.counts);
+  const totalText = total !== undefined ? `${labels.count(entry.source, 'total')} ${total}` : '';
+  return (
+    <span>
+      {parts.map(([key, count]) => `${labels.count(entry.source, key)} ${count}`).join(', ')}
+      {totalText && (parts.length > 0 ? ` (${totalText})` : totalText)}
     </span>
   );
 }
@@ -165,6 +189,14 @@ export function EntrySummary({ entry }: { entry: ChangeHistoryEntryData }) {
     return (
       <span>
         <ChangesSummary entry={entry} changes={changes} />
+        {derived}
+      </span>
+    );
+  }
+  if (hasCounts(entry)) {
+    return (
+      <span>
+        <EntryCounts entry={entry} />
         {derived}
       </span>
     );

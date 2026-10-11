@@ -449,7 +449,9 @@ export function apiScenarios(env: ApiEnv): void {
           expect.arrayContaining(['created', 'updated', 'collection_added']),
         );
         expect(items.filter((item) => item.entityType !== 'Run').every((item) => item.details === null)).toBe(true);
-        expect(items.filter((item) => item.entityType !== 'Run').every((item) => item.detailsTotal === null)).toBe(true);
+        expect(items.filter((item) => item.entityType !== 'Run').every((item) => item.detailsTotal === null)).toBe(
+          true,
+        );
         expect(added).toMatchObject({ parentDeleted: false });
 
         const own = await timeline({ entityType: 'Product', entityId: decode(productId), includeChildren: false });
@@ -579,7 +581,9 @@ export function apiScenarios(env: ApiEnv): void {
           input: {
             enabled: false,
             facetValueIds: [tagId],
-            translations: [{ languageCode: 'en', name: 'p2-described', slug: 'p2-described', description: '<p>Soft</p>' }],
+            translations: [
+              { languageCode: 'en', name: 'p2-described', slug: 'p2-described', description: '<p>Soft</p>' },
+            ],
           },
         });
         await query(DELETE_PRODUCT, { id: described.id });

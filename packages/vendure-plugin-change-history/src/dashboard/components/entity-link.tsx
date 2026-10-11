@@ -38,10 +38,13 @@ export function EntityLink({
   const route = useEntityRoute()(entry);
   const text = children ?? entry.entityLabel ?? entry.entityId;
   if (entry.entityDeleted) {
+    // In a cell that cuts long names the name shrinks, the badge stays.
     return (
-      <span className={`inline-flex items-center gap-1.5 ${className ?? ''}`}>
-        <span className="text-muted-foreground">{text}</span>
-        <DeletedBadge />
+      <span className={`inline-flex max-w-full items-center gap-1.5 ${className ?? ''}`}>
+        <span className="min-w-0 truncate text-muted-foreground">{text}</span>
+        <span className="shrink-0">
+          <DeletedBadge />
+        </span>
       </span>
     );
   }

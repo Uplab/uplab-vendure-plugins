@@ -2,7 +2,18 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { api, useChannel, useLocalFormat, useQuery, VendureImage } from '@vendure/dashboard';
 import { useState, type ReactNode } from 'react';
 import { changeHistoryAssetPreviewsDocument } from '../graphql';
-import { clipText, diffLines, formatDelta, idList, jsonLines, numericDelta, stripHtml } from '../format';
+import {
+  clipText,
+  flatEntries,
+  formatDelta,
+  idList,
+  jsonDiff,
+  jsonLines,
+  lastStateChange,
+  numericDelta,
+  stripHtml,
+  type DiffLine,
+} from '../format';
 import type { ChangeHistoryFieldChange, ChangeHistoryValueRendererProps } from '../registry';
 import { useLabels } from './use-labels';
 
@@ -68,6 +79,13 @@ export function useValueText() {
     }
     if (typeof value === 'boolean') {
       return value ? yes : no;
+    }
+    const flat = flatEntries(value);
+    if (flat) {
+      return clipText(flat.map(([key, inner]) => `${key}: ${inner}`).join(', '), 80).text;
+    }
+    if (Array.isArray(value) && value.every((item) => item === null || typeof item !== 'object')) {
+      return clipText(value.map(String).join(', '), 80).text;
     }
     if (typeof value === 'object') {
       return clipText(JSON.stringify(value), 80).text;
@@ -200,20 +218,23 @@ function RichTextValue({ change, side }: { change: ChangeHistoryFieldChange; sid
   );
 }
 
-function JsonValue({ change, side }: { change: ChangeHistoryFieldChange; side: Side }) {
-  const lines = diffLines(jsonLines(change.from, change.labels), jsonLines(change.to, change.labels))[side];
+function JsonLines({ lines, side }: { lines: DiffLine[]; side?: Side }) {
   if (lines.length === 0) {
     return <Empty />;
   }
   return (
-    <pre className="max-h-80 overflow-auto rounded border bg-muted/40 p-2 text-xs leading-relaxed">
+    <pre className="max-h-80 overflow-auto rounded border bg-muted/40 p-2 text-xs leading-relaxed whitespace-pre-wrap break-words">
       {lines.map((line, index) => (
-        <div key={index} className={line.changed ? SIDE_CHIP[side] : undefined}>
+        <div key={index} className={line.changed && side ? SIDE_CHIP[side] : undefined}>
           {line.text || ' '}
         </div>
       ))}
     </pre>
   );
+}
+
+function JsonValue({ change, side }: { change: ChangeHistoryFieldChange; side: Side }) {
+  return <JsonLines lines={jsonDiff(change)[side]} side={side} />;
 }
 
 function StockValue({ change, side }: { change: ChangeHistoryFieldChange; side: Side }) {
@@ -365,4 +386,40 @@ export function CreatedValues({
       )}
     </div>
   );
+}
+
+/**
+ * One value of a deleted entity's last state, rendered like the «became» side of a diff without its colour:
+ * the host's renderer for its kind, images as thumbnails, rich text as clipped text, JSON as lines, everything
+ * else as formatted text (money, dates, references by name).
+ */
+export function LastStateValue({
+  entityType,
+  fieldKey,
+  value,
+  fields,
+}: {
+  entityType: string;
+  fieldKey: string;
+  value: unknown;
+  fields: unknown;
+}) {
+  const labels = useLabels();
+  const text = useValueText();
+  const change = lastStateChange(fieldKey, value, fields);
+  const kind = change.kind ?? 'text';
+  const Host = labels.valueRenderer(kind);
+  if (Host) {
+    return <Host change={change} fieldKey={fieldKey} entityType={entityType} side="to" />;
+  }
+  if (kind === 'json') {
+    return <JsonLines lines={jsonLines(value, change.labels).map((line) => ({ text: line, changed: false }))} />;
+  }
+  if (kind === 'richtext') {
+    return <RichTextValue change={change} side="to" />;
+  }
+  if (kind === 'assets') {
+    return <AssetsValue change={change} side="to" />;
+  }
+  return <span>{clipText(text(value, change), 300).text}</span>;
 }

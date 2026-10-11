@@ -6,6 +6,9 @@
  * imported here — the host's tooling compiles this file under its own options, and in the Vite dev server
  * it may be pre-bundled.
  *
+ * A registration the dashboard could not render (an empty key, a missing label, an unknown tone) is reported
+ * with `console.error` and skipped; it never throws, so a mistake cannot blank the dashboard.
+ *
  * @example
  * ```ts
  * import { msg } from '@lingui/core/macro';
@@ -61,6 +64,18 @@ function requireLabel(what: string, definition: { label?: ChangeHistoryLabel } |
   }
 }
 
+/**
+ * Runs a registration; one the dashboard could not render is reported on the console and skipped. A throw
+ * would escape the host's extension module at its top level and leave the whole dashboard blank.
+ */
+function register(apply: () => void): void {
+  try {
+    apply();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+  }
+}
+
 function requireComponent(what: string, component: unknown): void {
   // Function components, classes, and the objects memo() / forwardRef() return.
   if (component == null || (typeof component !== 'function' && typeof component !== 'object')) {
@@ -73,14 +88,19 @@ function requireComponent(what: string, component: unknown): void {
  * suffix of translatable fields is added by the renderer). Overrides the package's labels.
  */
 export function registerChangeHistoryFieldLabels(entityType: string, labels: Record<string, ChangeHistoryLabel>): void {
-  requireKey('entityType', entityType);
-  const registry = getChangeHistoryRegistry();
-  const forType = registry.fieldLabels.get(entityType) ?? new Map<string, ChangeHistoryLabel>();
-  for (const [key, label] of Object.entries(labels ?? {})) {
-    requireLabel(`field "${key}"`, { label });
-    forType.set(key, label);
-  }
-  registry.fieldLabels.set(entityType, forType);
+  register(() => {
+    requireKey('entityType', entityType);
+    const entries = Object.entries(labels ?? {});
+    for (const [key, label] of entries) {
+      requireLabel(`field "${key}"`, { label });
+    }
+    const registry = getChangeHistoryRegistry();
+    const forType = registry.fieldLabels.get(entityType) ?? new Map<string, ChangeHistoryLabel>();
+    for (const [key, label] of entries) {
+      forType.set(key, label);
+    }
+    registry.fieldLabels.set(entityType, forType);
+  });
 }
 
 /** Renders one side of a changed value of the given kind — a host kind, or a replacement for a built-in one. */
@@ -88,9 +108,11 @@ export function registerChangeHistoryValueRenderer(
   kind: string,
   component: ComponentType<ChangeHistoryValueRendererProps>,
 ): void {
-  requireKey('kind', kind);
-  requireComponent(`renderer of kind "${kind}"`, component);
-  getChangeHistoryRegistry().valueRenderers.set(kind, component);
+  register(() => {
+    requireKey('kind', kind);
+    requireComponent(`renderer of kind "${kind}"`, component);
+    getChangeHistoryRegistry().valueRenderers.set(kind, component);
+  });
 }
 
 /** Renders the detail rows of a run whose rows have the given kind. */
@@ -98,9 +120,11 @@ export function registerChangeHistoryDetailRenderer(
   kind: string,
   component: ComponentType<ChangeHistoryDetailRendererProps>,
 ): void {
-  requireKey('kind', kind);
-  requireComponent(`detail renderer of kind "${kind}"`, component);
-  getChangeHistoryRegistry().detailRenderers.set(kind, component);
+  register(() => {
+    requireKey('kind', kind);
+    requireComponent(`detail renderer of kind "${kind}"`, component);
+    getChangeHistoryRegistry().detailRenderers.set(kind, component);
+  });
 }
 
 /**
@@ -108,37 +132,45 @@ export function registerChangeHistoryDetailRenderer(
  * `tone: 'system'` shows the grey robot badge, `'scheduled'` the clock, `'human'` the person.
  */
 export function registerChangeHistorySource(source: string, definition: ChangeHistorySourceDefinition): void {
-  requireKey('source', source);
-  requireLabel(`source "${source}"`, definition);
-  if (!TONES.includes(definition.tone)) {
-    throw new Error(`[ChangeHistory] source "${source}": tone must be one of ${TONES.join(', ')}`);
-  }
-  if (definition.icon !== undefined) {
-    requireComponent(`icon of source "${source}"`, definition.icon);
-  }
-  for (const [key, label] of Object.entries(definition.countLabels ?? {})) {
-    requireLabel(`count "${key}" of source "${source}"`, { label });
-  }
-  getChangeHistoryRegistry().sources.set(source, definition);
+  register(() => {
+    requireKey('source', source);
+    requireLabel(`source "${source}"`, definition);
+    if (!TONES.includes(definition.tone)) {
+      throw new Error(`[ChangeHistory] source "${source}": tone must be one of ${TONES.join(', ')}`);
+    }
+    if (definition.icon !== undefined) {
+      requireComponent(`icon of source "${source}"`, definition.icon);
+    }
+    for (const [key, label] of Object.entries(definition.countLabels ?? {})) {
+      requireLabel(`count "${key}" of source "${source}"`, { label });
+    }
+    getChangeHistoryRegistry().sources.set(source, definition);
+  });
 }
 
 /** Label of a host action (`archived`, …). */
 export function registerChangeHistoryAction(action: string, definition: ChangeHistoryLabelDefinition): void {
-  requireKey('action', action);
-  requireLabel(`action "${action}"`, definition);
-  getChangeHistoryRegistry().actions.set(action, definition);
+  register(() => {
+    requireKey('action', action);
+    requireLabel(`action "${action}"`, definition);
+    getChangeHistoryRegistry().actions.set(action, definition);
+  });
 }
 
 /** Label of a host batch kind (`bulk_edit`, …). */
 export function registerChangeHistoryBatchKind(kind: string, definition: ChangeHistoryLabelDefinition): void {
-  requireKey('kind', kind);
-  requireLabel(`batch kind "${kind}"`, definition);
-  getChangeHistoryRegistry().batchKinds.set(kind, definition);
+  register(() => {
+    requireKey('kind', kind);
+    requireLabel(`batch kind "${kind}"`, definition);
+    getChangeHistoryRegistry().batchKinds.set(kind, definition);
+  });
 }
 
 /** A host entity type: label in the type filter, and the link of its entries. */
 export function registerChangeHistoryEntityType(type: string, definition: ChangeHistoryEntityTypeDefinition): void {
-  requireKey('type', type);
-  requireLabel(`entity type "${type}"`, definition);
-  getChangeHistoryRegistry().entityTypes.set(type, definition);
+  register(() => {
+    requireKey('type', type);
+    requireLabel(`entity type "${type}"`, definition);
+    getChangeHistoryRegistry().entityTypes.set(type, definition);
+  });
 }

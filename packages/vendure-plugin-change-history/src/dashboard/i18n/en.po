@@ -417,6 +417,16 @@ msgstr "added"
 msgid "change-history.count.removed"
 msgstr "removed"
 
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.moved"
+msgstr "moved"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.total"
+msgstr "total"
+
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
 msgid "(shortened)"
@@ -593,6 +603,11 @@ msgstr "s"
 msgctxt "change-history"
 msgid "Scope"
 msgstr "Scope"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "show all"
+msgstr "show all"
 
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"

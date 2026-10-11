@@ -19,10 +19,20 @@ import type { ChangeHistoryEntryData } from '../registry';
 import { ActorBadge, actorOf } from './actor';
 import { DetailRows } from './details';
 import { DeletedBadge, EntityLink, useEntityRoute } from './entity-link';
-import { BatchSummary, batchSubject, EntryAction, EntryObject, EntrySummary, EntryType, RunCounts } from './summary';
+import {
+  BatchSummary,
+  batchSubject,
+  EntryAction,
+  EntryCounts,
+  EntryObject,
+  EntrySummary,
+  EntryType,
+  hasCounts,
+  RunCounts,
+} from './summary';
 import { EntityTimeline } from './timeline';
 import { useLabels } from './use-labels';
-import { CreatedValues, FieldChangesTable, useValueText } from './values';
+import { CreatedValues, FieldChangesTable, LastStateValue } from './values';
 
 const LIST_PAGE = 20;
 const RUN_PAGE = 100;
@@ -125,7 +135,6 @@ function RunDetails({ entry }: { entry: ChangeHistoryEntryData }) {
 /** A deleted entity's values at the moment it was deleted (`meta.lastState`). */
 function LastState({ entry }: { entry: ChangeHistoryEntryData }) {
   const labels = useLabels();
-  const text = useValueText();
   const state = entry.meta?.lastState;
   if (!state || typeof state !== 'object') {
     return null;
@@ -141,7 +150,18 @@ function LastState({ entry }: { entry: ChangeHistoryEntryData }) {
           return (
             <div key={key} className="contents">
               <dt className="text-muted-foreground">{labels.field(entry.entityType, key)}</dt>
-              <dd className="break-words">{stripped ? '…' : text(value, undefined)}</dd>
+              <dd className="min-w-0 break-words">
+                {stripped ? (
+                  '…'
+                ) : (
+                  <LastStateValue
+                    entityType={entry.entityType}
+                    fieldKey={key}
+                    value={value}
+                    fields={entry.meta?.lastStateFields}
+                  />
+                )}
+              </dd>
             </div>
           );
         })}
@@ -268,6 +288,11 @@ function DialogBody({ entryId, onFullHistory }: { entryId: string; onFullHistory
       {hasChanges && entry.action === 'created' && <CreatedValues entityType={entry.entityType} changes={changes} />}
       {hasChanges && entry.action !== 'created' && (
         <FieldChangesTable entityType={entry.entityType} changes={changes} />
+      )}
+      {!hasChanges && !isRun && !isBatch && hasCounts(entry) && (
+        <div className="text-sm">
+          <EntryCounts entry={entry} />
+        </div>
       )}
       {!hasChanges && !!entry.meta?.noBefore && entry.action === 'updated' && (
         <div className="text-sm text-muted-foreground">

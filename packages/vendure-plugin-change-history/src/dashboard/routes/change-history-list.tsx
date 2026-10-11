@@ -20,12 +20,20 @@ import {
   type DefinedDateRange,
 } from '@vendure/dashboard';
 import { X } from 'lucide-react';
-import { useMemo, type MouseEvent } from 'react';
+import { useMemo, type MouseEvent, type ReactNode } from 'react';
 import { ActorName, actorOf } from '../components/actor';
 import { EntryDialog } from '../components/entry-dialog';
 import { EntryAction, EntryObject, EntrySummary, EntryType } from '../components/summary';
 import { useLabels } from '../components/use-labels';
-import { encodeActor, feedFilter, feedSearchParams, parseFeedSearch, type FeedSearch } from '../format';
+import {
+  encodeActor,
+  feedFilter,
+  feedSearchParams,
+  parseFeedSearch,
+  parseListSearch,
+  periodBounds,
+  type FeedSearch,
+} from '../format';
 import { changeHistoryEntriesDocument, changeHistoryFilterOptionsDocument, type ListOptions } from '../graphql';
 import { getChangeHistoryRegistry } from '../registry';
 import { CHANGE_HISTORY_NAV_ORDER } from '../public';
@@ -67,6 +75,7 @@ const HIDDEN_FIELDS = [
   'derivedCount',
   'batchCounts',
   'entityDeleted',
+  'parentDeleted',
 ] as const;
 
 const ROW_FIELDS = [
@@ -88,9 +97,32 @@ const ROW_FIELDS = [
   'derivedCount',
   'batchCounts',
   'entityDeleted',
+  'parentDeleted',
 ] as const;
 
 const SORTED = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
+
+/**
+ * Every cell carries its row's entry id, so a click anywhere on the row opens the entry whichever columns are
+ * shown.
+ */
+function Cell({
+  id,
+  className,
+  title,
+  children,
+}: {
+  id: string;
+  className?: string;
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div data-change-history-entry={id} className={className} title={title}>
+      {children}
+    </div>
+  );
+}
 
 function ChangeHistoryListPage({ route }: { route: Route }) {
   const { t } = useLingui();
@@ -103,6 +135,9 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
   const setSearch = (patch: Record<string, unknown>) =>
     navigate({ to: '.' as never, search: ((prev: Record<string, unknown>) => ({ ...prev, ...patch })) as never });
   const setState = (patch: Partial<FeedSearch>) => setSearch(feedSearchParams({ ...state, ...patch }));
+  // A switch or the period changes the rows: back to the first page.
+  const setFilters = (patch: Partial<FeedSearch>) =>
+    setSearch({ ...feedSearchParams({ ...state, ...patch }), page: undefined });
 
   const queryClient = useQueryClient();
 
@@ -155,13 +190,14 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
   // The picker needs a range to show; without one it shows its own «select a date range» prompt.
   const emptyRange = useMemo(() => ({}) as DefinedDateRange, []);
 
-  const page = Number(search.page) || 1;
-  const perPage = Number(search.perPage) || 20;
+  const { page, perPage, filters: columnFilters } = parseListSearch(search);
   const sorting =
     typeof search.sort === 'string' && search.sort ? parseSort(search.sort) : [{ id: 'createdAt', desc: true }];
-  const columnFilters = Array.isArray(search.filters) ? (search.filters as Array<{ id: string; value: unknown }>) : [];
 
-  /** A click anywhere on a row opens its entry; links and buttons inside the row keep their own action. */
+  /**
+   * A click anywhere on a row opens its entry (every cell carries the id); links and buttons inside the row keep
+   * their own action.
+   */
   const openRow = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     if (target.closest('a, button, input, [role="checkbox"], [role="menuitem"]')) {
@@ -184,14 +220,14 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
           <div className="flex items-center gap-1">
             <DateRangePicker
               dateRange={period ?? emptyRange}
-              onDateRangeChange={(range) => setState({ from: range.from.toISOString(), to: range.to.toISOString() })}
+              onDateRangeChange={(range) => setFilters(periodBounds(range.from, range.to))}
             />
             {period && (
               <Button
                 variant="ghost"
                 size="icon-sm"
                 title={t({ message: 'Clear the period', context: 'change-history' })}
-                onClick={() => setState({ from: undefined, to: undefined })}
+                onClick={() => setFilters({ from: undefined, to: undefined })}
               >
                 <X />
               </Button>
@@ -203,14 +239,14 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
             <Label className="flex items-center gap-2 font-normal">
               <Switch
                 checked={state.collapseBatches}
-                onCheckedChange={(checked: boolean) => setState({ collapseBatches: checked })}
+                onCheckedChange={(checked: boolean) => setFilters({ collapseBatches: checked })}
               />
               <Trans context="change-history">Collapse bulk operations</Trans>
             </Label>
             <Label className="flex items-center gap-2 font-normal">
               <Switch
                 checked={state.hideSystem}
-                onCheckedChange={(checked: boolean) => setState({ hideSystem: checked })}
+                onCheckedChange={(checked: boolean) => setFilters({ hideSystem: checked })}
               />
               <Trans context="change-history">Hide system changes</Trans>
             </Label>
@@ -259,39 +295,61 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   header: () => <Trans context="change-history">Time</Trans>,
                   enableColumnFilter: false,
                   cell: ({ row }) => (
-                    <button
-                      type="button"
-                      data-change-history-entry={row.original.id}
-                      className="whitespace-nowrap text-muted-foreground hover:underline"
-                      onClick={() => setState({ entry: row.original.id })}
-                    >
-                      {formatDate(row.original.createdAt, { dateStyle: 'short', timeStyle: 'short' })}
-                    </button>
+                    <Cell id={row.original.id}>
+                      <button
+                        type="button"
+                        className="whitespace-nowrap text-muted-foreground hover:underline"
+                        onClick={() => setState({ entry: row.original.id })}
+                      >
+                        {formatDate(row.original.createdAt, { dateStyle: 'short', timeStyle: 'short' })}
+                      </button>
+                    </Cell>
                   ),
                 },
                 actorLabel: {
                   header: () => <Trans context="change-history">Who</Trans>,
                   enableColumnFilter: false,
                   meta: { dependencies: [...ROW_FIELDS] },
-                  cell: ({ row }) => <ActorName actor={actorOf(row.original, labels)} />,
+                  cell: ({ row }) => (
+                    <Cell id={row.original.id} className="whitespace-nowrap">
+                      <ActorName actor={actorOf(row.original, labels)} />
+                    </Cell>
+                  ),
                 },
                 entityType: {
                   header: () => <Trans context="change-history">Type</Trans>,
                   enableSorting: false,
                   meta: { dependencies: [...ROW_FIELDS] },
-                  cell: ({ row }) => <EntryType entry={row.original} />,
+                  cell: ({ row }) => (
+                    <Cell id={row.original.id} className="whitespace-nowrap">
+                      <EntryType entry={row.original} />
+                    </Cell>
+                  ),
                 },
                 entityLabel: {
                   header: () => <Trans context="change-history">Object</Trans>,
                   enableColumnFilter: false,
                   meta: { dependencies: [...ROW_FIELDS] },
-                  cell: ({ row }) => <EntryObject entry={row.original} />,
+                  // Long names (a variant with its SKU) are cut, the whole name in the tooltip.
+                  cell: ({ row }) => (
+                    <Cell
+                      id={row.original.id}
+                      className="max-w-[16rem] truncate"
+                      title={row.original.entityLabel ?? undefined}
+                    >
+                      <EntryObject entry={row.original} />
+                    </Cell>
+                  ),
                 },
                 action: {
                   header: () => <Trans context="change-history">Action</Trans>,
                   enableSorting: false,
                   meta: { dependencies: [...ROW_FIELDS] },
-                  cell: ({ row }) => <EntryAction entry={row.original} />,
+                  cell: ({ row }) => (
+                    <Cell id={row.original.id} className="max-w-[12rem] truncate">
+                      <EntryAction entry={row.original} />
+                    </Cell>
+                  ),
                 },
                 summary: {
                   header: () => <Trans context="change-history">What changed</Trans>,
@@ -299,21 +357,23 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   enableSorting: false,
                   meta: { dependencies: [...ROW_FIELDS] },
                   cell: ({ row }) => (
-                    <div className="max-w-md truncate">
+                    <Cell id={row.original.id} className="min-w-[12rem] max-w-xl truncate">
                       <EntrySummary entry={row.original} />
-                    </div>
+                    </Cell>
                   ),
                 },
                 source: {
                   header: () => <Trans context="change-history">Source</Trans>,
                   enableSorting: false,
-                  cell: ({ row }) => labels.source(row.original.source, row.original.actorType).label,
+                  cell: ({ row }) => (
+                    <Cell id={row.original.id}>{labels.source(row.original.source, row.original.actorType).label}</Cell>
+                  ),
                 },
                 actorId: {
                   header: () => <Trans context="change-history">Who</Trans>,
                   enableSorting: false,
                   meta: { dependencies: ['actorType', 'actorLabel'] },
-                  cell: ({ row }) => row.original.actorLabel ?? '—',
+                  cell: ({ row }) => <Cell id={row.original.id}>{row.original.actorLabel ?? '—'}</Cell>,
                 },
               }}
             />
