@@ -48,7 +48,9 @@ export const config: VendureConfig = {
 
 The plugin adds three tables (`change_history_entry`, `change_history_detail`,
 `change_history_collection_members`); generate a migration for them as for any plugin entity. Grant the new
-**ReadChangeHistory** permission to the roles that may read the history.
+**ReadChangeHistory** permission to the roles that may read the history. It is per channel, like Vendure's own
+permissions: a role sees the entries written in the channels it holds the permission in (see
+[Channels](#channels)).
 
 ## Options
 
@@ -79,6 +81,15 @@ variables. Invalid options throw at startup with a message naming the option.
 Every change is recorded **inside the transaction that makes it** (a blocking event handler, in a savepoint):
 an entry commits or rolls back with its change, and a failing history write never fails your mutation — it is
 logged with a `[ChangeHistory]` prefix.
+
+The plugin's work on one transaction runs one piece at a time, even when core runs several blocking handlers
+of one transaction concurrently (it publishes some events inside `Promise.all`: deleting several assets,
+assigning assets to a channel, removing collections from a channel) — two savepoints opened at once on one
+connection would abort your transaction. What the plugin remembers about a transaction (the last state of each
+saved entity, the entries that later ones derive from, a batch's head) follows its savepoints: a savepoint you
+roll back takes it along, so a later save never diffs against a state that was rolled back. A transaction
+remembers the last state of up to 500 entities; an entity saved again after its state was dropped is recorded
+without values (`meta.noBefore = "evicted"`) rather than with a diff that would repeat the earlier change.
 
 | Entity         | Actions                                                                                                                              | Fields                                                                                                                                                                                                                                 |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -179,7 +190,11 @@ writes its rows in chunks of 500 and keeps at most 5,000 rows (a larger run stor
 the rest in `meta.detailsOmitted`). A run with no rows and only zero counts writes nothing. Called inside your
 transaction, the run commits or rolls back with it.
 
-`entityType`, `action`, `source` and batch `kind` are free strings; give yours labels in the dashboard.
+`entityType`, `action`, `source` and batch `kind` are free strings; give yours labels in the dashboard. They
+must fit their columns: `entityType`, `parentType`, `action`, `source` and a detail row's `kind` at most 32
+characters, `entityId` and `parentId` 36 (a run's `entityId` defaults to its `source`), and a detail row's
+`scope` 64. A longer value is clipped to its column with a `[ChangeHistory] … clipped …` warning, so the entry
+or run is still recorded.
 
 ## Retention
 
@@ -193,14 +208,15 @@ The history is kept in tiers (all windows are options, in days):
 | Archive   | the full record of every entry and its detail rows, as it was before compaction                                                                                                      | as long as your storage keeps it | —                                        |
 
 **Compaction** (`compact`, nightly) takes the oldest entries older than the detail window that are not
-compacted yet, in batches, and for each batch:
+compacted yet, in batches (`batchSize` entries, and no more than 50,000 detail rows of runs together — a run
+over that on its own is a batch by itself; `maxDetailRows` per call), and for each batch:
 
 1. writes every entry and its detail rows as gzipped JSON Lines to the archive storage
    (`<archiveKeyPrefix>/<yyyy>/<mm>/change-history_<stamp>_<maxId>_<uuid>.jsonl.gz`, one object per batch), then
    requires `exists(key)` to confirm it — **nothing is stripped or deleted before that**;
-2. in one transaction: snapshots the counts that are about to disappear (`meta.derivedCount` on the cause,
-   `meta.batchCounts` on a batch head), deletes detail rows, derived rows (except cascaded deletions),
-   collection-rules member rows and run lines older than `runLineDays`, replaces long values by
+2. in one transaction: snapshots the counts that are about to disappear (`meta.derivedCount` on the cause: the
+   derived rows it deletes; `meta.batchCounts` on a batch head), deletes detail rows, derived rows (except
+   cascaded deletions), collection-rules member rows and run lines older than `runLineDays`, replaces long values by
    `{ kind, stripped: true, fromLength, toLength }` (in `meta.lastState`: `{ stripped: true, length }`) and sets
    `compactedAt`.
 
@@ -515,8 +531,19 @@ extend type Query {
   SKU or name, then name, then scope. `take` is at most 500.
 - **`changeHistoryFilterOptions`** lists the actors (an API key under its owner's id with `type: "api_key"`),
   sources, actions and entity types of the last `summaryDays`, for filter dropdowns. It is cached for 60
-  seconds per process.
-- After compaction, `derivedCount` and `batchCounts` come from the counts the compaction kept.
+  seconds per process; values the process writes in the meantime are added to the cached lists at once.
+- `derivedCount` counts every derived entry, the ones compaction deleted included (their count is kept on the
+  cause); `derivedEntries` lists those still stored, such as cascaded deletions. After compaction `batchCounts`
+  come from the counts the compaction kept.
+
+### Channels
+
+Every entry stores the channel of the request that wrote it (`channelId`). Each query — the feed, one entry
+with its derived entries and batch members, timelines, run details and filter options — returns only the
+entries of the channels in which the user holds `ReadChangeHistory` (whatever the active channel); an entry of
+another channel is `null`, a run of another channel has no rows. A SuperAdmin reads every channel, and so do
+calls from your own code with a context that has no user (a job, a scheduled task). The `ChangeHistoryService`
+read helpers follow the same rule for the context they are given.
 
 ## Database
 
@@ -525,7 +552,9 @@ row while a save is in progress: that works on Postgres and, in principle, on My
 On SQLite every change is still recorded, without the "was" values (`meta.noBefore = "unsupported"`), and the
 plugin logs a warning at startup. On Postgres an entry is recorded without values only when the before-state
 could not be read: the save ran outside a transaction (`no_transaction`, logged once per entity type), the pool
-had no free connection within 500 ms (`pool`; the save does not wait for one) or the read failed (`error`). The tables use `simple-json`, plain indexes and no foreign keys to core
+had no free connection within 500 ms (`pool`; the save does not wait for one), the read failed (`error`), or
+the entity was saved earlier in the same transaction and its state has since been dropped (`evicted`, see
+[What is recorded](#what-is-recorded)). The tables use `simple-json`, plain indexes and no foreign keys to core
 tables, so the generated migration is portable.
 
 ## Changelog

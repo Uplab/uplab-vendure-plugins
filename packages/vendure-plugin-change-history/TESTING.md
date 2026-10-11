@@ -18,26 +18,34 @@ promotion, channel assignments and `capture()` of a collection.
 
 The Postgres suite covers what needs a real second connection: exact before → after values of products and
 variants (translations, custom fields, facet values, prices), no entry for a save that changes nothing, the
-savepoint that keeps a failed history write from aborting the mutation, a host rollback that takes the entry
-with it, handler order against a fan-out plugin (`e2e/fixtures/fan-out-plugin.ts`) with derived entries, the
-API-key actor and batches. For the other catalogue entities: a collection's changed fields with its filters
-labelled, a move (parent and position only), contents changed through a facet-value filter including the first
-change after the startup snapshot, a deleted collection and its descendant from their committed rows, a facet
-update and a value rename recorded once on the value, a force-deleted facet with its values' usage, an asset's
-name / tags / focal point, a promotion's conditions as JSON before → after without `priorityScore`, and
-`capture()` after a raw write. CI runs it in the `e2e-postgres` job against a `postgres:15` service.
+savepoint that keeps a failed history write from aborting the mutation (the failure is injected by a trigger
+of the suite that rejects an entry labelled `[fail]`), a host rollback that takes the entry with it, a rolled-back
+inner savepoint that leaves no phantom before-state and no derived link to its entries, a batch whose first
+transaction rolled back getting its head again, over-long host values clipped to their columns, handler order
+against a fan-out plugin (`e2e/fixtures/fan-out-plugin.ts`) with derived entries, the API-key actor and
+batches. For the other catalogue entities: a collection's changed fields with its filters labelled, a move
+(parent and position only), contents changed through a facet-value filter including the first change after the
+startup snapshot, a deleted collection and its descendant from their committed rows, a facet update and a value
+rename recorded once on the value, a force-deleted facet with its values' usage, an asset's name / tags / focal
+point, a promotion's conditions as JSON before → after without `priorityScore`, and `capture()` after a raw
+write. Core's concurrent handlers on one transaction: three assets deleted in one call, several assets assigned
+to a channel in one call and two collections removed from a channel in one call all succeed and record their
+entries (before the per-transaction lock they aborted the transaction). CI runs it in the `e2e-postgres` job
+against a `postgres:15` service.
 
 Both suites run the same retention scenarios (`e2e/retention-scenarios.ts`) on their database, with
 `FileSystemArchiveStorage` in a temporary directory. The rows are written directly or through `recordRun` and
 backdated (`createdAt` set 100 / 400 days back), so nothing else in the suite is old enough to be touched:
 preview and dry run change nothing; a failing `put` and an `exists` that answers `false` leave every row as it was;
 compaction archives first (the objects are read back and decoded), then strips long values, deletes derived,
-member and run rows with their detail rows and keeps the counts (`derivedCount`, `batchCounts`); a second run
+member and run rows with their detail rows and keeps the counts (`batchCounts`, and `derivedCount` of the
+deleted derived rows only — the kept cascaded deletion is still counted live); a second run
 compacts nothing; `restore` brings the deleted rows back without the next compaction touching them (R3-9); purge
 deletes only compacted rows; `archive: 'none'` compacts with a warning; a run of 5,001 rows stores 5,000 (detail
 `createdAt` equal to the entry's in the database), pages them, groups them per product / variant and compacts
-them; a run recorded in a host transaction that rolls back leaves no row. Unit specs cover the retention rules,
-the pure compaction, the archive lines and keys, and the scheduled tasks.
+them; a run recorded in a host transaction that rolls back leaves no row; runs of 4, 4, 1, 9 and 2 rows under a
+cap of 6 detail rows compact in four batches (the 9-row run alone). Unit specs cover the retention rules, the
+pure compaction, the archive lines (streamed through gzip) and keys, and the scheduled tasks.
 
 Both suites also run the Admin API scenarios (`e2e/api-scenarios.ts`), after the retention ones. The feed:
 newest first, derived entries left out unless the filter names `derivedFromId`, and every filter the dashboard
@@ -50,8 +58,14 @@ once; a collection shows its rules batch (members collapsed) and its child colle
 changes. Run details are labelled, sorted and paged; `entityDeleted` marks a deleted product's entries; filter
 options include new values at once. Five entries written in one transaction are paged two at a time without a
 gap — on Postgres they share one timestamp to the microsecond, the R5-2 regression. Every query is refused
-without `ReadChangeHistory` and allowed with it alone. Unit specs cover the cursor, the batch loader and the
-primary-database read.
+without `ReadChangeHistory` and allowed with it alone; an administrator holding it in one channel only sees
+that channel's entries in the feed, one entry, a timeline, run details and filter options, while a SuperAdmin
+sees all. Unit specs cover the cursor, the batch loader, the primary-database read and the channel scope.
+
+Unit specs of the capture side cover the per-transaction lock (one piece of work after another on one
+transaction, nested work at once, nothing held back outside a transaction), the savepoint journal of the
+transaction state (a rollback undoes, a release hands over to the parent), the eviction mark and the column
+clipping.
 
 The collection filters run in Vendure's job queue: the specs wait for it (`settleJobs`) and then poll for the
 entries the history writes after the job (`waitFor`).
