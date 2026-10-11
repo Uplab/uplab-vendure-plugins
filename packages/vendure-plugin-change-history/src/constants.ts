@@ -96,6 +96,12 @@ export const DETAIL_CHUNK_SIZE = 500;
 /** Detail rows stored per run; a larger run keeps the first ones and counts the rest in `meta.detailsOmitted`. */
 export const MAX_RUN_DETAILS = 5_000;
 
+/**
+ * Detail rows one compaction batch loads and archives at most: the batch stops taking entries once their rows
+ * pass it (an entry over it on its own is a batch by itself).
+ */
+export const MAX_COMPACT_DETAIL_ROWS = 50_000;
+
 /** Largest page of `ChangeHistoryService.runDetails`. */
 export const MAX_DETAIL_PAGE = 500;
 

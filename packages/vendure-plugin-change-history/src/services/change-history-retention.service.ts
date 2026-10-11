@@ -4,7 +4,14 @@ import { randomUUID } from 'node:crypto';
 import { Brackets, In, ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 import type { ColumnMetadata } from 'typeorm/metadata/ColumnMetadata';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
-import { CHANGE_HISTORY_ENTITY_TYPES, CHANGE_HISTORY_PLUGIN_OPTIONS, DETAIL_CHUNK_SIZE, loggerCtx } from '../constants';
+import {
+  CHANGE_HISTORY_ACTIONS,
+  CHANGE_HISTORY_ENTITY_TYPES,
+  CHANGE_HISTORY_PLUGIN_OPTIONS,
+  DETAIL_CHUNK_SIZE,
+  MAX_COMPACT_DETAIL_ROWS,
+  loggerCtx,
+} from '../constants';
 import { ChangeHistoryDetail } from '../entities/change-history-detail.entity';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
 import { timestampAsText } from '../read/sql';
@@ -136,6 +143,7 @@ export class ChangeHistoryRetentionService {
     const runBefore = cutoff(this.options.retention.runLineDays);
     const batchSize = positive('batchSize', opts.batchSize, this.options.retention.compactBatchSize);
     const maxBatches = positive('maxBatches', opts.maxBatches, this.options.retention.maxBatches);
+    const maxDetailRows = positive('maxDetailRows', opts.maxDetailRows, MAX_COMPACT_DETAIL_ROWS);
     const { archive } = this.options.retention;
     const dryRun = opts.dryRun === true;
     if (archive === 'none' && !dryRun) {
@@ -155,11 +163,13 @@ export class ChangeHistoryRetentionService {
     };
     while (result.batches < maxBatches) {
       // A dry run changes nothing, so it pages; a real run always reads the oldest uncompacted rows.
-      const entries = await this.compactable(ctx, before, batchSize, dryRun ? result.scanned : 0);
-      if (entries.length === 0) {
+      const fetched = await this.compactable(ctx, before, batchSize, dryRun ? result.scanned : 0);
+      if (fetched.length === 0) {
         result.drained = true;
         break;
       }
+      // The rest of `fetched` is the next batch's start.
+      const entries = await this.withinDetailCap(ctx, fetched, maxDetailRows);
       const plan = await this.plan(ctx, entries, runBefore);
       if (!dryRun && archive !== 'none') {
         const key = archiveKey(
@@ -168,7 +178,7 @@ export class ChangeHistoryRetentionService {
           entries[entries.length - 1].id,
           randomUUID(),
         );
-        await archive.put(key, encodeArchive(archiveLines(plan)), ARCHIVE_CONTENT_TYPE);
+        await archive.put(key, await encodeArchive(archiveLines(plan)), ARCHIVE_CONTENT_TYPE);
         if (!(await archive.exists(key))) {
           throw new Error(`ChangeHistoryRetentionService: archive object "${key}" not found after writing it`);
         }
@@ -183,7 +193,7 @@ export class ChangeHistoryRetentionService {
       result.detailsDeleted += plan.details.length;
       result.batches++;
       await reportProgress(opts.onProgress, result.scanned);
-      if (entries.length < batchSize) {
+      if (entries.length === fetched.length && fetched.length < batchSize) {
         result.drained = true;
         break;
       }
@@ -192,6 +202,36 @@ export class ChangeHistoryRetentionService {
       result.drained = (await this.compactable(ctx, before, 1, dryRun ? result.scanned : 0)).length === 0;
     }
     return result;
+  }
+
+  /**
+   * The oldest of `entries` whose detail rows stay within `maxRows` together — at least the first one, however
+   * many rows it has. Keeps a batch of many large runs from loading and archiving all their rows at once.
+   */
+  private async withinDetailCap(ctx: RequestContext, entries: RawRow[], maxRows: number): Promise<RawRow[]> {
+    const counts = new Map<string, number>();
+    for (const chunk of chunks(entries.map((row) => row.id as ID))) {
+      const rows = await this.connection
+        .getRepository(ctx, ChangeHistoryDetail)
+        .createQueryBuilder('detail')
+        .select('detail.entryId', 'entryId')
+        .addSelect('COUNT(*)', 'count')
+        .where({ entryId: In(chunk) })
+        .groupBy('detail.entryId')
+        .getRawMany<{ entryId: ID; count: string | number }>();
+      rows.forEach((row) => counts.set(String(row.entryId), Number(row.count)));
+    }
+    let total = 0;
+    let taken = 0;
+    for (const row of entries) {
+      const count = counts.get(String(row.id)) ?? 0;
+      if (taken > 0 && total + count > maxRows) {
+        break;
+      }
+      total += count;
+      taken++;
+    }
+    return entries.slice(0, taken);
   }
 
   private async purgeNow(ctx: RequestContext, opts: RetentionRunOptions): Promise<ChangeHistoryPurgeResult> {
@@ -381,7 +421,8 @@ export class ChangeHistoryRetentionService {
     return this.connection.withTransaction(ctx, async (tctx) => {
       const repository = this.connection.getRepository(tctx, ChangeHistoryEntry);
       const keptIds = plan.keep.map((row) => row.id as ID);
-      // (a) Counts before anything is deleted, over all rows (derived / member rows of later batches too).
+      // (a) Counts before anything is deleted, over all rows (derived / member rows of later batches too). Only
+      // the derived rows compaction deletes: a kept cascaded deletion stays and is still counted live.
       const derivedCounts = new Map<string, number>();
       for (const chunk of chunks(keptIds)) {
         const rows = await repository
@@ -389,6 +430,7 @@ export class ChangeHistoryRetentionService {
           .select('entry.derivedFromId', 'derivedFromId')
           .addSelect('COUNT(*)', 'count')
           .where({ derivedFromId: In(chunk) })
+          .andWhere('entry.action != :keptAction', { keptAction: CHANGE_HISTORY_ACTIONS.deleted })
           .groupBy('entry.derivedFromId')
           .getRawMany<{ derivedFromId: ID; count: string | number }>();
         rows.forEach((row) => derivedCounts.set(String(row.derivedFromId), Number(row.count)));
@@ -567,11 +609,13 @@ export class ChangeHistoryRetentionService {
 }
 
 /** The JSONL lines of one batch: every entry, then every detail row. */
-function archiveLines(plan: CompactionPlan): ChangeHistoryArchiveLine[] {
-  return [
-    ...plan.entries.map((row) => ({ table: ARCHIVE_TABLES.entry, row })),
-    ...plan.details.map((row) => ({ table: ARCHIVE_TABLES.detail, row })),
-  ];
+function* archiveLines(plan: CompactionPlan): Generator<ChangeHistoryArchiveLine> {
+  for (const row of plan.entries) {
+    yield { table: ARCHIVE_TABLES.entry, row };
+  }
+  for (const row of plan.details) {
+    yield { table: ARCHIVE_TABLES.detail, row };
+  }
 }
 
 function facts(row: RawRow) {

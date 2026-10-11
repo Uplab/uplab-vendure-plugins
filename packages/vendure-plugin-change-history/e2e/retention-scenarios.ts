@@ -15,6 +15,7 @@ import {
   FileSystemArchiveStorage,
 } from '../src';
 import { resolveOptions } from '../src/options';
+import { ChangeHistoryReader } from '../src/read/change-history-reader.service';
 import { ChangeHistoryContextService } from '../src/services/change-history-context.service';
 import { createProduct, decode, systemCtx } from './helpers';
 
@@ -249,7 +250,9 @@ export function retentionScenarios(env: RetentionEnv): void {
         sku: { kind: 'text', stripped: true, fromLength: LONG_SKU.length, toLength: 1 },
         facetValues: { kind: 'refs', added: ['1'], removed: [], labels: { 1: 'Colour: Black' } },
       });
-      expect(parent?.meta.derivedCount).toBe(2);
+      // The snapshot holds the derived row compaction deleted; the kept deletion is still counted live.
+      expect(parent?.meta.derivedCount).toBe(1);
+      expect(await env.app().get(ChangeHistoryReader).derivedCount(ctx, parent!)).toBe(2);
       const kept = await byId(seeded.derivedDeleted);
       expect(kept?.compactedAt).toBeInstanceOf(Date);
       expect(kept?.meta.lastState).toEqual({ sku: 'V2', description: { stripped: true, length: LONG_HTML.length } });
@@ -457,6 +460,45 @@ export function retentionScenarios(env: RetentionEnv): void {
 
       expect(await entries().count({ where: { source: 'rt_rolled_back' } })).toBe(0);
       expect(await details().count()).toBe(detailCount);
+    });
+
+    it('caps a batch by its detail rows; a run over the cap on its own is a batch by itself', async () => {
+      const sizes = [4, 4, 1, 9, 2];
+      const ids: ID[] = [];
+      for (const [index, size] of sizes.entries()) {
+        await history().recordRun(ctx, {
+          source: 'rt_capped',
+          label: `Capped ${index}`,
+          counts: { updated: size },
+          details: Array.from({ length: size }, (_, i) => ({
+            entityType: 'Warehouse',
+            entityId: `w${i}`,
+            kind: 'stock',
+            from: i,
+            to: i + 1,
+          })),
+        });
+        const [run] = await entries().find({ where: { entityLabel: `Capped ${index}` } });
+        ids.push(run.id);
+      }
+      await backdate(ids, daysAgo(100));
+
+      const result = await retention().compact(ctx, { olderThanDays: 90, batchSize: 100, maxDetailRows: 6 });
+
+      expect(result).toMatchObject({ scanned: 5, runsDeleted: 5, detailsDeleted: 20, batches: 4, drained: true });
+      const objects = await Promise.all(result.archiveKeys.map((key) => readArchive([key])));
+      const shape = objects.map((lines) => [
+        lines.filter((line) => line.table === 'change_history_entry').length,
+        lines.filter((line) => line.table === 'change_history_detail').length,
+      ]);
+      // 4 | 4 + 1 | 9 alone (over the cap) | 2.
+      expect(shape).toEqual([
+        [1, 4],
+        [2, 5],
+        [1, 9],
+        [1, 2],
+      ]);
+      await expect(retention().compact(ctx, { olderThanDays: 90, maxDetailRows: 0 })).rejects.toThrow(/maxDetailRows/);
     });
   });
 }

@@ -3,12 +3,23 @@ import { describe, expect, it } from 'vitest';
 import { archiveKey, decodeChangeHistoryArchive, encodeArchive } from './jsonl';
 
 describe('archive lines', () => {
-  it('round-trips gzipped JSON lines', () => {
+  it('round-trips gzipped JSON lines', async () => {
     const lines = [
       { table: 'change_history_entry' as const, row: { id: 1, createdAt: '2026-03-15 04:15:00.123456', meta: {} } },
       { table: 'change_history_detail' as const, row: { id: 7, entryId: 1, fromValue: 5, toValue: 7 } },
     ];
-    expect(decodeChangeHistoryArchive(encodeArchive(lines))).toEqual(lines);
+    expect(decodeChangeHistoryArchive(await encodeArchive(lines))).toEqual(lines);
+  });
+
+  it('streams many lines through gzip, waiting for it to drain', async () => {
+    const lines = Array.from({ length: 20_000 }, (_, id) => ({
+      table: 'change_history_detail' as const,
+      row: { id, entryId: 1, fromValue: `${id}-${'x'.repeat(id % 97)}`, toValue: id * 7 },
+    }));
+    function* generated() {
+      yield* lines;
+    }
+    expect(decodeChangeHistoryArchive(await encodeArchive(generated()))).toEqual(lines);
   });
 
   it('skips blank lines and refuses anything that is not a { table, row } line', () => {

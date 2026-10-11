@@ -1,4 +1,5 @@
-import { gunzipSync, gzipSync } from 'node:zlib';
+import { once } from 'node:events';
+import { createGzip, gunzipSync } from 'node:zlib';
 
 /** The logical table names used in archive lines (independent of a host's `entityPrefix`). */
 export const ARCHIVE_TABLES = {
@@ -20,9 +21,23 @@ export interface ChangeHistoryArchiveLine {
 
 export const ARCHIVE_CONTENT_TYPE = 'application/gzip';
 
-/** Gzipped JSON Lines, one line per row. */
-export function encodeArchive(lines: ChangeHistoryArchiveLine[]): Buffer {
-  return gzipSync(Buffer.from(lines.map((line) => JSON.stringify(line)).join('\n') + '\n', 'utf8'));
+/**
+ * Gzipped JSON Lines, one line per row. Each line goes through the gzip stream on its own: only the compressed
+ * object is ever held in full, never the text of the whole batch.
+ */
+export async function encodeArchive(lines: Iterable<ChangeHistoryArchiveLine>): Promise<Buffer> {
+  const gzip = createGzip();
+  const chunks: Buffer[] = [];
+  gzip.on('data', (chunk: Buffer) => chunks.push(chunk));
+  const finished = once(gzip, 'end');
+  for (const line of lines) {
+    if (!gzip.write(`${JSON.stringify(line)}\n`, 'utf8')) {
+      await once(gzip, 'drain');
+    }
+  }
+  gzip.end();
+  await finished;
+  return Buffer.concat(chunks);
 }
 
 /**

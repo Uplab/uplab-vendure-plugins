@@ -549,19 +549,18 @@ export class ChangeHistoryReader {
       .sort(compareDetails);
   }
 
+  /**
+   * The derived entries still stored (counted live, kept cascaded deletions included), plus — once compacted —
+   * the ones compaction deleted (its snapshot): the same total before and after compaction.
+   */
   private async loadDerivedCounts(ctx: RequestContext, entries: ChangeHistoryEntry[]): Promise<Map<string, number>> {
-    const result = new Map<string, number>();
-    const live: ID[] = [];
+    const compactedAway = new Map<string, number>();
     for (const entry of entries) {
       const snapshot = entry.compactedAt ? entry.meta?.derivedCount : undefined;
-      if (typeof snapshot === 'number') {
-        result.set(String(entry.id), snapshot);
-      } else {
-        result.set(String(entry.id), 0);
-        live.push(entry.id);
-      }
+      compactedAway.set(String(entry.id), typeof snapshot === 'number' ? snapshot : 0);
     }
-    for (const chunk of chunks(live)) {
+    const result = new Map(compactedAway);
+    for (const chunk of chunks(entries.map((entry) => entry.id))) {
       const rows = await this.connection
         .getRepository(ctx, ChangeHistoryEntry)
         .createQueryBuilder('entry')
@@ -571,7 +570,8 @@ export class ChangeHistoryReader {
         .groupBy('entry.derivedFromId')
         .getRawMany<{ derivedFromId: unknown; count: string | number }>();
       for (const row of rows) {
-        result.set(String(row.derivedFromId), Number(row.count));
+        const id = String(row.derivedFromId);
+        result.set(id, (compactedAway.get(id) ?? 0) + Number(row.count));
       }
     }
     return result;

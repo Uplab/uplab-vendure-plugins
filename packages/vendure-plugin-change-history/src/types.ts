@@ -176,6 +176,11 @@ export interface RetentionRunOptions {
   olderThanDays: number;
   batchSize?: number;
   maxBatches?: number;
+  /**
+   * `compact` only: detail rows (of external runs) one batch loads and archives at most. A batch stops taking
+   * entries once their rows would pass it; an entry over it on its own is a batch by itself. Default 50,000.
+   */
+  maxDetailRows?: number;
   dryRun?: boolean;
   /** Called with the running total after each batch; errors are swallowed. */
   onProgress?: (affected: number) => Promise<void> | void;
