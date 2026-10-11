@@ -630,14 +630,30 @@ describe('ChangeHistoryPlugin on sql.js', () => {
     });
 
     it('stores the contents of a collection it did not know without recording them', async () => {
+      // A new collection gets an empty snapshot, so the filters job's first fill is recorded. Wait for that
+      // run to be written before forgetting the snapshot: deleting it earlier races the job, whose diff may
+      // already have run (then the fill is recorded and no snapshot comes back).
       const id = await collection('sq-unknown', { filters: facetFilter([red]) });
-      await members().delete({ collectionId: decode(id) });
       await settleJobs(adminClient);
-      await waitFor(
+      const recorded = await waitFor(
+        () => under(id),
+        (entries) => entries.length >= 2,
+      );
+      expect(recorded.map((e) => [e.entityType, e.action])).toEqual([
+        ['Batch', 'batch'],
+        ['Product', 'collection_added'],
+      ]);
+
+      // As if created while capture was off: no snapshot. The next run stores the contents without entries.
+      await members().delete({ collectionId: decode(id) });
+      await adminClient.query(UPDATE_COLLECTION, { input: { id, filters: facetFilter([blue]) } });
+      await settleJobs(adminClient);
+      const stored = await waitFor(
         () => members().findOne({ where: { collectionId: decode(id) } }),
         (row) => row !== null,
       );
-      expect(await under(id)).toEqual([]);
+      expect(stored).toMatchObject({ productIds: [decode(blueProduct)] });
+      expect(await under(id)).toEqual(recorded);
     });
 
     it('records a move without values', async () => {
