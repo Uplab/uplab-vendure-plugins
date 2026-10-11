@@ -245,6 +245,38 @@ export const DELETE_ASSET: Document = gql`
   }
 `;
 
+export const DELETE_ASSETS: Document = gql`
+  mutation DeleteAssets($input: DeleteAssetsInput!) {
+    deleteAssets(input: $input) {
+      result
+    }
+  }
+`;
+
+export const ASSIGN_ASSETS_TO_CHANNEL: Document = gql`
+  mutation AssignAssetsToChannel($input: AssignAssetsToChannelInput!) {
+    assignAssetsToChannel(input: $input) {
+      id
+    }
+  }
+`;
+
+export const ASSIGN_COLLECTIONS_TO_CHANNEL: Document = gql`
+  mutation AssignCollectionsToChannel($input: AssignCollectionsToChannelInput!) {
+    assignCollectionsToChannel(input: $input) {
+      id
+    }
+  }
+`;
+
+export const REMOVE_COLLECTIONS_FROM_CHANNEL: Document = gql`
+  mutation RemoveCollectionsFromChannel($input: RemoveCollectionsFromChannelInput!) {
+    removeCollectionsFromChannel(input: $input) {
+      id
+    }
+  }
+`;
+
 export const CREATE_PROMOTION: Document = gql`
   mutation CreatePromotion($input: CreatePromotionInput!) {
     createPromotion(input: $input) {

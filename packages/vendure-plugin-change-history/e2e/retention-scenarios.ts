@@ -15,6 +15,7 @@ import {
   FileSystemArchiveStorage,
 } from '../src';
 import { resolveOptions } from '../src/options';
+import { ChangeHistoryContextService } from '../src/services/change-history-context.service';
 import { createProduct, decode, systemCtx } from './helpers';
 
 const DAY_MS = 86_400_000;
@@ -338,6 +339,7 @@ export function retentionScenarios(env: RetentionEnv): void {
       const service = new ChangeHistoryRetentionService(
         resolveOptions({ retention: { archive: 'none' } }),
         env.app().get(TransactionalConnection),
+        env.app().get(ChangeHistoryContextService),
       );
 
       expect(await service.compact(ctx, { olderThanDays: 90 })).toMatchObject({

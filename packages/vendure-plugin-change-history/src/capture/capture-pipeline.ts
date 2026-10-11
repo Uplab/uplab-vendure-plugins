@@ -108,6 +108,9 @@ export class CapturePipeline {
     const seen = new Map<string, LoadedState>();
     const toRead: string[] = [];
     const missing = new Set<string>();
+    // Saved earlier in this transaction, but its last state was evicted: the committed row would repeat
+    // the earlier change.
+    const stale = new Set<string>();
     if (request.mode !== 'created') {
       for (const id of ids) {
         const hit = transaction.lastSeen.get(key(id));
@@ -118,6 +121,9 @@ export class CapturePipeline {
         if (gaps.length > 0) {
           toRead.push(id);
           gaps.forEach((group) => missing.add(group));
+          if (transaction.evicted.has(key(id))) {
+            stale.add(id);
+          }
         }
       }
     }
@@ -139,7 +145,12 @@ export class CapturePipeline {
           const draft = this.draft(def, id, request, {
             seen: seen.get(id),
             read: read instanceof Map ? read.get(id) : undefined,
-            noBefore: read instanceof Map || !toRead.includes(id) ? undefined : read.noBefore,
+            noBefore:
+              request.mode === 'updated' && stale.has(id)
+                ? 'evicted'
+                : read instanceof Map || !toRead.includes(id)
+                  ? undefined
+                  : read.noBefore,
             after: after.get(id),
             fallback: entity && def.fromEntity ? def.fromEntity(tctx, entity) : undefined,
           });
@@ -162,17 +173,17 @@ export class CapturePipeline {
       { event: request.event },
     );
 
-    // 3. Remember.
+    // 3. Remember (journaled: undone if the caller's savepoint rolls back).
     for (const id of ids) {
       if (request.mode === 'deleted') {
-        transaction.lastSeen.delete(key(id));
+        transaction.forget(key(id));
         continue;
       }
       const state = loaded.after?.get(id);
       if (state) {
-        transaction.lastSeen.set(key(id), merge(def, transaction.lastSeen.get(key(id)), state));
+        transaction.see(key(id), merge(def, transaction.lastSeen.peek(key(id)), state));
         if (request.mode === 'created') {
-          transaction.createdIds.set(key(id), true);
+          transaction.markCreated(key(id));
         }
       }
     }
@@ -215,7 +226,7 @@ export class CapturePipeline {
     sides: {
       seen?: LoadedState;
       read?: LoadedState;
-      noBefore?: NoBeforeState['noBefore'];
+      noBefore?: NoBeforeState['noBefore'] | 'evicted';
       after?: LoadedState;
       fallback?: LoadedState;
     },

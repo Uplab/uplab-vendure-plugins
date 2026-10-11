@@ -75,6 +75,7 @@ describe('ChangeHistoryPlugin', () => {
         { register: vi.fn() } as never,
         { seedMissing: vi.fn() } as never,
         { schedulerOptions: { schedulerStrategy: scheduler } } as never,
+        { listen: vi.fn() } as never,
       );
     class NoopSchedulerStrategy {}
     ChangeHistoryPlugin.init({ retention: { archive: 'none' } });

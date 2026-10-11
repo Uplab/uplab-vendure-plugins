@@ -8,14 +8,21 @@ import {
 } from '@vendure/core';
 import { describe, expect, it, vi } from 'vitest';
 import { ChangeHistoryActorResolver, ResolvedActor, ResolvedChangeHistoryPluginOptions } from '../types';
-import { ChangeHistoryContextService, LAST_SEEN_CAPACITY } from './change-history-context.service';
+import { LAST_SEEN_CAPACITY } from '../capture/transaction-state';
+import { ChangeHistoryContextService } from './change-history-context.service';
 
 const administrator = { id: 7, firstName: 'Olena', lastName: 'Koval' };
 
+type Subscriber = {
+  afterTransactionCommit(event: { queryRunner?: unknown }): void;
+  afterTransactionRollback(event: { queryRunner?: unknown }): void;
+};
+
 /** A connection whose repositories run on `queryRunner` (undefined = outside a transaction). */
-function connectionOn(queryRunner?: Record<string, unknown>) {
+function connectionOn(queryRunner: Record<string, unknown> | undefined, subscribers: Subscriber[]) {
   return {
     getRepository: () => ({ manager: { queryRunner } }),
+    rawConnection: { subscribers },
   } as unknown as TransactionalConnection;
 }
 
@@ -28,16 +35,20 @@ function service(
     resolveActorAdministrator: vi.fn(async () => (admin instanceof Error ? Promise.reject(admin) : admin)),
   };
   const options = { actorResolvers } as unknown as ResolvedChangeHistoryPluginOptions;
+  const subscribers: Subscriber[] = [];
   return {
     context: new ChangeHistoryContextService(
       options,
       administratorService as unknown as AdministratorService,
       { isWorker: true } as ProcessContext,
-      connectionOn(queryRunner),
+      connectionOn(queryRunner, subscribers),
     ),
     administratorService,
+    subscribers,
   };
 }
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const ctxOf = (session?: { authenticationStrategy?: string }) =>
   ({
@@ -74,14 +85,78 @@ describe('ChangeHistoryContextService', () => {
     expect(released.transactionOf(ctx)).toBeUndefined();
   });
 
-  it('caps the lastSeen cache', () => {
+  it('caps the lastSeen cache and marks what it evicted', () => {
     const { context } = service([], administrator, { isTransactionActive: true, isReleased: false });
-    const { lastSeen } = context.transactionStateOf(ctxOf());
+    const state = context.transactionStateOf(ctxOf());
     for (let i = 0; i <= LAST_SEEN_CAPACITY; i++) {
-      lastSeen.set(`Product:${i}`, { values: {}, groups: new Set(), label: '', deleted: false });
+      state.see(`Product:${i}`, { values: {}, groups: new Set(), label: '', deleted: false });
     }
-    expect(lastSeen.size).toBe(LAST_SEEN_CAPACITY);
-    expect(lastSeen.has('Product:0')).toBe(false);
+    expect(state.lastSeen.size).toBe(LAST_SEEN_CAPACITY);
+    expect(state.lastSeen.has('Product:0')).toBe(false);
+    expect(state.evicted.has('Product:0')).toBe(true);
+  });
+
+  it("runs the package's work on one transaction one piece after another; nested work at once", async () => {
+    const { context } = service([], administrator, { isTransactionActive: true, isReleased: false });
+    const ctx = ctxOf();
+    const log: string[] = [];
+    const step = (name: string, ms: number) =>
+      context.serialize(ctx, async () => {
+        log.push(`${name}:start`);
+        await pause(ms);
+        log.push(`${name}:end`);
+        return name;
+      });
+
+    expect(await Promise.all([step('a', 20), step('b', 0), step('c', 0)])).toEqual(['a', 'b', 'c']);
+    expect(log).toEqual(['a:start', 'a:end', 'b:start', 'b:end', 'c:start', 'c:end']);
+
+    expect(await context.serialize(ctx, () => context.serialize(ctx.copy(), async () => 'inner'))).toBe('inner');
+    await expect(
+      context.serialize(ctx, async () => {
+        throw new Error('failed');
+      }),
+    ).rejects.toThrow('failed');
+    expect(await context.serialize(ctx, async () => 'after a failure')).toBe('after a failure');
+  });
+
+  it('does not hold anything back outside a transaction', async () => {
+    const { context } = service();
+    const ctx = ctxOf();
+    const log: string[] = [];
+    const step = (name: string, ms: number) =>
+      context.serialize(ctx, async () => {
+        log.push(`${name}:start`);
+        await pause(ms);
+        log.push(`${name}:end`);
+      });
+    await Promise.all([step('a', 20), step('b', 0)]);
+    expect(log).toEqual(['a:start', 'b:start', 'b:end', 'a:end']);
+  });
+
+  it('follows the savepoints of a transaction through one TypeORM subscriber', () => {
+    const runner = { isTransactionActive: true, isReleased: false, transactionDepth: 2 };
+    const { context, subscribers } = service([], administrator, runner);
+    context.listen();
+    context.listen();
+    expect(subscribers).toHaveLength(1);
+    const [subscriber] = subscribers;
+
+    const state = context.transactionStateOf(ctxOf());
+    state.remember('Product:1', 5);
+    runner.transactionDepth = 1;
+    subscriber.afterTransactionRollback({ queryRunner: runner });
+    expect(state.entriesByEntity.has('Product:1')).toBe(false);
+
+    state.remember('Product:2', 6);
+    subscriber.afterTransactionCommit({ queryRunner: { isTransactionActive: true } });
+    subscriber.afterTransactionCommit({});
+    expect(context.transactionStateOf(ctxOf())).toBe(state);
+
+    runner.isTransactionActive = false;
+    subscriber.afterTransactionCommit({ queryRunner: runner });
+    runner.isTransactionActive = true;
+    expect(context.transactionStateOf(ctxOf())).not.toBe(state);
   });
 
   it("records the session's administrator, resolved once per request", async () => {
@@ -166,7 +241,7 @@ describe('ChangeHistoryContextService', () => {
     const { context } = service();
     const ctx = ctxOf();
     const override: ResolvedActor = { actorType: 'admin', actorId: 3, source: 'scheduled_action' };
-    context.stateOf(ctx).batch = { kind: 'scheduled', id: 'scheduled:1', headWritten: false, actor: override };
+    context.stateOf(ctx).batch = { kind: 'scheduled', id: 'scheduled:1', actor: override };
     expect(await context.resolveActor(ctx)).toBe(override);
     context.stateOf(ctx).batch = undefined;
     expect((await context.resolveActor(ctx)).source).toBe('admin');

@@ -18,6 +18,7 @@ import {
 } from '../retention/jsonl';
 import { isBatchHead, isDetailRow, isMemberRow, isRunLine } from '../retention/rules';
 import { ChangeHistoryFieldChanges, ResolvedChangeHistoryPluginOptions, RetentionRunOptions } from '../types';
+import { ChangeHistoryContextService } from './change-history-context.service';
 
 /** Result of {@link ChangeHistoryRetentionService.compact}. */
 export interface ChangeHistoryCompactResult {
@@ -89,13 +90,48 @@ export class ChangeHistoryRetentionService {
   constructor(
     @Inject(CHANGE_HISTORY_PLUGIN_OPTIONS) private readonly options: ResolvedChangeHistoryPluginOptions,
     private readonly connection: TransactionalConnection,
+    private readonly context: ChangeHistoryContextService,
   ) {}
 
   /**
    * Archives, then compacts entries older than `olderThanDays` that are not compacted yet, oldest first, in
    * batches. Idempotent: a compacted entry is never selected again. Rejects when the archive storage fails.
    */
-  async compact(ctx: RequestContext, opts: RetentionRunOptions): Promise<ChangeHistoryCompactResult> {
+  compact(ctx: RequestContext, opts: RetentionRunOptions): Promise<ChangeHistoryCompactResult> {
+    return this.context.serialize(ctx, () => this.compactNow(ctx, opts));
+  }
+
+  /**
+   * Deletes compacted entries older than `olderThanDays` (and compacted run lines older than
+   * `retention.runLineDays`), oldest first, in batches. An entry that was never compacted — whose full record
+   * may not be archived — is never deleted, whatever the window.
+   */
+  purge(ctx: RequestContext, opts: RetentionRunOptions): Promise<ChangeHistoryPurgeResult> {
+    return this.context.serialize(ctx, () => this.purgeNow(ctx, opts));
+  }
+
+  /**
+   * Read-only candidate counts for the given windows (default: `retention.detailDays` / `summaryDays`): what
+   * `compact` / `purge` with these windows would touch, without the batch cap.
+   */
+  preview(
+    ctx: RequestContext,
+    opts: { compactOlderThanDays?: number; purgeOlderThanDays?: number } = {},
+  ): Promise<{ compactable: number; purgeable: number }> {
+    return this.context.serialize(ctx, () => this.previewNow(ctx, opts));
+  }
+
+  /**
+   * Puts archived lines back (see the restore runbook in the README). An entry that still exists gets its
+   * archived `changes` and `meta` back and **keeps** its `compactedAt`; an entry or a detail row that no longer
+   * exists is inserted with its archived id and, for entries, `compactedAt` set — so the next compaction
+   * leaves the restored rows alone instead of archiving and deleting them again. Rejects on failure.
+   */
+  restore(ctx: RequestContext, lines: ChangeHistoryArchiveLine[]): Promise<ChangeHistoryRestoreResult> {
+    return this.context.serialize(ctx, () => this.restoreNow(ctx, lines));
+  }
+
+  private async compactNow(ctx: RequestContext, opts: RetentionRunOptions): Promise<ChangeHistoryCompactResult> {
     const before = cutoff(opts?.olderThanDays);
     const runBefore = cutoff(this.options.retention.runLineDays);
     const batchSize = positive('batchSize', opts.batchSize, this.options.retention.compactBatchSize);
@@ -158,12 +194,7 @@ export class ChangeHistoryRetentionService {
     return result;
   }
 
-  /**
-   * Deletes compacted entries older than `olderThanDays` (and compacted run lines older than
-   * `retention.runLineDays`), oldest first, in batches. An entry that was never compacted — whose full record
-   * may not be archived — is never deleted, whatever the window.
-   */
-  async purge(ctx: RequestContext, opts: RetentionRunOptions): Promise<ChangeHistoryPurgeResult> {
+  private async purgeNow(ctx: RequestContext, opts: RetentionRunOptions): Promise<ChangeHistoryPurgeResult> {
     const before = cutoff(opts?.olderThanDays);
     const runBefore = cutoff(this.options.retention.runLineDays);
     const batchSize = positive('batchSize', opts.batchSize, this.options.retention.purgeBatchSize);
@@ -206,13 +237,9 @@ export class ChangeHistoryRetentionService {
     return result;
   }
 
-  /**
-   * Read-only candidate counts for the given windows (default: `retention.detailDays` / `summaryDays`): what
-   * `compact` / `purge` with these windows would touch, without the batch cap.
-   */
-  async preview(
+  private async previewNow(
     ctx: RequestContext,
-    opts: { compactOlderThanDays?: number; purgeOlderThanDays?: number } = {},
+    opts: { compactOlderThanDays?: number; purgeOlderThanDays?: number },
   ): Promise<{ compactable: number; purgeable: number }> {
     const compactBefore = cutoff(opts.compactOlderThanDays ?? this.options.retention.detailDays);
     const purgeBefore = cutoff(opts.purgeOlderThanDays ?? this.options.retention.summaryDays);
@@ -224,13 +251,10 @@ export class ChangeHistoryRetentionService {
     return { compactable, purgeable };
   }
 
-  /**
-   * Puts archived lines back (see the restore runbook in the README). An entry that still exists gets its
-   * archived `changes` and `meta` back and **keeps** its `compactedAt`; an entry or a detail row that no longer
-   * exists is inserted with its archived id and, for entries, `compactedAt` set — so the next compaction
-   * leaves the restored rows alone instead of archiving and deleting them again. Rejects on failure.
-   */
-  async restore(ctx: RequestContext, lines: ChangeHistoryArchiveLine[]): Promise<ChangeHistoryRestoreResult> {
+  private async restoreNow(
+    ctx: RequestContext,
+    lines: ChangeHistoryArchiveLine[],
+  ): Promise<ChangeHistoryRestoreResult> {
     const result: ChangeHistoryRestoreResult = { entriesUpdated: 0, entriesInserted: 0, detailsInserted: 0 };
     const rowsOf = (table: string) => dedupe(lines.filter((line) => line.table === table).map((line) => line.row));
     await this.connection.withTransaction(ctx, async (tctx) => {

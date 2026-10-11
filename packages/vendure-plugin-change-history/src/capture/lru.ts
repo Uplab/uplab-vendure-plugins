@@ -1,8 +1,11 @@
-/** A Map that forgets its least recently used key beyond `capacity`. */
+/** A Map that forgets its least recently used key beyond `capacity`, telling `onEvict` which one. */
 export class Lru<K, V> {
   private readonly map = new Map<K, V>();
 
-  constructor(private readonly capacity: number) {}
+  constructor(
+    private readonly capacity: number,
+    private readonly onEvict?: (key: K) => void,
+  ) {}
 
   get(key: K): V | undefined {
     const value = this.map.get(key);
@@ -13,6 +16,11 @@ export class Lru<K, V> {
     return value;
   }
 
+  /** The value without making it recently used. */
+  peek(key: K): V | undefined {
+    return this.map.get(key);
+  }
+
   has(key: K): boolean {
     return this.map.has(key);
   }
@@ -21,7 +29,9 @@ export class Lru<K, V> {
     this.map.delete(key);
     this.map.set(key, value);
     if (this.map.size > this.capacity) {
-      this.map.delete(this.map.keys().next().value as K);
+      const oldest = this.map.keys().next().value as K;
+      this.map.delete(oldest);
+      this.onEvict?.(oldest);
     }
   }
 

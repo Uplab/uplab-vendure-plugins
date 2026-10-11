@@ -1,8 +1,11 @@
 import {
+  Asset,
   Collection,
+  LanguageCode,
   Logger,
   Product,
   ProductService,
+  RequestContext,
   TaxCategory,
   TransactionalConnection,
   mergeConfig,
@@ -34,10 +37,14 @@ import {
 } from './fixtures/fan-out-plugin';
 import { initialData } from './fixtures/initial-data';
 import {
+  ACTIVE_CHANNEL_ZONES,
   ADD_OPTION_GROUP,
+  ASSIGN_ASSETS_TO_CHANNEL,
+  ASSIGN_COLLECTIONS_TO_CHANNEL,
   CHANGE_HISTORY_ENTRIES,
   CREATE_API_KEY,
   CREATE_ASSETS,
+  CREATE_CHANNEL,
   CREATE_COLLECTION,
   CREATE_OPTION_GROUP,
   CREATE_FACET,
@@ -45,6 +52,7 @@ import {
   CREATE_PROMOTION,
   CREATE_VARIANTS,
   DELETE_ASSET,
+  DELETE_ASSETS,
   DELETE_COLLECTION,
   DELETE_FACET,
   DELETE_FACET_VALUES,
@@ -52,6 +60,7 @@ import {
   DELETE_PROMOTION,
   DELETE_VARIANT,
   MOVE_COLLECTION,
+  REMOVE_COLLECTIONS_FROM_CHANNEL,
   ROLES,
   UPDATE_ASSET,
   UPDATE_COLLECTION,
@@ -592,6 +601,76 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
       error.mockRestore();
     });
 
+    it('forgets what a rolled-back savepoint saw: no phantom before-state, no link to a rolled-back entry', async () => {
+      const productId = await createProduct({
+        translations: [{ languageCode: 'en', name: 'Cap', slug: 'cap', description: '' }],
+      });
+      const id = Number(decode(productId));
+      const products = server.app.get(ProductService);
+      const rollBack = new Error('inner savepoint rolls back');
+      const ctx = await superadminCtx(server.app);
+
+      await connection().withTransaction(ctx, async (tctx) => {
+        await products.update(tctx, { id, translations: [{ languageCode: LanguageCode.en, name: 'Cap 1' }] });
+        await expect(
+          connection().withTransaction(tctx, async (inner) => {
+            await products.update(inner, { id, translations: [{ languageCode: LanguageCode.en, name: 'Phantom' }] });
+            await history().recordAction(inner, {
+              entityType: 'Facet',
+              entityId: 'pg-rolled-back',
+              entityLabel: 'Rolled back',
+              action: 'archived',
+            });
+            throw rollBack;
+          }),
+        ).rejects.toBe(rollBack);
+        await products.update(tctx, { id, translations: [{ languageCode: LanguageCode.en, name: 'Cap 2' }] });
+        await history().recordAction(tctx, {
+          entityType: 'FacetValue',
+          entityId: 'pg-kept',
+          entityLabel: 'Kept',
+          action: 'archived',
+          parent: { type: 'Facet', id: 'pg-rolled-back' },
+        });
+      });
+
+      const names = (await entriesOf('Product', productId)).slice(1).map((entry) => entry.changes?.['name.en']);
+      expect(names).toEqual([
+        { kind: 'text', from: 'Cap', to: 'Cap 1' },
+        { kind: 'text', from: 'Cap 1', to: 'Cap 2' },
+      ]);
+      expect(await entriesWhere(server.app, { entityId: 'pg-rolled-back' })).toEqual([]);
+      expect(await entriesWhere(server.app, { entityId: 'pg-kept' })).toEqual([
+        expect.objectContaining({ derivedFromId: null }),
+      ]);
+    });
+
+    it('writes the head of a batch again when the transaction that wrote it rolled back', async () => {
+      const ctx = await superadminCtx(server.app);
+      const rollBack = new Error('first transaction rolls back');
+      const record = (tctx: RequestContext, entityId: string) =>
+        history().recordAction(tctx, { entityType: 'Facet', entityId, entityLabel: entityId, action: 'archived' });
+
+      await history().runBatch(ctx, { kind: 'pg_retry' }, async (bctx) => {
+        await expect(
+          connection().withTransaction(bctx, async (tctx) => {
+            await record(tctx, 'pg-batch-1');
+            throw rollBack;
+          }),
+        ).rejects.toBe(rollBack);
+        await connection().withTransaction(bctx, async (tctx) => {
+          await record(tctx, 'pg-batch-2');
+          await record(tctx, 'pg-batch-3');
+        });
+      });
+
+      expect(await entriesWhere(server.app, { entityId: 'pg-batch-1' })).toEqual([]);
+      const [member] = await entriesWhere(server.app, { entityId: 'pg-batch-2' });
+      expect(member.batchId).toMatch(/^pg_retry:/);
+      expect(await entriesWhere(server.app, { batchId: member.batchId, entityType: 'Batch' })).toHaveLength(1);
+      expect(await entriesWhere(server.app, { batchId: member.batchId })).toHaveLength(3);
+    });
+
     it('records a save made outside a transaction without its before-state', async () => {
       const productId = await createProduct({
         translations: [{ languageCode: 'en', name: 'Sock', slug: 'sock', description: '' }],
@@ -1057,6 +1136,102 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
       expect(await lastOf('Collection', id)).toMatchObject({
         action: 'visibility_set',
         changes: { isPrivate: { kind: 'bool', from: false, to: true } },
+      });
+    });
+
+    /**
+     * Core publishes these events inside `Promise.all`: the blocking handlers start concurrently on one
+     * transaction. Two savepoints opened at once used to abort the host's transaction.
+     */
+    describe('handlers core runs concurrently on one transaction', () => {
+      let channelId: string;
+      const uploadAssets = async (names: string[]) =>
+        (
+          (
+            await adminClient.fileUploadMutation({
+              mutation: CREATE_ASSETS,
+              filePaths: names.map((name) => pngFile(name)),
+              mapVariables: () => ({ input: names.map(() => ({ file: null })) }),
+            })
+          ).createAssets as Array<{ id: string }>
+        ).map((asset) => asset.id);
+
+      beforeAll(async () => {
+        const { activeChannel } = await adminClient.query(ACTIVE_CHANNEL_ZONES);
+        const { createChannel } = await adminClient.query(CREATE_CHANNEL, {
+          input: {
+            code: 'pg-concurrent',
+            token: 'pg-concurrent-token',
+            defaultLanguageCode: 'en',
+            pricesIncludeTax: false,
+            defaultCurrencyCode: 'USD',
+            defaultShippingZoneId: activeChannel.defaultShippingZone.id,
+            defaultTaxZoneId: activeChannel.defaultTaxZone.id,
+          },
+        });
+        channelId = createChannel.id;
+      });
+
+      it('deletes three assets in one call and records each deletion', async () => {
+        const ids = await uploadAssets(['pg-trio-1', 'pg-trio-2', 'pg-trio-3']);
+        const { deleteAssets } = await adminClient.query(DELETE_ASSETS, { input: { assetIds: ids, force: true } });
+
+        expect(deleteAssets.result).toBe('DELETED');
+        expect(
+          await connection()
+            .rawConnection.getRepository(Asset)
+            .count({ where: { id: In(ids.map(decode)) } }),
+        ).toBe(0);
+        for (const id of ids) {
+          expect((await entriesOf('Asset', id)).map((entry) => entry.action)).toEqual(['created', 'deleted']);
+        }
+      });
+
+      it('assigns several assets to a channel in one call and records each assignment', async () => {
+        const ids = await uploadAssets(['pg-assign-1', 'pg-assign-2', 'pg-assign-3']);
+        const { assignAssetsToChannel } = await adminClient.query(ASSIGN_ASSETS_TO_CHANNEL, {
+          input: { assetIds: ids, channelId },
+        });
+
+        expect(assignAssetsToChannel).toHaveLength(3);
+        for (const id of ids) {
+          expect(await lastOf('Asset', id)).toMatchObject({
+            action: 'channel_assigned',
+            summary: 'assigned to channel pg-concurrent',
+            meta: expect.objectContaining({ channelId: decode(channelId) }),
+          });
+        }
+      });
+
+      it('removes two collections from a channel in one call and records both contents changes', async () => {
+        const ids = [
+          await createCollection('pg-concurrent-a', { filters: facetFilter([red]) }),
+          await createCollection('pg-concurrent-b', { filters: facetFilter([red]) }),
+        ];
+        await settleJobs(adminClient);
+        await adminClient.query(ASSIGN_COLLECTIONS_TO_CHANNEL, { input: { collectionIds: ids, channelId } });
+        await settleJobs(adminClient);
+        // Out of date on purpose: each removal's membership event then writes a rules batch in its savepoint.
+        await members().update({ collectionId: In(ids.map(decode)) }, { productIds: [] });
+        const before = await Promise.all(ids.map((id) => under(id)));
+
+        const { removeCollectionsFromChannel } = await adminClient.query(REMOVE_COLLECTIONS_FROM_CHANNEL, {
+          input: { collectionIds: ids, channelId },
+        });
+
+        expect(removeCollectionsFromChannel).toHaveLength(2);
+        for (const [index, id] of ids.entries()) {
+          const written = (await under(id)).slice(before[index].length);
+          expect(written.map((entry) => entry.entityType)).toContain('Batch');
+          expect(written).toContainEqual(
+            expect.objectContaining({
+              entityType: 'Product',
+              entityId: decode(redProduct),
+              action: 'collection_added',
+            }),
+          );
+        }
+        await settleJobs(adminClient);
       });
     });
   });

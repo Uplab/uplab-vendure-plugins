@@ -94,6 +94,7 @@ export class ChangeHistoryPlugin implements OnApplicationBootstrap, OnApplicatio
     private readonly eventHandlers: ChangeHistoryEventHandlers,
     private readonly collections: CollectionCapture,
     private readonly configService: ConfigService,
+    private readonly context: ChangeHistoryContextService,
   ) {}
 
   /** Validates the options (throws on anything unusable) and applies the defaults. */
@@ -106,6 +107,7 @@ export class ChangeHistoryPlugin implements OnApplicationBootstrap, OnApplicatio
   async onApplicationBootstrap(): Promise<void> {
     await this.strategies.init(new Injector(this.moduleRef));
     this.warnWithoutScheduler();
+    this.context.listen();
     this.eventHandlers.register();
     // Never fails the bootstrap; a collection without a snapshot would lose its first change of contents.
     await this.collections.seedMissing();

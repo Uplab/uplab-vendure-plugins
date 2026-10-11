@@ -261,7 +261,7 @@ export class ChangeHistoryService {
     if (state.batch || !this.options.enabled) {
       return fn(ctx);
     }
-    state.batch = { ...batch, id: `${batch.kind}:${randomUUID()}`, headWritten: false };
+    state.batch = { ...batch, id: `${batch.kind}:${randomUUID()}` };
     try {
       return await fn(ctx);
     } finally {
@@ -278,7 +278,7 @@ export class ChangeHistoryService {
     ctx: RequestContext,
     options: ListQueryOptions<ChangeHistoryEntry> = {},
   ): Promise<PaginatedList<ChangeHistoryEntry>> {
-    return this.reader.list(ctx, options);
+    return this.context.serialize(ctx, () => this.reader.list(ctx, options));
   }
 
   /**
@@ -287,7 +287,7 @@ export class ChangeHistoryService {
    * primary database. Unstable in 0.x — the `changeHistoryEntityTimeline` query is the stable read API.
    */
   entityHistory(ctx: RequestContext, args: ChangeHistoryTimelineArgs): Promise<ChangeHistoryEntityTimeline> {
-    return this.reader.timeline(ctx, args);
+    return this.context.serialize(ctx, () => this.reader.timeline(ctx, args));
   }
 
   /**
@@ -295,7 +295,7 @@ export class ChangeHistoryService {
    * 0.x — the `changeHistoryFilterOptions` query is the stable read API.
    */
   filterOptions(ctx: RequestContext): Promise<ChangeHistoryFilterOptions> {
-    return this.reader.filterOptions(ctx);
+    return this.context.serialize(ctx, () => this.reader.filterOptions(ctx));
   }
 
   /**
@@ -307,13 +307,15 @@ export class ChangeHistoryService {
     entryId: ID,
     opts: { skip?: number; take?: number } = {},
   ): Promise<PaginatedList<ChangeHistoryDetail>> {
-    const [items, totalItems] = await this.connection.getRepository(ctx, ChangeHistoryDetail).findAndCount({
-      where: { entryId },
-      order: { id: 'ASC' },
-      skip: Math.max(0, Math.trunc(opts.skip ?? 0)),
-      take: Math.min(MAX_DETAIL_PAGE, Math.max(1, Math.trunc(opts.take ?? 100))),
+    return this.context.serialize(ctx, async () => {
+      const [items, totalItems] = await this.connection.getRepository(ctx, ChangeHistoryDetail).findAndCount({
+        where: { entryId },
+        order: { id: 'ASC' },
+        skip: Math.max(0, Math.trunc(opts.skip ?? 0)),
+        take: Math.min(MAX_DETAIL_PAGE, Math.max(1, Math.trunc(opts.take ?? 100))),
+      });
+      return { items, totalItems };
     });
-    return { items, totalItems };
   }
 
   /**
@@ -325,6 +327,26 @@ export class ChangeHistoryService {
     ctx: RequestContext,
     subject: { entityType: string; entityId: ID },
     opts: { skip?: number; take?: number } = {},
+  ): Promise<PaginatedList<{ entry: ChangeHistoryEntry; details: ChangeHistoryDetail[] }>> {
+    return this.context.serialize(ctx, () => this.loadRunsForEntity(ctx, subject, opts));
+  }
+
+  /**
+   * One entity's rows of the given runs, grouped by run id (as a string): what a timeline shows under each
+   * run item. Matches the rows recorded for the entity and for its children, like `runsForEntity`.
+   */
+  runDetailsForEntity(
+    ctx: RequestContext,
+    subject: { entityType: string; entityId: ID },
+    entryIds: ID[],
+  ): Promise<Map<string, ChangeHistoryDetail[]>> {
+    return this.context.serialize(ctx, () => this.loadRunDetailsForEntity(ctx, subject, entryIds));
+  }
+
+  private async loadRunsForEntity(
+    ctx: RequestContext,
+    subject: { entityType: string; entityId: ID },
+    opts: { skip?: number; take?: number },
   ): Promise<PaginatedList<{ entry: ChangeHistoryEntry; details: ChangeHistoryDetail[] }>> {
     const query = () =>
       this.connection
@@ -349,7 +371,7 @@ export class ChangeHistoryService {
       entryIds.length > 0
         ? await this.connection.getRepository(ctx, ChangeHistoryEntry).find({ where: { id: In(entryIds) } })
         : [];
-    const details = await this.runDetailsForEntity(ctx, subject, entryIds);
+    const details = await this.loadRunDetailsForEntity(ctx, subject, entryIds);
     const byId = new Map(entries.map((entry) => [String(entry.id), entry]));
     return {
       items: entryIds
@@ -359,11 +381,7 @@ export class ChangeHistoryService {
     };
   }
 
-  /**
-   * One entity's rows of the given runs, grouped by run id (as a string): what a timeline shows under each
-   * run item. Matches the rows recorded for the entity and for its children, like `runsForEntity`.
-   */
-  async runDetailsForEntity(
+  private async loadRunDetailsForEntity(
     ctx: RequestContext,
     subject: { entityType: string; entityId: ID },
     entryIds: ID[],

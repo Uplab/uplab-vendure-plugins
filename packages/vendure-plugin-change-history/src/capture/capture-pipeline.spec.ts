@@ -47,8 +47,12 @@ function setup(
     }
     return entries;
   });
+  const count = vi.fn(
+    async ({ where }: { where: Partial<ChangeHistoryEntry> }) =>
+      saved.filter((entry) => entry.batchId === where.batchId && entry.entityType === where.entityType).length,
+  );
   const connection = {
-    getRepository: () => ({ manager: transactionManager, save }),
+    getRepository: () => ({ manager: transactionManager, save, count }),
     withTransaction: (ctx: RequestContext, work: (tctx: RequestContext) => Promise<unknown>) => work(ctx),
   } as unknown as TransactionalConnection;
 
@@ -273,12 +277,28 @@ describe('CapturePipeline', () => {
     expect(saved[0].derivedFromId).toBe(99);
   });
 
+  it('records a save without a diff when the state of an earlier save in the transaction was evicted', async () => {
+    const { pipeline, definition, ctx, saved, context } = setup({
+      committed: { '1': { sku: 'A' } },
+      current: { '1': { sku: 'C' } },
+    });
+    // The committed `A` would repeat the transaction's earlier A → B as part of this change.
+    context.transactionStateOf(ctx).evicted.add('ProductVariant:1');
+    await pipeline.run(ctx, definition, [1], updated);
+
+    expect(saved[0]).toMatchObject({
+      summary: 'updated (details unavailable)',
+      changes: null,
+      meta: expect.objectContaining({ noBefore: 'evicted' }),
+    });
+  });
+
   it('writes a batch head once, with the first member', async () => {
     const { pipeline, definition, ctx, saved, context } = setup({
       committed: { '1': { sku: 'A' }, '2': { sku: 'A' } },
       current: { '1': { sku: 'B' }, '2': { sku: 'B' } },
     });
-    context.stateOf(ctx).batch = { kind: 'bulk_edit', id: 'bulk_edit:abc', headWritten: false };
+    context.stateOf(ctx).batch = { kind: 'bulk_edit', id: 'bulk_edit:abc' };
     await pipeline.run(ctx, definition, [1], updated);
     await pipeline.run(ctx, definition, [2], updated);
 
@@ -362,7 +382,6 @@ describe('CapturePipeline', () => {
     const own = () => ({
       kind: 'collection_rules',
       id: `collection_rules:${saved.length}`,
-      headWritten: false,
       label: 'Sale',
       summary: '+1 / −0',
       parent: { type: 'Collection', id: '9' },
@@ -374,7 +393,8 @@ describe('CapturePipeline', () => {
       ['Product', 's', null, null, 77],
     ]);
 
-    context.stateOf(ctx).batch = { kind: 'bulk_edit', id: 'bulk_edit:outer', headWritten: true };
+    context.stateOf(ctx).batch = { kind: 'bulk_edit', id: 'bulk_edit:outer' };
+    context.transactionStateOf(ctx).markHead('bulk_edit:outer');
     await writer.write(ctx, 'test', async () => [draft], { batch: own() });
     expect(saved.at(-1)).toMatchObject({ entityType: 'Product', batchId: 'bulk_edit:outer' });
     expect(saved).toHaveLength(3);

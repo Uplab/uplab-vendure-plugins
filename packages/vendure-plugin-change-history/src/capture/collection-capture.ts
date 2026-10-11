@@ -95,7 +95,7 @@ export class CollectionCapture {
           event,
         });
         // An empty snapshot: the job's first fill of the new collection is recorded as one batch.
-        await this.connection.withTransaction(ctx, (tctx) =>
+        await this.writer.inSavepoint(ctx, 'created Collection', (tctx) =>
           insertOrIgnore(this.pipeline.managerOf(tctx), [{ collectionId: id, productIds: [] }]),
         );
       } else if (event.type === 'updated' && event.input === undefined) {
@@ -148,7 +148,6 @@ export class CollectionCapture {
       const batch: BatchState = {
         kind: CHANGE_HISTORY_SOURCES.collection_rules,
         id: `${CHANGE_HISTORY_SOURCES.collection_rules}:${randomUUID()}`,
-        headWritten: false,
       };
       let gone: { memberCount?: number } | undefined;
       await this.writer.write(
@@ -265,19 +264,21 @@ export class CollectionCapture {
 
   /** Overwrites every snapshot with the current contents (after a period with capture switched off). */
   async reseed(ctx: RequestContext): Promise<{ collections: number }> {
-    return this.connection.withTransaction(ctx, async (tctx) => {
-      const manager = this.pipeline.managerOf(tctx);
-      const ids = await allCollectionIds(manager);
-      for (const chunk of chunks(ids)) {
-        const members = await productIdsOf(manager, chunk);
-        await manager.delete(ChangeHistoryCollectionMembers, { collectionId: In(chunk) });
-        await insertOrIgnore(
-          manager,
-          chunk.map((collectionId) => ({ collectionId, productIds: members.get(collectionId) ?? [] })),
-        );
-      }
-      return { collections: ids.length };
-    });
+    return this.context.serialize(ctx, () =>
+      this.connection.withTransaction(ctx, async (tctx) => {
+        const manager = this.pipeline.managerOf(tctx);
+        const ids = await allCollectionIds(manager);
+        for (const chunk of chunks(ids)) {
+          const members = await productIdsOf(manager, chunk);
+          await manager.delete(ChangeHistoryCollectionMembers, { collectionId: In(chunk) });
+          await insertOrIgnore(
+            manager,
+            chunk.map((collectionId) => ({ collectionId, productIds: members.get(collectionId) ?? [] })),
+          );
+        }
+        return { collections: ids.length };
+      }),
+    );
   }
 
   /** The snapshot row, locked for this transaction where the driver can lock it. */
@@ -311,7 +312,7 @@ export class CollectionCapture {
       return;
     }
     if (this.context.transactionOf(event.ctx)) {
-      this.context.transactionStateOf(event.ctx).collectionDeletions.set(id, drafts[0]);
+      this.context.transactionStateOf(event.ctx).deferDeletion(id, drafts[0]);
     } else {
       await this.writer.write(event.ctx, 'deleted Collection', async () => drafts, { event });
     }
@@ -326,10 +327,13 @@ export class CollectionCapture {
       return collection;
     }
     if (this.rootId === null) {
-      const root = await this.pipeline
-        .managerOf(ctx)
-        .getRepository(Collection)
-        .findOne({ where: { isRoot: true }, select: { id: true }, loadEagerRelations: false });
+      // In a savepoint: a failed lookup must not abort the caller's transaction.
+      const root = await this.writer.inSavepoint(ctx, 'root collection lookup', (tctx) =>
+        this.pipeline
+          .managerOf(tctx)
+          .getRepository(Collection)
+          .findOne({ where: { isRoot: true }, select: { id: true }, loadEagerRelations: false }),
+      );
       this.rootId = root ? String(root.id) : null;
     }
     const parent = { id: collection.parentId, isRoot: String(collection.parentId) === this.rootId };
@@ -340,14 +344,13 @@ export class CollectionCapture {
   private async onDeleted(event: CollectionEvent, id: string): Promise<void> {
     const { ctx } = event;
     const transaction = this.context.transactionStateOf(ctx);
-    const pending = transaction.collectionDeletions;
+    const pending = transaction.takeDeletions();
     const own = pending.get(id);
     // Core announces the descendants deepest first: reversed, every parent comes before its children.
     const descendants = [...pending.entries()]
       .filter(([key]) => key !== id)
       .map(([, draft]) => draft)
       .reverse();
-    pending.clear();
 
     let ownEntryId: ID | undefined;
     if (own) {
