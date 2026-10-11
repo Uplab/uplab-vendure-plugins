@@ -35,6 +35,9 @@ const clip = (value: string, length: number) => (value.length > length ? value.s
  */
 @Injectable()
 export class ChangeHistoryWriter {
+  /** Writes that saved entries in this process; read-side caches compare it to notice new values. */
+  writes = 0;
+
   constructor(
     private readonly connection: TransactionalConnection,
     private readonly context: ChangeHistoryContextService,
@@ -114,6 +117,7 @@ export class ChangeHistoryWriter {
         return entries;
       });
       if (saved.length > 0) {
+        this.writes++;
         if (batch) {
           // Only now: a rolled-back savepoint took the head with it.
           batch.headWritten = true;

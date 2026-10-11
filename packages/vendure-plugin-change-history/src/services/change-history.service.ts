@@ -2,7 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   FacetValue,
   ID,
-  ListQueryBuilder,
   ListQueryOptions,
   Logger,
   PaginatedList,
@@ -29,6 +28,12 @@ import {
 import { ChangeHistoryDetail } from '../entities/change-history-detail.entity';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
 import { ChangeHistoryDefinitions } from '../entity-definitions/definitions.service';
+import {
+  ChangeHistoryEntityTimeline,
+  ChangeHistoryFilterOptions,
+  ChangeHistoryReader,
+  ChangeHistoryTimelineArgs,
+} from '../read/change-history-reader.service';
 import {
   ChangeHistoryActionInput,
   ChangeHistoryBatchInput,
@@ -73,12 +78,12 @@ export class ChangeHistoryService {
   constructor(
     @Inject(CHANGE_HISTORY_PLUGIN_OPTIONS) private readonly options: ResolvedChangeHistoryPluginOptions,
     private readonly connection: TransactionalConnection,
-    private readonly listQueryBuilder: ListQueryBuilder,
     private readonly context: ChangeHistoryContextService,
     private readonly writer: ChangeHistoryWriter,
     private readonly pipeline: CapturePipeline,
     private readonly definitions: ChangeHistoryDefinitions,
     private readonly collections: CollectionCapture,
+    private readonly reader: ChangeHistoryReader,
   ) {}
 
   /**
@@ -265,19 +270,32 @@ export class ChangeHistoryService {
   }
 
   /**
-   * The feed: entries with Vendure's list options (filter, sort, paging), newest first by default.
-   * Unstable in 0.x — the `changeHistoryEntries` query is the stable read API.
+   * The feed: entries with Vendure's list options (filter, sort, paging), newest first by default. Derived
+   * entries are left out unless the filter names `derivedFromId`. Unstable in 0.x — the `changeHistoryEntries`
+   * query is the stable read API.
    */
-  async list(
+  list(
     ctx: RequestContext,
     options: ListQueryOptions<ChangeHistoryEntry> = {},
   ): Promise<PaginatedList<ChangeHistoryEntry>> {
-    const sort =
-      options.sort && Object.keys(options.sort).length > 0 ? options.sort : { createdAt: 'DESC', id: 'DESC' };
-    const [items, totalItems] = await this.listQueryBuilder
-      .build(ChangeHistoryEntry, { ...options, sort } as ListQueryOptions<ChangeHistoryEntry>, { ctx })
-      .getManyAndCount();
-    return { items, totalItems };
+    return this.reader.list(ctx, options);
+  }
+
+  /**
+   * One entity's history, newest first, keyset-paged (`first` 1–100, `after` = the previous `endCursor`): its
+   * own entries, its children's non-derived ones and the runs that changed it with only its rows. Read from the
+   * primary database. Unstable in 0.x — the `changeHistoryEntityTimeline` query is the stable read API.
+   */
+  entityHistory(ctx: RequestContext, args: ChangeHistoryTimelineArgs): Promise<ChangeHistoryEntityTimeline> {
+    return this.reader.timeline(ctx, args);
+  }
+
+  /**
+   * Distinct actors, sources, actions and entity types of the last `summaryDays` (cached for 60 s). Unstable in
+   * 0.x — the `changeHistoryFilterOptions` query is the stable read API.
+   */
+  filterOptions(ctx: RequestContext): Promise<ChangeHistoryFilterOptions> {
+    return this.reader.filterOptions(ctx);
   }
 
   /**

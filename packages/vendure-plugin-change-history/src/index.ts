@@ -12,6 +12,13 @@ export { ChangeHistoryCollectionMembers } from './entities/change-history-collec
 export { ChangeHistoryDetail } from './entities/change-history-detail.entity';
 export { ChangeHistoryEntry } from './entities/change-history-entry.entity';
 export { ChangeHistoryService } from './services/change-history.service';
+export type {
+  ChangeHistoryDetailView,
+  ChangeHistoryEntityTimeline,
+  ChangeHistoryFilterOptions,
+  ChangeHistoryTimelineArgs,
+  ChangeHistoryTimelineEntry,
+} from './read/change-history-reader.service';
 export {
   ChangeHistoryRetentionService,
   type ChangeHistoryCompactResult,

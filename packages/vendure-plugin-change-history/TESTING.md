@@ -39,6 +39,20 @@ deletes only compacted rows; `archive: 'none'` compacts with a warning; a run of
 them; a run recorded in a host transaction that rolls back leaves no row. Unit specs cover the retention rules,
 the pure compaction, the archive lines and keys, and the scheduled tasks.
 
+Both suites also run the Admin API scenarios (`e2e/api-scenarios.ts`), after the retention ones. The feed:
+newest first, derived entries left out unless the filter names `derivedFromId`, and every filter the dashboard
+uses (actor, actor type, period, entity type, action, source, label incl. a SKU in any case, batch, collapsed
+batches); `derivedCount` / `batchCounts` live and from a compaction snapshot; one entry with its derived
+entries and paged batch members. Timelines through real mutations: a product shows its own entries, its
+variants', its collection contents and one item per run with only its variants' rows (sorted by SKU, then
+location); a variant shows its own entries and its rows of each run; a just-saved change is the first item at
+once; a collection shows its rules batch (members collapsed) and its child collection; a facet shows its values'
+changes. Run details are labelled, sorted and paged; `entityDeleted` marks a deleted product's entries; filter
+options include new values at once. Five entries written in one transaction are paged two at a time without a
+gap — on Postgres they share one timestamp to the microsecond, the R5-2 regression. Every query is refused
+without `ReadChangeHistory` and allowed with it alone. Unit specs cover the cursor, the batch loader and the
+primary-database read.
+
 The collection filters run in Vendure's job queue: the specs wait for it (`settleJobs`) and then poll for the
 entries the history writes after the job (`waitFor`).
 

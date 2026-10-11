@@ -12,9 +12,9 @@ changed value, and shows it all in the dashboard — in English and Ukrainian.
 > **Pre-release.** This version records the catalogue automatically (Vendure's events: products, variants,
 > collections and their contents, facets, facet values, assets, promotions, channel assignments), records
 > external runs with their detail rows, runs tiered retention with an archive, and ships the
-> `ChangeHistoryService` facade, the before-state and archive strategies, the `changeHistoryEntries` query, the
-> dashboard feed and the dashboard registration entry. The entity history blocks, the batch and run views and
-> their GraphQL queries follow before 0.1.0.
+> `ChangeHistoryService` facade, the before-state and archive strategies, the Admin API read queries (feed,
+> entry, entity timeline, run details, filter options), the dashboard feed and the dashboard registration
+> entry. The entity history blocks and the batch and run views in the dashboard follow before 0.1.0.
 
 ## Contents
 
@@ -346,14 +346,103 @@ type ChangeHistoryEntry implements Node {
   meta: JSON!
   summary: String!
   compactedAt: DateTime
+  isCompacted: Boolean!
+  derivedCount: Int!
+  batchCounts: [ChangeHistoryBatchCount!] # batch heads only
+  entityDeleted: Boolean!
+  details: [ChangeHistoryDetail!] # run items of a timeline only
+  derivedEntries(options: ChangeHistoryEntryListOptions): ChangeHistoryEntryList!
+  batchMembers(options: ChangeHistoryEntryListOptions): ChangeHistoryEntryList!
+}
+
+type ChangeHistoryBatchCount {
+  entityType: String!
+  action: String!
+  count: Int!
+}
+type ChangeHistoryDetail {
+  id: ID!
+  entryId: ID!
+  entityType: String!
+  entityId: String!
+  entityLabel: String
+  sku: String
+  parentType: String
+  parentId: String
+  kind: String!
+  scope: String
+  scopeLabel: String
+  from: JSON
+  to: JSON
+}
+type ChangeHistoryDetailList {
+  items: [ChangeHistoryDetail!]!
+  totalItems: Int!
+}
+type ChangeHistoryEntityTimeline {
+  items: [ChangeHistoryEntry!]!
+  endCursor: String
+  hasMore: Boolean!
+}
+type ChangeHistoryActor {
+  id: ID!
+  type: String!
+  label: String!
+}
+type ChangeHistoryFilterOptions {
+  actors: [ChangeHistoryActor!]!
+  sources: [String!]!
+  actions: [String!]!
+  entityTypes: [String!]!
 }
 
 extend type Query {
   changeHistoryEntries(options: ChangeHistoryEntryListOptions): ChangeHistoryEntryList!
+  changeHistoryEntry(id: ID!): ChangeHistoryEntry
+  changeHistoryEntityTimeline(
+    entityType: String!
+    entityId: String!
+    includeChildren: Boolean = true
+    first: Int = 20
+    after: String
+  ): ChangeHistoryEntityTimeline!
+  changeHistoryRunDetails(entryId: ID!, skip: Int = 0, take: Int = 100): ChangeHistoryDetailList!
+  changeHistoryFilterOptions: ChangeHistoryFilterOptions!
 }
 ```
 
-`changeHistoryEntries` takes Vendure's list options (filter, sort, paging) and lists newest first by default.
+- **`changeHistoryEntries`** is the feed. It takes Vendure's list options and lists newest first by default.
+  Derived entries (a variant price rewritten by a product save) are left out unless the filter names
+  `derivedFromId`; their cause carries `derivedCount`. The filters a feed needs:
+
+  | Filter               | Option                                                                  |
+  | -------------------- | ----------------------------------------------------------------------- |
+  | who                  | `actorId: { eq }` (with `actorType` to tell an API key from its owner)  |
+  | hide system          | `actorType: { in: ["admin", "api_key"] }`                               |
+  | period               | `createdAt: { between: { start, end } }`                                |
+  | type, action, source | `entityType` / `action` / `source`: `{ in: [...] }`                     |
+  | search               | `entityLabel: { contains }` (a variant's label holds its SKU)           |
+  | one batch            | `batchId: { eq }`                                                       |
+  | collapse batches     | `_or: [{ batchId: { isNull: true } }, { entityType: { eq: "Batch" } }]` |
+
+  `derivedCount`, `batchCounts`, `entityDeleted` and `isCompacted` are computed, so they cannot be filtered or
+  sorted on.
+
+- **`changeHistoryEntry`** is one entry. `derivedEntries` and `batchMembers` page with the same list options.
+- **`changeHistoryEntityTimeline`** is one entity's history, newest first, paged with `first` (1–100) and
+  `after` (the previous page's `endCursor`). `entityId` is the database id, as stored in
+  `ChangeHistoryEntry.entityId`. It includes the entity's own entries, and with `includeChildren` (the default)
+  its children's non-derived entries: a product's variants, a facet's values, a collection's child
+  collections and its rules batches (the products that entered or left are collapsed into the batch). Each
+  external run that changed the entity, or one of its children, is a single item whose `details` hold only
+  those rows. The timeline is read from the primary database, so a change shows right after its save, even
+  with read replicas.
+- **`changeHistoryRunDetails`** returns a run's rows with the current name (and a variant's SKU), sorted by
+  SKU or name, then name, then scope. `take` is at most 500.
+- **`changeHistoryFilterOptions`** lists the actors (an API key under its owner's id with `type: "api_key"`),
+  sources, actions and entity types of the last `summaryDays`, for filter dropdowns. It is cached for 60
+  seconds per process.
+- After compaction, `derivedCount` and `batchCounts` come from the counts the compaction kept.
 
 ## Database
 

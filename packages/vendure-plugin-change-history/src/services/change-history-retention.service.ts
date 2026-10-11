@@ -7,6 +7,7 @@ import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialE
 import { CHANGE_HISTORY_ENTITY_TYPES, CHANGE_HISTORY_PLUGIN_OPTIONS, DETAIL_CHUNK_SIZE, loggerCtx } from '../constants';
 import { ChangeHistoryDetail } from '../entities/change-history-detail.entity';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
+import { timestampAsText } from '../read/sql';
 import { BatchCount, compactValues } from '../retention/compact';
 import {
   ARCHIVE_CONTENT_TYPE,
@@ -485,19 +486,7 @@ export class ChangeHistoryRetentionService {
   }
 
   private asText(path: string): string {
-    switch (this.connection.rawConnection.options.type) {
-      case 'postgres':
-      case 'aurora-postgres':
-      case 'cockroachdb':
-        return `CAST(${path} AS text)`;
-      case 'mysql':
-      case 'mariadb':
-      case 'aurora-mysql':
-        return `CAST(${path} AS CHAR)`;
-      default:
-        // SQLite stores timestamps as text already.
-        return path;
-    }
+    return timestampAsText(this.connection.rawConnection.options.type, path);
   }
 
   private async existingIds(ctx: RequestContext, target: EntityClass, rows: RawRow[]): Promise<Set<string>> {

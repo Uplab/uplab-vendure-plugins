@@ -311,3 +311,148 @@ export const ACTIVE_CHANNEL_ZONES: Document = gql`
     }
   }
 `;
+
+const ENTRY_FIELDS = `
+  id
+  createdAt
+  entityType
+  entityId
+  entityLabel
+  parentType
+  parentId
+  action
+  source
+  actorType
+  actorId
+  actorLabel
+  batchId
+  derivedFromId
+  summary
+  meta
+  isCompacted
+  derivedCount
+  batchCounts {
+    entityType
+    action
+    count
+  }
+  entityDeleted
+`;
+
+const DETAIL_FIELDS = `
+  id
+  entryId
+  entityType
+  entityId
+  entityLabel
+  sku
+  parentType
+  parentId
+  kind
+  scope
+  scopeLabel
+  from
+  to
+`;
+
+export const CHANGE_HISTORY_FEED: Document = gql`
+  query ChangeHistoryFeed($options: ChangeHistoryEntryListOptions) {
+    changeHistoryEntries(options: $options) {
+      items {
+        ${ENTRY_FIELDS}
+      }
+      totalItems
+    }
+  }
+`;
+
+export const CHANGE_HISTORY_ENTRY: Document = gql`
+  query ChangeHistoryEntry($id: ID!, $derived: ChangeHistoryEntryListOptions, $members: ChangeHistoryEntryListOptions) {
+    changeHistoryEntry(id: $id) {
+      ${ENTRY_FIELDS}
+      derivedEntries(options: $derived) {
+        items {
+          id
+          entityLabel
+        }
+        totalItems
+      }
+      batchMembers(options: $members) {
+        items {
+          id
+          entityLabel
+        }
+        totalItems
+      }
+    }
+  }
+`;
+
+export const CHANGE_HISTORY_TIMELINE: Document = gql`
+  query ChangeHistoryTimeline(
+    $entityType: String!
+    $entityId: String!
+    $includeChildren: Boolean
+    $first: Int
+    $after: String
+  ) {
+    changeHistoryEntityTimeline(
+      entityType: $entityType
+      entityId: $entityId
+      includeChildren: $includeChildren
+      first: $first
+      after: $after
+    ) {
+      items {
+        ${ENTRY_FIELDS}
+        details {
+          ${DETAIL_FIELDS}
+        }
+      }
+      endCursor
+      hasMore
+    }
+  }
+`;
+
+export const CHANGE_HISTORY_RUN_DETAILS: Document = gql`
+  query ChangeHistoryRunDetails($entryId: ID!, $skip: Int, $take: Int) {
+    changeHistoryRunDetails(entryId: $entryId, skip: $skip, take: $take) {
+      items {
+        ${DETAIL_FIELDS}
+      }
+      totalItems
+    }
+  }
+`;
+
+export const CHANGE_HISTORY_FILTER_OPTIONS: Document = gql`
+  query ChangeHistoryFilterOptions {
+    changeHistoryFilterOptions {
+      actors {
+        id
+        type
+        label
+      }
+      sources
+      actions
+      entityTypes
+    }
+  }
+`;
+
+export const CREATE_ROLE: Document = gql`
+  mutation CreateRole($input: CreateRoleInput!) {
+    createRole(input: $input) {
+      id
+    }
+  }
+`;
+
+export const CREATE_ADMINISTRATOR: Document = gql`
+  mutation CreateAdministrator($input: CreateAdministratorInput!) {
+    createAdministrator(input: $input) {
+      id
+    }
+  }
+`;

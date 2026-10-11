@@ -53,6 +53,7 @@ import {
   systemCtx,
   waitFor,
 } from './helpers';
+import { apiScenarios } from './api-scenarios';
 import { retentionScenarios } from './retention-scenarios';
 
 registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__sqlite-data__')));
@@ -857,13 +858,16 @@ describe('ChangeHistoryPlugin on sql.js', () => {
     const ctx = await systemCtx(server.app);
     const retention = server.app.get(ChangeHistoryRetentionService);
     expect(await retention.preview(ctx)).toEqual({ compactable: 0, purgeable: 0 });
-    const { totalItems } = await query();
+    // Every entry, derived ones included (the feed leaves those out by default).
+    const { totalItems } = await query({ filter: { derivedFromId: { isNull: false } } });
+    const { totalItems: notDerived } = await query();
     expect(await retention.preview(ctx, { compactOlderThanDays: 0 })).toEqual({
-      compactable: totalItems,
+      compactable: totalItems + notDerived,
       purgeable: 0,
     });
     await expect(retention.preview(ctx, { purgeOlderThanDays: -1 })).rejects.toThrow(/non-negative/);
   });
 
   retentionScenarios({ app: () => server.app, adminClient, archive, archiveDir });
+  apiScenarios({ app: () => server.app, adminClient, postgres: false });
 });

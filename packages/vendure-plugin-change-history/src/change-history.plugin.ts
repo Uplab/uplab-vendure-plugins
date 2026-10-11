@@ -4,7 +4,7 @@ import { ConfigService, Injector, Logger, PluginCommonModule, Type, VendurePlugi
 import { OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { adminApiExtensions } from './api/api-extensions';
-import { ChangeHistoryAdminResolver } from './api/change-history-admin.resolver';
+import { ChangeHistoryAdminResolver, ChangeHistoryEntryResolver } from './api/change-history-admin.resolver';
 import { CapturePipeline } from './capture/capture-pipeline';
 import { ChannelCapture } from './capture/channel-capture';
 import { CollectionCapture } from './capture/collection-capture';
@@ -18,6 +18,7 @@ import { ChangeHistoryDetail } from './entities/change-history-detail.entity';
 import { ChangeHistoryEntry } from './entities/change-history-entry.entity';
 import { ChangeHistoryDefinitions } from './entity-definitions/definitions.service';
 import { resolveOptions } from './options';
+import { ChangeHistoryReader } from './read/change-history-reader.service';
 import { createRetentionTasks } from './retention/tasks';
 import { ChangeHistoryContextService } from './services/change-history-context.service';
 import { ChangeHistoryRetentionService } from './services/change-history-retention.service';
@@ -45,7 +46,7 @@ import { ChangeHistoryPluginOptions, ResolvedChangeHistoryPluginOptions } from '
   entities: [ChangeHistoryEntry, ChangeHistoryDetail, ChangeHistoryCollectionMembers],
   adminApiExtensions: {
     schema: adminApiExtensions,
-    resolvers: [ChangeHistoryAdminResolver],
+    resolvers: [ChangeHistoryAdminResolver, ChangeHistoryEntryResolver],
   },
   providers: [
     { provide: CHANGE_HISTORY_PLUGIN_OPTIONS, useFactory: () => ChangeHistoryPlugin.options },
@@ -59,6 +60,7 @@ import { ChangeHistoryPluginOptions, ResolvedChangeHistoryPluginOptions } from '
     FacetCapture,
     ChannelCapture,
     ChangeHistoryEventHandlers,
+    ChangeHistoryReader,
     ChangeHistoryService,
     ChangeHistoryRetentionService,
   ],
