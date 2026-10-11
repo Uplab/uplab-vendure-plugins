@@ -25,7 +25,7 @@
       "project": ["src/**", "e2e/**"]
     },
     "packages/dev-server": {
-      "ignoreDependencies": ["better-sqlite3", "@nestjs/graphql", "graphql-tag", "currency-codes", "typeorm"]
+      "ignoreDependencies": ["better-sqlite3", "pg", "graphql-tag", "currency-codes", "typeorm"]
     },
     "packages/vendure-plugin-change-history": {
       "entry": ["src/index.ts", "src/dashboard/index.tsx", "src/dashboard/public.ts", "e2e/**/*.e2e-spec.ts"],

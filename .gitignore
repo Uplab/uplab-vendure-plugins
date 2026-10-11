@@ -13,6 +13,7 @@ packages/dev-server/static/
 packages/dev-server/dist/
 packages/dev-server/src/gql/
 packages/dev-server/.vendure/
+packages/dev-server/.change-history-archive/
 
 # env
 .env
