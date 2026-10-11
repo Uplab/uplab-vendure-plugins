@@ -102,6 +102,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Tokenless Codecov upload via GitHub OIDC.
+      id-token: write
     services:
       postgres:
         image: postgres:15
@@ -131,8 +133,24 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Change history on Postgres
-        run: pnpm --filter @uplab/vendure-plugin-change-history test:e2e:pg
+      # Run from the root so the root coverage config applies. Thresholds are off: this suite alone covers
+      # only the Postgres paths; Codecov merges this report with the `checks` upload and the vitest
+      # thresholds there stay the gate.
+      - name: Change history on Postgres (with coverage)
+        run: >-
+          pnpm vitest run --coverage
+          --coverage.thresholds.lines=0 --coverage.thresholds.statements=0
+          --coverage.thresholds.functions=0 --coverage.thresholds.branches=0
+          --project @uplab/vendure-plugin-change-history
+          packages/vendure-plugin-change-history/e2e/change-history-postgres.e2e-spec.ts
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: coverage/lcov.info
+          flags: postgres
+          use_oidc: true
+          fail_ci_if_error: true
 
   # Terminal job: the single required status check for branch protection,
   # stable regardless of the matrix shape.
