@@ -78,7 +78,7 @@ function resolveRetention(retention: ChangeHistoryPluginOptions['retention']) {
   }
   return {
     archive,
-    archiveKeyPrefix: prefix.replace(/\/+$/, ''),
+    archiveKeyPrefix: withoutTrailingSlashes(prefix),
     detailDays,
     summaryDays,
     runLineDays,
@@ -92,6 +92,15 @@ function resolveRetention(retention: ChangeHistoryPluginOptions['retention']) {
     purgeBatchSize: positiveInteger('retention.batchSize', retention.batchSize, DEFAULTS.purgeBatchSize),
     maxBatches: positiveInteger('retention.maxBatches', retention.maxBatches, DEFAULTS.maxBatches),
   };
+}
+
+/** `'archive/history//'` → `'archive/history'`: linear, unlike a `/\/+$/` regex on a long run of slashes. */
+function withoutTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+    end--;
+  }
+  return value.slice(0, end);
 }
 
 function nonEmptyString(value: unknown): value is string {

@@ -4,17 +4,45 @@
  */
 import type { ChangeHistoryBatchCount, ChangeHistoryDetailData, ChangeHistoryFieldChange } from './registry';
 
-/** `<p>A&amp;B</p>` → `A&B`: rich text shown as plain text (never as HTML). */
+/** Tags that end a line of text: shown as a space between the words they separate. */
+const BREAKING_TAGS = new Set(['br', '/p', '/div', '/li', '/h1', '/h2', '/h3', '/h4', '/h5', '/h6']);
+
+const ENTITIES: Record<string, string> = { nbsp: ' ', lt: '<', gt: '>', quot: '"', '#39': "'", amp: '&' };
+
+/** A tag starts at `<` followed by a letter, `/`, `!` or `?`; any other `<` is text (`a < b`). */
+const opensTag = (next: string | undefined) => next !== undefined && /[a-z/!?]/i.test(next);
+
+/**
+ * `<p>A&amp;B</p>` → `A&B`: rich text shown as plain text (never as HTML). One pass over the markup, so no tag
+ * can be reassembled from the pieces of another (`<scr<b>ipt>`), and each entity is decoded once
+ * (`&amp;lt;` → `&lt;`). An unterminated tag at the end is dropped.
+ */
 export function stripHtml(html: string): string {
-  return html
-    .replace(/<(br|\/p|\/div|\/li|\/h\d)\s*\/?>/gi, ' ')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
+  let text = '';
+  let i = 0;
+  while (i < html.length) {
+    const open = html.indexOf('<', i);
+    if (open === -1) {
+      text += html.slice(i);
+      break;
+    }
+    text += html.slice(i, open);
+    if (!opensTag(html[open + 1])) {
+      text += '<';
+      i = open + 1;
+      continue;
+    }
+    const close = html.indexOf('>', open + 1);
+    if (close === -1) {
+      break;
+    }
+    // The pattern matches every string (an empty name at worst).
+    const name = (/^\/?[a-z0-9]*/i.exec(html.slice(open + 1, close)) as RegExpExecArray)[0].toLowerCase();
+    text += BREAKING_TAGS.has(name) ? ' ' : '';
+    i = close + 1;
+  }
+  return text
+    .replace(/&(nbsp|lt|gt|quot|#39|amp);/g, (_, entity: string) => ENTITIES[entity])
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -110,10 +138,8 @@ function labelArgument(value: unknown, labels: Record<string, string>): unknown 
   }
   if (typeof value === 'string' && value.startsWith('[')) {
     try {
-      const parsed: unknown = JSON.parse(value);
-      if (Array.isArray(parsed)) {
-        return labelIds(parsed, labels) ?? value;
-      }
+      // Valid JSON that starts with `[` is a list.
+      return labelIds(JSON.parse(value) as unknown[], labels) ?? value;
     } catch {
       // Not a JSON list: shown as it is.
     }

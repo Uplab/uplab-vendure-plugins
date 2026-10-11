@@ -33,6 +33,24 @@ describe('resolveOptions', () => {
     });
   });
 
+  it.each([
+    ['archive/history', 'archive/history'],
+    ['archive/history///', 'archive/history'],
+    ['a//b/', 'a//b'],
+    ['/root/', '/root'],
+  ])('drops the trailing slashes of the key prefix %j', (archiveKeyPrefix, expected) => {
+    expect(resolveOptions({ retention: { archive, archiveKeyPrefix } }).retention.archiveKeyPrefix).toBe(expected);
+  });
+
+  it('drops trailing slashes in linear time, whatever the run of slashes', () => {
+    // A backtracking `/\/+$/` takes quadratic time on a long run of slashes that does not end the string.
+    const archiveKeyPrefix = `x${'/'.repeat(200_000)}x${'/'.repeat(200_000)}`;
+    const started = performance.now();
+    const { retention } = resolveOptions({ retention: { archive, archiveKeyPrefix } });
+    expect(retention.archiveKeyPrefix).toBe(`x${'/'.repeat(200_000)}x`);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   it('keeps explicit values, the "none" archive and a strategy instance', () => {
     const beforeState = new NoBeforeStateStrategy();
     const resolved = resolveOptions({
@@ -75,6 +93,16 @@ describe('resolveOptions', () => {
     ['a half schedule', { retention: { archive, schedule: { compact: '* * * * *' } } }, /"retention.schedule"/],
     ['an empty key prefix', { retention: { archive, archiveKeyPrefix: ' ' } }, /"retention.archiveKeyPrefix"/],
     ['a zero value cap', { maxValueBytes: 0, retention: { archive } }, /"maxValueBytes"/],
+    [
+      'an empty actor resolver',
+      { actorResolvers: [null], retention: { archive } },
+      /every actor resolver needs a name/,
+    ],
+    [
+      'an actor resolver without resolve()',
+      { actorResolvers: [{ name: 'erp' }], retention: { archive } },
+      /every actor resolver needs a name/,
+    ],
     ['an unknown entity', { entities: { Order: {} }, retention: { archive } }, /"entities.Order" is not one of/],
     [
       'entities that are not an object',

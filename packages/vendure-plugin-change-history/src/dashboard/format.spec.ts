@@ -53,6 +53,37 @@ describe('text helpers', () => {
     expect(stripHtml('<p>&lt;3 &quot;tee&quot; &#39;s</p>')).toBe(`<3 "tee" 's`);
   });
 
+  it('separates the words of lines and blocks', () => {
+    expect(stripHtml('One<br>two<br/>three<BR />four')).toBe('One two three four');
+    expect(stripHtml('<ul><li>a</li><li>b</li></ul><h2>c</h2><div>d</div>e')).toBe('a b c d e');
+    expect(stripHtml('<b>bo</b>ld <span class="x">sp</span>an')).toBe('bold span');
+  });
+
+  it('leaves no tag behind, however the markup nests or ends', () => {
+    // A regex pass removing `<b>` would reassemble `<script>` out of `<scr<b>ipt>`; one scan does not.
+    expect(stripHtml('<scr<b>ipt>alert(1)</script>')).toBe('ipt>alert(1)');
+    expect(stripHtml('<sc<script>ript>x</sc</script>ript>')).toBe('ript>xript>');
+    expect(stripHtml('text <img src=x onerror=alert(1)')).toBe('text');
+    expect(stripHtml('<!-- note --><p>kept</p><?xml x?>')).toBe('kept');
+  });
+
+  it('keeps a < that does not open a tag', () => {
+    expect(stripHtml('a < b and 3<4')).toBe('a < b and 3<4');
+    expect(stripHtml('ends with <')).toBe('ends with <');
+  });
+
+  it('decodes each entity once', () => {
+    expect(stripHtml('&amp;lt;b&amp;gt; is &lt;b&gt;')).toBe('&lt;b&gt; is <b>');
+    expect(stripHtml('&copy; &unknown; & alone')).toBe('&copy; &unknown; & alone');
+  });
+
+  it('strips long markup in linear time', () => {
+    const html = `${'<b>x</b>'.repeat(50_000)}${'<'.repeat(50_000)}${'<a'.repeat(50_000)}`;
+    const started = performance.now();
+    expect(stripHtml(html)).toBe(`${'x'.repeat(50_000)}${'<'.repeat(50_000)}`);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   it('clips long text on a word boundary', () => {
     expect(clipText('short', 10)).toEqual({ text: 'short', clipped: false });
     expect(clipText('An oversized tee of dense cotton', 20)).toEqual({ text: 'An oversized tee of…', clipped: true });
@@ -139,6 +170,19 @@ describe('values', () => {
     expect(jsonLines({ text: '[not json' }, { 31: 'X' }).join('')).toContain('[not json');
     expect(jsonLines(null, undefined)).toEqual([]);
     expect(jsonLines({ a: [1] }, {})).toEqual(['{', '  "a": [', '    1', '  ]', '}']);
+  });
+
+  it('leaves a facet value argument as it is unless every id has a label', () => {
+    const arg = (value: unknown) => ({ name: 'facetValueIds', value });
+    const labels = { 31: 'Season: Winter' };
+    expect(jsonLines([arg(['31', '99'])], labels).join('')).toContain('"99"');
+    expect(jsonLines([arg([])], labels).join('')).toContain('"value": []');
+    expect(jsonLines([arg([{ id: '31' }])], labels).join('')).toContain('"id": "31"');
+    expect(jsonLines([arg('["31","99"]')], labels).join('')).toContain('[\\"31\\",\\"99\\"]');
+    expect(jsonLines([arg('[31')], labels).join('')).toContain('"value": "[31"');
+    expect(jsonLines([arg('31')], labels).join('')).toContain('"value": "31"');
+    expect(jsonLines([arg(31)], labels).join('')).toContain('"value": 31');
+    expect(jsonLines([arg(['31'])], labels).join('')).toContain('"Season: Winter"');
   });
 
   it('labels the ids of facet value arguments only', () => {
