@@ -169,6 +169,22 @@ describe('the catalogs', () => {
     expect(entries(catalog('en')).get('|change-history.field.facetValues')).toBe(FIELD_LABELS.facetValues.message);
   });
 
+  it('spell Ukrainian words in Cyrillic only (no Latin look-alikes such as H, i, o, c)', () => {
+    const uk = entries(catalog('uk'));
+    // «Ні» is U+041D U+0456 and looks exactly like Latin "Hi": compare code points, not glyphs.
+    expect(uk.get('change-history|No')).toBe('Ні');
+    expect(uk.get('change-history|Yes')).toBe('Так');
+    const mixed: string[] = [];
+    for (const [key, translation] of uk) {
+      for (const word of translation.split(/[^\p{L}]+/u)) {
+        if (/\p{Script=Latin}/u.test(word) && /\p{Script=Cyrillic}/u.test(word)) {
+          mixed.push(`${key}: ${word}`);
+        }
+      }
+    }
+    expect(mixed).toEqual([]);
+  });
+
   it('have the same messages in both languages, all translated, with a context or an explicit id, and no ICU', () => {
     const en = entries(catalog('en'));
     const uk = entries(catalog('uk'));
