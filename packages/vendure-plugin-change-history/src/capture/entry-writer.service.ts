@@ -4,6 +4,7 @@ import { CHANGE_HISTORY_ACTIONS, CHANGE_HISTORY_ENTITY_TYPES, DETAIL_CHUNK_SIZE,
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
 import { BatchState, ChangeHistoryContextService } from '../services/change-history-context.service';
 import { ChangeHistoryFieldChanges } from '../types';
+import { ENTRY_COLUMN_LENGTHS, fitColumns, warnClipped } from './fit';
 import { TransactionState } from './transaction-state';
 
 /** An entry before the writer adds the actor, batch, channel, derived link and correlation id. */
@@ -83,24 +84,30 @@ export class ChangeHistoryWriter {
           }
           const actor = await this.context.resolveActor(tctx, options.event);
           const repository = this.connection.getRepository(tctx, ChangeHistoryEntry);
+          const clipped = new Set<string>();
+          drafts.forEach((draft) => fitColumns(draft, ENTRY_COLUMN_LENGTHS, clipped));
           const build = (draft: EntryDraft, derivedFromId: ID | null) =>
-            Object.assign(new ChangeHistoryEntry(), {
-              ...draft,
-              entityLabel: clip(draft.entityLabel || draft.entityId, 255),
-              summary: clip(draft.summary, 512),
-              parentType: draft.parentType ?? null,
-              parentId: draft.parentId ?? null,
-              changes: draft.changes ?? null,
-              source: draft.source ?? actor.source,
-              actorType: actor.actorType,
-              actorId: actor.actorId != null ? String(actor.actorId) : null,
-              actorLabel: actor.actorLabel ? clip(actor.actorLabel, 255) : null,
-              batchId: batch?.id ?? null,
-              channelId: tctx.channel?.id != null ? String(tctx.channel.id) : null,
-              derivedFromId,
-              compactedAt: null,
-              meta: { correlationId: state.correlationId, ...actor.meta, ...draft.meta },
-            });
+            fitColumns(
+              Object.assign(new ChangeHistoryEntry(), {
+                ...draft,
+                entityLabel: clip(draft.entityLabel || draft.entityId, 255),
+                summary: clip(draft.summary, 512),
+                parentType: draft.parentType ?? null,
+                parentId: draft.parentId ?? null,
+                changes: draft.changes ?? null,
+                source: draft.source ?? actor.source,
+                actorType: actor.actorType,
+                actorId: actor.actorId != null ? String(actor.actorId) : null,
+                actorLabel: actor.actorLabel ? clip(actor.actorLabel, 255) : null,
+                batchId: batch?.id ?? null,
+                channelId: tctx.channel?.id != null ? String(tctx.channel.id) : null,
+                derivedFromId,
+                compactedAt: null,
+                meta: { correlationId: state.correlationId, ...actor.meta, ...draft.meta },
+              }),
+              ENTRY_COLUMN_LENGTHS,
+              clipped,
+            );
           // A batch of this write only has no head yet; a `runBatch` one may have it from an earlier write.
           if (batch && (batch !== state.batch || !(await this.headExists(tctx, transaction, batch)))) {
             const label = batch.label ?? batch.kind;
@@ -127,6 +134,7 @@ export class ChangeHistoryWriter {
             ),
             { chunk: DETAIL_CHUNK_SIZE },
           );
+          warnClipped(operation, clipped);
           await options.afterInsert?.(tctx, entries);
           return entries;
         });

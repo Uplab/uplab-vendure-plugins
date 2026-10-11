@@ -15,6 +15,7 @@ import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialE
 import { CapturePipeline } from '../capture/capture-pipeline';
 import { CollectionCapture } from '../capture/collection-capture';
 import { ChangeHistoryWriter } from '../capture/entry-writer.service';
+import { DETAIL_COLUMN_LENGTHS, fitColumns, warnClipped } from '../capture/fit';
 import {
   CHANGE_HISTORY_ACTIONS,
   CHANGE_HISTORY_ENTITY_TYPES,
@@ -211,22 +212,28 @@ export class ChangeHistoryService {
           // The entry's own `createdAt`, copied in SQL: a JS `Date` would drop Postgres' microseconds, and
           // the timelines order run rows and entries on the same key.
           const createdAt = this.entryCreatedAtSql(entry.id);
+          const clipped = new Set<string>();
           const rows = details.map((detail) => {
             const parent = detail.parent ?? parents.get(`${detail.entityType}:${String(detail.entityId)}`);
-            return {
-              entryId: entry.id,
-              createdAt: () => createdAt,
-              entityType: detail.entityType,
-              entityId: String(detail.entityId),
-              parentType: parent?.type ?? null,
-              parentId: parent ? String(parent.id) : null,
-              kind: detail.kind,
-              scope: detail.scope ?? null,
-              scopeLabel: detail.scopeLabel ? clip(detail.scopeLabel, 128) : null,
-              fromValue: detail.from ?? null,
-              toValue: detail.to ?? null,
-            };
+            return fitColumns(
+              {
+                entryId: entry.id,
+                createdAt: () => createdAt,
+                entityType: detail.entityType,
+                entityId: String(detail.entityId),
+                parentType: parent?.type ?? null,
+                parentId: parent ? String(parent.id) : null,
+                kind: detail.kind,
+                scope: detail.scope ?? null,
+                scopeLabel: detail.scopeLabel ? clip(detail.scopeLabel, 128) : null,
+                fromValue: detail.from ?? null,
+                toValue: detail.to ?? null,
+              },
+              DETAIL_COLUMN_LENGTHS,
+              clipped,
+            );
           });
+          warnClipped(`recordRun "${input.source}" detail rows`, clipped);
           const repository = this.connection.getRepository(tctx, ChangeHistoryDetail);
           for (let i = 0; i < rows.length; i += DETAIL_CHUNK_SIZE) {
             await repository.insert(

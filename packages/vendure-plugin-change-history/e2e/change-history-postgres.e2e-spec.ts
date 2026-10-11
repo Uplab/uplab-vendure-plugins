@@ -24,7 +24,6 @@ import {
   ChangeHistoryService,
   CommittedRowBeforeStateStrategy,
   FileSystemArchiveStorage,
-  ResolvedActor,
 } from '../src';
 import { CollectionCapture } from '../src/capture/collection-capture';
 import { ChangeHistoryStrategies } from '../src/services/change-history-strategies.service';
@@ -84,18 +83,8 @@ const PORT = 3058;
 
 registerInitializer('postgres', new DedicatedPostgresInitializer());
 
-/** Set to make the next history write fail inside a real mutation (its `source` does not fit the column). */
-const failNextWrite = { on: false };
-const failingResolver = {
-  name: 'test-failing-write',
-  resolve: (): ResolvedActor | undefined => {
-    if (!failNextWrite.on) {
-      return undefined;
-    }
-    failNextWrite.on = false;
-    return { actorType: 'system', source: 'x'.repeat(40) };
-  },
-};
+/** An entry whose label contains this fails in the database (a trigger of the suite), inside a real mutation. */
+const FAIL = '[fail]';
 
 describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
   const warn = vi.spyOn(Logger, 'warn');
@@ -122,7 +111,6 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
       FanOutTestPlugin,
       ChangeHistoryPlugin.init({
         retention: { archive },
-        actorResolvers: [failingResolver],
         entities: {
           Product: { includeReadonlyCustomFields: ['erpId'], fieldKinds: { 'customFields.price': 'money' } },
           ProductVariant: { fieldKinds: { 'customFields.fullPrice': 'money' } },
@@ -194,6 +182,17 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
     defaultChannelId = String(ctx.channelId);
     const [taxCategory] = await connection().rawConnection.getRepository(TaxCategory).find();
     taxCategoryId = String(taxCategory.id);
+    const raw = connection().rawConnection;
+    const table = raw.getMetadata(ChangeHistoryEntry).tablePath;
+    await raw.query(`CREATE OR REPLACE FUNCTION change_history_e2e_fail() RETURNS trigger AS $$
+      BEGIN
+        IF NEW."entityLabel" LIKE '%${FAIL}%' THEN RAISE EXCEPTION 'injected history failure'; END IF;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`);
+    await raw.query(`DROP TRIGGER IF EXISTS change_history_e2e_fail ON "${table}"`);
+    await raw.query(
+      `CREATE TRIGGER change_history_e2e_fail BEFORE INSERT ON "${table}" FOR EACH ROW EXECUTE FUNCTION change_history_e2e_fail()`,
+    );
   }, 120_000);
 
   afterAll(async () => {
@@ -547,18 +546,17 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
       });
       const count = (await entriesOf('Product', productId)).length;
 
-      failNextWrite.on = true;
-      await updateProduct({ id: productId, translations: [{ languageCode: 'en', name: 'Leather belt' }] });
+      await updateProduct({ id: productId, translations: [{ languageCode: 'en', name: `Leather belt ${FAIL}` }] });
 
       expect(error).toHaveBeenCalledWith(
-        expect.stringContaining('[ChangeHistory] write failed in updated Product: value too long'),
+        expect.stringContaining('[ChangeHistory] write failed in updated Product: injected history failure'),
         'ChangeHistory',
         expect.any(String),
       );
       const product = await connection()
         .rawConnection.getRepository(Product)
         .findOneOrFail({ where: { id: decode(productId) }, relations: ['translations'] });
-      expect(product.translations[0].name).toBe('Leather belt');
+      expect(product.translations[0].name).toBe(`Leather belt ${FAIL}`);
       expect(await entriesOf('Product', productId)).toHaveLength(count);
       error.mockRestore();
     });
@@ -581,24 +579,92 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
       const ctx = await systemCtx(server.app);
 
       await connection().withTransaction(ctx, async (tctx) => {
-        // varchar(32): Postgres rejects the statement, which would abort the whole transaction without a savepoint.
+        // Postgres rejects the statement, which would abort the whole transaction without a savepoint.
         await history().recordAction(tctx, {
-          entityType: 'X'.repeat(40),
+          entityType: 'Facet',
           entityId: 1,
-          entityLabel: 'Bad',
+          entityLabel: `Bad ${FAIL}`,
           action: 'x',
         });
         await history().recordAction(tctx, { entityType: 'Facet', entityId: 1, entityLabel: 'Good', action: 'x' });
       });
 
       expect(error).toHaveBeenCalledWith(
-        expect.stringContaining('value too long'),
+        expect.stringContaining('injected history failure'),
         'ChangeHistory',
         expect.any(String),
       );
       expect((await entriesWhere(server.app, { entityLabel: 'Good' })).length).toBe(1);
-      expect(await entriesWhere(server.app, { entityLabel: 'Bad' })).toEqual([]);
+      expect(await entriesWhere(server.app, { entityLabel: `Bad ${FAIL}` })).toEqual([]);
       error.mockRestore();
+    });
+
+    it('clips an over-long value from the host to its column instead of losing the entry or the run', async () => {
+      const ctx = await systemCtx(server.app);
+      warn.mockClear();
+      await history().recordAction(ctx, {
+        entityType: 'T'.repeat(40),
+        entityId: 'i'.repeat(40),
+        entityLabel: 'pg-clipped-action',
+        action: 'a'.repeat(40),
+        parent: { type: 'P'.repeat(40), id: 'p'.repeat(40) },
+      });
+      const source = 's'.repeat(40);
+      await history().recordRun(ctx, {
+        source,
+        label: 'pg-clipped-run',
+        counts: { updated: 1 },
+        details: [
+          {
+            entityType: 'D'.repeat(40),
+            entityId: 'd'.repeat(40),
+            kind: 'k'.repeat(40),
+            scope: 'c'.repeat(70),
+            from: 1,
+            to: 2,
+          },
+        ],
+      });
+
+      expect(await entriesWhere(server.app, { entityLabel: 'pg-clipped-action' })).toEqual([
+        expect.objectContaining({
+          entityType: 'T'.repeat(32),
+          entityId: 'i'.repeat(36),
+          action: 'a'.repeat(32),
+          parentType: 'P'.repeat(32),
+          parentId: 'p'.repeat(36),
+        }),
+      ]);
+      const [run] = await entriesWhere(server.app, { entityLabel: 'pg-clipped-run' });
+      // `entityId` defaults to the source.
+      expect(run).toMatchObject({ source: source.slice(0, 32), entityId: source.slice(0, 36) });
+      expect(
+        await connection()
+          .rawConnection.getRepository(ChangeHistoryDetail)
+          .find({ where: { entryId: run.id } }),
+      ).toEqual([
+        expect.objectContaining({
+          entityType: 'D'.repeat(32),
+          entityId: 'd'.repeat(36),
+          kind: 'k'.repeat(32),
+          scope: 'c'.repeat(64),
+        }),
+      ]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('recordAction: clipped action, entityId, entityType, parentId, parentType'),
+        'ChangeHistory',
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('recordRun: clipped entityId, source'),
+        'ChangeHistory',
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(`recordRun "${source}" detail rows: clipped entityId, entityType, kind, scope`),
+        'ChangeHistory',
+      );
+      // The suite's run test lists every run.
+      await connection().rawConnection.getRepository(ChangeHistoryDetail).delete({ entryId: run.id });
+      await connection().rawConnection.getRepository(ChangeHistoryEntry).delete({ id: run.id });
     });
 
     it('forgets what a rolled-back savepoint saw: no phantom before-state, no link to a rolled-back entry', async () => {
