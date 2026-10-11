@@ -28,6 +28,11 @@ export async function entriesWhere(
     .find({ where: where as never, order: { id: 'ASC' } });
 }
 
+/** The database id behind an Admin API id of the testing id strategy (`T_12` → `'12'`). */
+export function decode(id: string): string {
+  return id.replace(/^T_/, '');
+}
+
 /** A product with one variant per SKU; returns the product id and the variant ids. */
 export async function createProduct(
   adminClient: SimpleGraphQLClient,

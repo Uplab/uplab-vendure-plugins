@@ -92,7 +92,15 @@ describe('ChangeHistoryService with the kill switch off', () => {
       resolveOptions({ enabled: false, retention: { archive: 'none' } }),
       { withTransaction } as unknown as TransactionalConnection,
       {} as ListQueryBuilder,
-      new ChangeHistoryContextService(resolveOptions({ retention: { archive: 'none' } }), {} as never),
+      new ChangeHistoryContextService(
+        resolveOptions({ retention: { archive: 'none' } }),
+        {} as never,
+        {} as never,
+        {} as never,
+      ),
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const ctx = {} as RequestContext;
 

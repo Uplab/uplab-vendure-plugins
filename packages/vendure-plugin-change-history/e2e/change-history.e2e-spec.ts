@@ -1,6 +1,6 @@
 import path from 'path';
 import { tmpdir } from 'node:os';
-import { Logger, TransactionalConnection, mergeConfig } from '@vendure/core';
+import { LanguageCode, Logger, ProductVariantService, TransactionalConnection, mergeConfig } from '@vendure/core';
 import { createTestEnvironment, registerInitializer, SqljsInitializer, testConfig } from '@vendure/testing';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
@@ -13,8 +13,15 @@ import {
 } from '../src';
 import { ChangeHistoryStrategies } from '../src/services/change-history-strategies.service';
 import { initialData } from './fixtures/initial-data';
-import { CHANGE_HISTORY_ENTRIES } from './graphql';
-import { createProduct, entriesWhere, superadminCtx, systemCtx } from './helpers';
+import {
+  CHANGE_HISTORY_ENTRIES,
+  CREATE_VARIANTS,
+  DELETE_PRODUCT,
+  DELETE_VARIANT,
+  UPDATE_PRODUCT,
+  UPDATE_VARIANTS,
+} from './graphql';
+import { createProduct, decode, entriesWhere, superadminCtx, systemCtx } from './helpers';
 
 registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__sqlite-data__')));
 
@@ -176,8 +183,6 @@ describe('ChangeHistoryPlugin on sql.js', () => {
   });
 
   it('records an external run with its detail rows and resolves the variants’ products', async () => {
-    // Server code passes raw ids; the Admin API returns them encoded by the testing id strategy.
-    const decode = (id: string) => id.replace(/^T_/, '');
     const one = await createProduct(adminClient, 'run-one', ['RUN-1']);
     const two = await createProduct(adminClient, 'run-two', ['RUN-2']);
     const first = { productId: decode(one.productId), variantIds: one.variantIds.map(decode) };
@@ -270,9 +275,10 @@ describe('ChangeHistoryPlugin on sql.js', () => {
     const ctx = await systemCtx(server.app);
     await expect(
       history().recordAction(ctx, {
-        entityType: 'Facet',
+        // NOT NULL column: the insert fails.
+        entityType: null as unknown as string,
         entityId: 1,
-        entityLabel: null as unknown as string,
+        entityLabel: 'Broken',
         action: 'broken',
       }),
     ).resolves.toBeUndefined();
@@ -284,13 +290,158 @@ describe('ChangeHistoryPlugin on sql.js', () => {
     error.mockRestore();
   });
 
-  it('does not capture yet: capture() resolves and warns once', async () => {
-    const ctx = await systemCtx(server.app);
-    warn.mockClear();
-    await history().capture(ctx, 'Product', [1], { action: 'archived' });
-    await history().capture(ctx, 'Product', [1], { action: 'archived' });
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('capture() is not implemented'), 'ChangeHistory');
+  describe('capture without a before-state', () => {
+    it('records a created product with all its values', async () => {
+      const { productId } = await createProduct(adminClient, 'sqlite-shirt', []);
+      const [entry] = await entriesWhere(server.app, { entityType: 'Product', entityId: decode(productId) });
+      expect(entry).toMatchObject({
+        action: 'created',
+        entityLabel: 'sqlite-shirt',
+        source: 'admin',
+        summary: 'created',
+      });
+      expect(entry.changes).toEqual({
+        enabled: { kind: 'bool', from: null, to: true },
+        'name.en': { kind: 'text', from: null, to: 'sqlite-shirt' },
+        'slug.en': { kind: 'text', from: null, to: 'sqlite-shirt' },
+        'description.en': { kind: 'richtext', from: null, to: '' },
+      });
+    });
+
+    it('records every update, without values: the change cannot be diffed on SQLite', async () => {
+      const { productId } = await createProduct(adminClient, 'sqlite-update', []);
+      await adminClient.query(UPDATE_PRODUCT, { input: { id: productId, enabled: false } });
+      await adminClient.query(UPDATE_PRODUCT, { input: { id: productId, enabled: false } });
+
+      const updates = await entriesWhere(server.app, {
+        entityType: 'Product',
+        entityId: decode(productId),
+        action: 'updated',
+      });
+      expect(updates).toHaveLength(2);
+      expect(updates[0]).toMatchObject({
+        changes: null,
+        summary: 'updated (details unavailable)',
+        meta: expect.objectContaining({ noBefore: 'unsupported' }),
+      });
+    });
+
+    it('diffs against what the same transaction saved before', async () => {
+      const { productId } = await createProduct(adminClient, 'sqlite-fan-out', []);
+      const ctx = await superadminCtx(server.app);
+      const variants = server.app.get(ProductVariantService);
+
+      const variantId = await server.app.get(TransactionalConnection).withTransaction(ctx, async (tctx) => {
+        const [variant] = await variants.create(tctx, [
+          {
+            productId: Number(decode(productId)),
+            sku: 'FAN-1',
+            price: 100,
+            optionIds: [],
+            translations: [{ languageCode: LanguageCode.en, name: 'Fan' }],
+          },
+        ]);
+        await variants.update(tctx, [{ id: variant.id, price: 250 }]);
+        return String(variant.id);
+      });
+
+      const [created, updated] = await entriesWhere(server.app, { entityType: 'ProductVariant', entityId: variantId });
+      expect(created).toMatchObject({ action: 'created', parentType: 'Product', parentId: decode(productId) });
+      expect(updated).toMatchObject({ action: 'updated', derivedFromId: created.id });
+      expect(updated.changes).toEqual({
+        prices: expect.objectContaining({
+          kind: 'prices',
+          from: [expect.objectContaining({ price: 100 })],
+          to: [expect.objectContaining({ price: 250 })],
+        }),
+      });
+    });
+
+    it('records a manual stock adjustment, but not the initial stock of a new variant', async () => {
+      const { productId } = await createProduct(adminClient, 'sqlite-stock', []);
+      const { createProductVariants } = await adminClient.query(CREATE_VARIANTS, {
+        input: [
+          {
+            productId,
+            sku: 'STOCK-1',
+            price: 100,
+            stockOnHand: 3,
+            optionIds: [],
+            translations: [{ languageCode: 'en', name: 'Stock' }],
+          },
+        ],
+      });
+      const variantId = createProductVariants[0].id;
+      await adminClient.query(UPDATE_VARIANTS, { input: [{ id: variantId, stockOnHand: 1 }] });
+
+      const entries = await entriesWhere(server.app, { entityType: 'ProductVariant', entityId: decode(variantId) });
+      expect(entries.map((e) => e.action)).toEqual(['created', 'stock_adjusted', 'updated']);
+      expect(entries[1]).toMatchObject({
+        entityLabel: 'Stock (STOCK-1)',
+        summary: 'stock Default Stock Location: 3 → 1',
+        changes: { stock: { kind: 'stock', from: 3, to: 1, delta: -2, location: 'Default Stock Location' } },
+      });
+    });
+
+    it('records a deleted product and its variants, linked to the product entry', async () => {
+      const { productId, variantIds } = await createProduct(adminClient, 'sqlite-delete', ['DEL-1']);
+      await adminClient.query(DELETE_PRODUCT, { id: productId });
+
+      const [product] = await entriesWhere(server.app, {
+        entityType: 'Product',
+        entityId: decode(productId),
+        action: 'deleted',
+      });
+      expect(product).toMatchObject({
+        entityLabel: 'sqlite-delete',
+        changes: null,
+        meta: expect.objectContaining({
+          noBefore: 'unsupported',
+          lastState: expect.objectContaining({ 'name.en': 'sqlite-delete' }),
+        }),
+      });
+      const [variant] = await entriesWhere(server.app, {
+        entityType: 'ProductVariant',
+        entityId: decode(variantIds[0]),
+        action: 'deleted',
+      });
+      expect(variant).toMatchObject({ derivedFromId: product.id, parentId: decode(productId) });
+    });
+
+    it('does not record the same variant as deleted twice', async () => {
+      const { productId, variantIds } = await createProduct(adminClient, 'sqlite-redelete', ['REDEL-1']);
+      await adminClient.query(DELETE_VARIANT, { id: variantIds[0] });
+      await adminClient.query(DELETE_PRODUCT, { id: productId });
+
+      expect(
+        await entriesWhere(server.app, {
+          entityType: 'ProductVariant',
+          entityId: decode(variantIds[0]),
+          action: 'deleted',
+        }),
+      ).toHaveLength(1);
+    });
+
+    it('captures what a host wrote around the events, and warns once for a type it cannot capture yet', async () => {
+      const { productId } = await createProduct(adminClient, 'sqlite-capture', []);
+      const ctx = await superadminCtx(server.app);
+      warn.mockClear();
+
+      await history().capture(ctx, 'Product', [decode(productId)], { action: 'archived', meta: { reason: 'test' } });
+      await history().capture(ctx, 'Collection', [1], { action: 'assets_set' });
+      await history().capture(ctx, 'Collection', [1], { action: 'assets_set' });
+
+      expect(
+        await entriesWhere(server.app, { entityType: 'Product', entityId: decode(productId), action: 'archived' }),
+      ).toEqual([
+        expect.objectContaining({
+          changes: null,
+          meta: expect.objectContaining({ reason: 'test', noBefore: 'no_transaction' }),
+        }),
+      ]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('does not support Collection'), 'ChangeHistory');
+      expect(warn.mock.calls.filter(([message]) => String(message).includes('Collection'))).toHaveLength(1);
+    });
   });
 
   it('previews retention and does not compact or purge yet', async () => {

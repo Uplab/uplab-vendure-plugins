@@ -5,10 +5,15 @@ import { OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { adminApiExtensions } from './api/api-extensions';
 import { ChangeHistoryAdminResolver } from './api/change-history-admin.resolver';
+import { CapturePipeline } from './capture/capture-pipeline';
+import { ChangeHistoryWriter } from './capture/entry-writer.service';
+import { ChangeHistoryEventHandlers } from './capture/event-handlers';
+import { StockAdjustmentCapture } from './capture/stock-adjustments';
 import { CHANGE_HISTORY_PLUGIN_OPTIONS, readChangeHistory } from './constants';
 import { ChangeHistoryCollectionMembers } from './entities/change-history-collection-members.entity';
 import { ChangeHistoryDetail } from './entities/change-history-detail.entity';
 import { ChangeHistoryEntry } from './entities/change-history-entry.entity';
+import { ChangeHistoryDefinitions } from './entity-definitions/definitions.service';
 import { resolveOptions } from './options';
 import { ChangeHistoryContextService } from './services/change-history-context.service';
 import { ChangeHistoryRetentionService } from './services/change-history-retention.service';
@@ -42,6 +47,11 @@ import { ChangeHistoryPluginOptions, ResolvedChangeHistoryPluginOptions } from '
     { provide: CHANGE_HISTORY_PLUGIN_OPTIONS, useFactory: () => ChangeHistoryPlugin.options },
     ChangeHistoryContextService,
     ChangeHistoryStrategies,
+    ChangeHistoryDefinitions,
+    ChangeHistoryWriter,
+    CapturePipeline,
+    StockAdjustmentCapture,
+    ChangeHistoryEventHandlers,
     ChangeHistoryService,
     ChangeHistoryRetentionService,
   ],
@@ -65,6 +75,7 @@ export class ChangeHistoryPlugin implements OnApplicationBootstrap, OnApplicatio
   constructor(
     private readonly moduleRef: ModuleRef,
     private readonly strategies: ChangeHistoryStrategies,
+    private readonly eventHandlers: ChangeHistoryEventHandlers,
   ) {}
 
   /** Validates the options (throws on anything unusable) and applies the defaults. */
@@ -73,8 +84,10 @@ export class ChangeHistoryPlugin implements OnApplicationBootstrap, OnApplicatio
     return ChangeHistoryPlugin;
   }
 
+  /** Runs on the server and on the worker: both publish catalogue events. */
   async onApplicationBootstrap(): Promise<void> {
     await this.strategies.init(new Injector(this.moduleRef));
+    this.eventHandlers.register();
   }
 
   async onApplicationShutdown(): Promise<void> {

@@ -67,6 +67,10 @@ export const CHANGE_HISTORY_HANDLER_IDS = {
   FacetValue: 'change-history-facet-value',
   Asset: 'change-history-asset',
   Promotion: 'change-history-promotion',
+  /** Option groups added to / removed from a product (`option_group_added` / `option_group_removed`). */
+  ProductOptionGroup: 'change-history-product-option-group',
+  /** Manual stock adjustments of variants (`stock_adjusted`). */
+  StockMovement: 'change-history-stock-movement',
 } as const;
 
 /**

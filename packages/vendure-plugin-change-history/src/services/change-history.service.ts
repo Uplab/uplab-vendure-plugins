@@ -13,6 +13,8 @@ import {
 import { randomUUID } from 'node:crypto';
 import { In } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
+import { CapturePipeline } from '../capture/capture-pipeline';
+import { ChangeHistoryWriter } from '../capture/entry-writer.service';
 import {
   CHANGE_HISTORY_ACTIONS,
   CHANGE_HISTORY_ENTITY_TYPES,
@@ -23,6 +25,7 @@ import {
 } from '../constants';
 import { ChangeHistoryDetail } from '../entities/change-history-detail.entity';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
+import { ChangeHistoryDefinitions } from '../entity-definitions/definitions.service';
 import {
   ChangeHistoryActionInput,
   ChangeHistoryBatchInput,
@@ -30,7 +33,6 @@ import {
   ChangeHistoryCoreEntityType,
   ChangeHistoryDetailInput,
   ChangeHistoryRunInput,
-  ResolvedActor,
   ResolvedChangeHistoryPluginOptions,
 } from '../types';
 import { ChangeHistoryContextService } from './change-history-context.service';
@@ -42,11 +44,6 @@ const PARENT_LOOKUPS = {
   ProductVariant: { parentType: 'Product', entity: ProductVariant, column: 'productId' },
   FacetValue: { parentType: 'Facet', entity: FacetValue, column: 'facetId' },
 } as const;
-
-type EntryFields = Pick<ChangeHistoryEntry, 'entityType' | 'entityId' | 'entityLabel' | 'action' | 'summary'> &
-  Partial<Pick<ChangeHistoryEntry, 'parentType' | 'parentId' | 'changes' | 'source'>> & {
-    meta?: Record<string, unknown>;
-  };
 
 const clip = (value: string, length: number) => (value.length > length ? value.slice(0, length) : value);
 
@@ -68,32 +65,56 @@ const clip = (value: string, length: number) => (value.length > length ? value.s
  */
 @Injectable()
 export class ChangeHistoryService {
-  private captureWarned = false;
+  private readonly uncapturedWarned = new Set<string>();
 
   constructor(
     @Inject(CHANGE_HISTORY_PLUGIN_OPTIONS) private readonly options: ResolvedChangeHistoryPluginOptions,
     private readonly connection: TransactionalConnection,
     private readonly listQueryBuilder: ListQueryBuilder,
     private readonly context: ChangeHistoryContextService,
+    private readonly writer: ChangeHistoryWriter,
+    private readonly pipeline: CapturePipeline,
+    private readonly definitions: ChangeHistoryDefinitions,
   ) {}
 
   /**
-   * Diff and record entities after a write that bypassed Vendure's events, in the caller's transaction.
-   * `created: true` means the before-state is empty.
+   * Diff and record entities after a write that bypassed Vendure's events (raw SQL, a plugin's own
+   * repository save), in the caller's transaction. Call it **after** the write, with the caller's `ctx`:
+   * the before-state is what the transaction saw last for the entity, else its last committed row.
+   * `created: true` means the rows are new (the before-state is empty). An entity whose diff is empty gets
+   * no entry. Captures `Product` and `ProductVariant`; other types resolve without recording (logged once).
    *
-   * Not implemented in this pre-release: it resolves without writing anything.
+   * @example
+   * ```ts
+   * await this.connection.getRepository(ctx, Product).update(ids, { customFields: { isArchived: true } });
+   * await this.changeHistory.capture(ctx, 'Product', ids, { action: 'archived' });
+   * ```
    */
   async capture(
-    _ctx: RequestContext,
-    _entityType: ChangeHistoryCoreEntityType,
+    ctx: RequestContext,
+    entityType: ChangeHistoryCoreEntityType,
     ids: ID[],
-    _opts: ChangeHistoryCaptureOptions,
+    opts: ChangeHistoryCaptureOptions,
   ): Promise<void> {
-    if (!this.options.enabled || ids.length === 0 || this.captureWarned) {
+    if (!this.options.enabled || ids.length === 0) {
       return;
     }
-    this.captureWarned = true;
-    Logger.warn('[ChangeHistory] capture() is not implemented in this pre-release; nothing was recorded', loggerCtx);
+    const definition = this.definitions.forType(entityType);
+    if (!definition) {
+      if (!this.uncapturedWarned.has(entityType)) {
+        this.uncapturedWarned.add(entityType);
+        Logger.warn(
+          `[ChangeHistory] capture() does not support ${entityType} in this release; nothing was recorded`,
+          loggerCtx,
+        );
+      }
+      return;
+    }
+    await this.pipeline.run(ctx, definition, ids, {
+      mode: opts.created ? 'created' : 'updated',
+      action: opts.action,
+      meta: opts.meta,
+    });
   }
 
   /** An action-only entry: no diff, no before-read. `entityType` may be a host type. */
@@ -101,8 +122,8 @@ export class ChangeHistoryService {
     if (!this.options.enabled) {
       return;
     }
-    await this.safely('recordAction', ctx, (tctx, actor) =>
-      this.insertEntry(tctx, actor, {
+    await this.writer.write(ctx, 'recordAction', async () => [
+      {
         entityType: input.entityType,
         entityId: String(input.entityId),
         entityLabel: input.entityLabel,
@@ -111,8 +132,8 @@ export class ChangeHistoryService {
         action: input.action,
         summary: input.summary ?? input.action,
         meta: input.meta,
-      }),
-    );
+      },
+    ]);
   }
 
   /**
@@ -128,38 +149,53 @@ export class ChangeHistoryService {
     if (details.length === 0 && !Object.values(counts).some((count) => count !== 0)) {
       return;
     }
-    await this.safely('recordRun', ctx, async (tctx, actor) => {
-      const parents = await this.resolveParents(tctx, details);
-      const entry = await this.insertEntry(tctx, actor, {
-        entityType: CHANGE_HISTORY_ENTITY_TYPES.Run,
-        entityId: input.entityId ?? input.source,
-        entityLabel: input.label,
-        action: CHANGE_HISTORY_ACTIONS.run,
-        source: input.source,
-        summary: runSummary(counts),
-        meta: { ...input.meta, counts, durationMs: input.durationMs, detailCount: details.length },
-      });
-      const rows = details.map((detail) => {
-        const parent = detail.parent ?? parents.get(`${detail.entityType}:${String(detail.entityId)}`);
-        return Object.assign(new ChangeHistoryDetail(), {
-          entryId: entry.id,
-          createdAt: entry.createdAt,
-          entityType: detail.entityType,
-          entityId: String(detail.entityId),
-          parentType: parent?.type ?? null,
-          parentId: parent ? String(parent.id) : null,
-          kind: detail.kind,
-          scope: detail.scope ?? null,
-          scopeLabel: detail.scopeLabel ? clip(detail.scopeLabel, 128) : null,
-          fromValue: detail.from ?? null,
-          toValue: detail.to ?? null,
-        });
-      });
-      const repository = this.connection.getRepository(tctx, ChangeHistoryDetail);
-      for (let i = 0; i < rows.length; i += DETAIL_CHUNK_SIZE) {
-        await repository.insert(rows.slice(i, i + DETAIL_CHUNK_SIZE) as QueryDeepPartialEntity<ChangeHistoryDetail>[]);
-      }
-    });
+    const parents = new Map<string, { type: string; id: ID }>();
+    await this.writer.write(
+      ctx,
+      'recordRun',
+      async (tctx) => {
+        for (const [key, parent] of await this.resolveParents(tctx, details)) {
+          parents.set(key, parent);
+        }
+        return [
+          {
+            entityType: CHANGE_HISTORY_ENTITY_TYPES.Run,
+            entityId: input.entityId ?? input.source,
+            entityLabel: input.label,
+            action: CHANGE_HISTORY_ACTIONS.run,
+            source: input.source,
+            summary: runSummary(counts),
+            meta: { ...input.meta, counts, durationMs: input.durationMs, detailCount: details.length },
+          },
+        ];
+      },
+      {
+        afterInsert: async (tctx, [entry]) => {
+          const rows = details.map((detail) => {
+            const parent = detail.parent ?? parents.get(`${detail.entityType}:${String(detail.entityId)}`);
+            return Object.assign(new ChangeHistoryDetail(), {
+              entryId: entry.id,
+              createdAt: entry.createdAt,
+              entityType: detail.entityType,
+              entityId: String(detail.entityId),
+              parentType: parent?.type ?? null,
+              parentId: parent ? String(parent.id) : null,
+              kind: detail.kind,
+              scope: detail.scope ?? null,
+              scopeLabel: detail.scopeLabel ? clip(detail.scopeLabel, 128) : null,
+              fromValue: detail.from ?? null,
+              toValue: detail.to ?? null,
+            });
+          });
+          const repository = this.connection.getRepository(tctx, ChangeHistoryDetail);
+          for (let i = 0; i < rows.length; i += DETAIL_CHUNK_SIZE) {
+            await repository.insert(
+              rows.slice(i, i + DETAIL_CHUNK_SIZE) as QueryDeepPartialEntity<ChangeHistoryDetail>[],
+            );
+          }
+        },
+      },
+    );
   }
 
   /**
@@ -207,71 +243,6 @@ export class ChangeHistoryService {
       .build(ChangeHistoryEntry, { ...options, sort } as ListQueryOptions<ChangeHistoryEntry>, { ctx })
       .getManyAndCount();
     return { items, totalItems };
-  }
-
-  /** Runs a write in a savepoint (or its own transaction) and swallows its failure. */
-  private async safely(
-    operation: string,
-    ctx: RequestContext,
-    write: (tctx: RequestContext, actor: ResolvedActor) => Promise<unknown>,
-  ): Promise<void> {
-    const batch = this.context.stateOf(ctx).batch;
-    try {
-      await this.connection.withTransaction(ctx, async (tctx) => write(tctx, await this.context.resolveActor(tctx)));
-      if (batch) {
-        // Only now: a rolled-back savepoint took the head with it.
-        batch.headWritten = true;
-      }
-    } catch (e) {
-      Logger.error(
-        `[ChangeHistory] write failed in ${operation}: ${(e as Error).message}`,
-        loggerCtx,
-        (e as Error).stack,
-      );
-    }
-  }
-
-  private async insertEntry(
-    ctx: RequestContext,
-    actor: ResolvedActor,
-    fields: EntryFields,
-  ): Promise<ChangeHistoryEntry> {
-    const state = this.context.stateOf(ctx);
-    const { batch } = state;
-    const repository = this.connection.getRepository(ctx, ChangeHistoryEntry);
-    const build = (entry: EntryFields) =>
-      Object.assign(new ChangeHistoryEntry(), {
-        ...entry,
-        entityLabel: clip(entry.entityLabel, 255),
-        summary: clip(entry.summary, 512),
-        parentType: entry.parentType ?? null,
-        parentId: entry.parentId ?? null,
-        changes: entry.changes ?? null,
-        source: entry.source ?? actor.source,
-        actorType: actor.actorType,
-        actorId: actor.actorId != null ? String(actor.actorId) : null,
-        actorLabel: actor.actorLabel ? clip(actor.actorLabel, 255) : null,
-        batchId: batch?.id ?? null,
-        channelId: ctx.channel?.id != null ? String(ctx.channel.id) : null,
-        derivedFromId: null,
-        compactedAt: null,
-        meta: { correlationId: state.correlationId, ...actor.meta, ...entry.meta },
-      });
-    if (batch && !batch.headWritten) {
-      const label = batch.label ?? batch.kind;
-      await repository.save(
-        build({
-          entityType: CHANGE_HISTORY_ENTITY_TYPES.Batch,
-          // The uuid part: `entityId` is varchar(36); the full `<kind>:<uuid>` is in `batchId`.
-          entityId: batch.id.slice(batch.kind.length + 1),
-          entityLabel: label,
-          action: CHANGE_HISTORY_ACTIONS.batch,
-          summary: label,
-          meta: { ...batch.meta, kind: batch.kind, label: batch.label },
-        }),
-      );
-    }
-    return repository.save(build(fields));
   }
 
   /** `{ 'ProductVariant:12' → { type: 'Product', id: 3 } }` for details that name no parent. */

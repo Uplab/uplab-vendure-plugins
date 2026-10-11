@@ -9,15 +9,16 @@ variants, collections, facets, assets and promotions with their before → after
 operations into batches, records the runs of external syncs (an ERP, a PIM, a price feed) with one row per
 changed value, and shows it all in the dashboard — in English and Ukrainian.
 
-> **Pre-release.** This version ships the plugin's foundation: the entities, the options, the
-> `ChangeHistoryService` facade with `recordAction`, `recordRun` and `runBatch`, the before-state and archive
-> strategies, the `changeHistoryEntries` query, the dashboard feed and the dashboard registration entry.
-> Automatic capture of Vendure's catalogue events, the entity history blocks and tiered retention follow
-> before 0.1.0; `capture()` resolves without recording and `compact()` / `purge()` reject until then.
+> **Pre-release.** This version records products and variants automatically (Vendure's catalogue events)
+> and ships the `ChangeHistoryService` facade, the before-state and archive strategies, the
+> `changeHistoryEntries` query, the dashboard feed and the dashboard registration entry. Collections, facets,
+> assets, promotions, collection membership, the entity history blocks and tiered retention follow before
+> 0.1.0; until then `capture()` records only `Product` / `ProductVariant`, and `compact()` / `purge()` reject.
 
 ## Contents
 
-[Install](#install) · [Options](#options) · [Recording from your own code](#recording-from-your-own-code) ·
+[Install](#install) · [Options](#options) · [What is recorded](#what-is-recorded) ·
+[Recording from your own code](#recording-from-your-own-code) ·
 [Dashboard](#dashboard) · [GraphQL API](#graphql-api) · [Database](#database) · [Changelog](#changelog)
 
 ## Install
@@ -70,6 +71,44 @@ variables. Invalid options throw at startup with a message naming the option.
 | `retention.batchSize`         | `2000` / `5000`                                  | Rows per compaction / purge batch.                                                                                                                  |
 | `retention.maxBatches`        | `20`                                             | Batches per run.                                                                                                                                    |
 
+## What is recorded
+
+Every change is recorded **inside the transaction that makes it** (a blocking event handler, in a savepoint):
+an entry commits or rolls back with its change, and a failing history write never fails your mutation — it is
+logged with a `[ChangeHistory]` prefix.
+
+| Entity         | Actions                                                                       | Fields                                                                                                                                                                                                                                 |
+| -------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product        | `created`, `updated`, `deleted`, `option_group_added`, `option_group_removed` | `enabled`, `name` / `slug` / `description` per language, `featuredAsset`, `assets` (order kept), `facetValues`, `optionGroups`, custom fields                                                                                          |
+| ProductVariant | `created`, `updated`, `deleted`, `stock_adjusted`                             | `sku`, `enabled`, `name` per language, `prices` (per channel and currency), `taxCategory`, `trackInventory`, `outOfStockThreshold`, `useGlobalOutOfStockThreshold`, `options`, `facetValues`, `featuredAsset`, `assets`, custom fields |
+
+- **`updated`** lists only the fields that changed, with the value from before the save and after it. A save
+  that changes nothing writes nothing.
+- **`created`** lists every value the entity was created with; **`deleted`** keeps the last state in
+  `meta.lastState`. Deleting a product records its variants' deletions too.
+- **`stock_adjusted`**: a manual stock change (an `ADJUSTMENT` movement), with the location and stock on hand
+  before → after. Sales and allocations are not recorded, nor is the initial stock of a new variant.
+- **Custom fields** are recorded by key (`customFields.<name>`, `customFields.<name>.<language>` for
+  translatable ones). Fields declared `readonly` or `internal` are written by code and left out, unless you list
+  them in `entities.<Type>.includeReadonlyCustomFields`. Relation fields are stored as ids with the target's
+  name as a label. `entities.<Type>.ignoreFields` drops noisy keys, `entities.<Type>.fieldKinds` tells the
+  dashboard how to show a value (`{ 'customFields.price': 'money' }`).
+- References (facet values, assets, options, tax category, relation custom fields) are compared **by id**; the
+  names are stored as labels for display. Renaming a facet value is therefore not a change of every product
+  that uses it.
+- A value longer than `maxValueBytes` is stored shortened, its head and tail kept (`truncated: true`).
+
+**Who.** The actor is resolved once per request: a `runBatch` actor first, then your `actorResolvers`, then the
+session's administrator (`admin`) or the owner of the API key the request authenticated with (`api_key`), and
+otherwise `system` with source `unknown_system` (its `meta` says which API and process). An entry's `source` is
+the actor's.
+
+**Derived changes.** An entry gets `derivedFromId` when, in the same transaction, its parent already has an
+entry (a variant after its product) or the entity itself was created earlier in it. A plugin that rewrites the
+variants from a product handler (a price fan-out) therefore shows as one product change with derived variant
+changes. That needs the history handler to run first: declare `after: CHANGE_HISTORY_HANDLER_IDS.Product` on
+your own handler, or use the `handlerOrder` option for a handler you cannot edit.
+
 ## Recording from your own code
 
 Inject `ChangeHistoryService` (add `ChangeHistoryPlugin` to your plugin's `imports`). Its write methods never
@@ -77,6 +116,10 @@ reject because of a history failure — the failure is logged with a `[ChangeHis
 the caller's transaction through a savepoint, so an entry commits or rolls back with the change it describes.
 
 ```ts
+// After a write that bypassed Vendure's events (raw SQL, a repository update), in the same transaction:
+await this.connection.getRepository(ctx, Product).update(ids, { customFields: { isArchived: true } });
+await this.changeHistory.capture(ctx, 'Product', ids, { action: 'archived' });
+
 // An entry without a diff, e.g. for an entity of your own:
 await this.changeHistory.recordAction(ctx, {
   entityType: 'ProductOrder',
@@ -178,7 +221,9 @@ extend type Query {
 Postgres first. Before → after values need a second database connection that still sees the last committed
 row while a save is in progress: that works on Postgres and, in principle, on MySQL / MariaDB (untested).
 On SQLite every change is still recorded, without the "was" values (`meta.noBefore = "unsupported"`), and the
-plugin logs a warning at startup. The tables use `simple-json`, plain indexes and no foreign keys to core
+plugin logs a warning at startup. On Postgres an entry is recorded without values only when the before-state
+could not be read: the save ran outside a transaction (`no_transaction`, logged once per entity type), the pool
+had no free connection within 500 ms (`pool`; the save does not wait for one) or the read failed (`error`). The tables use `simple-json`, plain indexes and no foreign keys to core
 tables, so the generated migration is portable.
 
 ## Changelog

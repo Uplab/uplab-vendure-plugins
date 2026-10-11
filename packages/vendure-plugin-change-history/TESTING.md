@@ -7,9 +7,15 @@ Two e2e suites, both in `e2e/`:
 | `change-history.e2e-spec.ts`          | sql.js   | always, with `pnpm test` at the repo root (port 3057)                  |
 | `change-history-postgres.e2e-spec.ts` | Postgres | only when `CHANGE_HISTORY_E2E_PG_URL` is set; skipped otherwise (3058) |
 
-The Postgres suite covers what needs a real second connection: the committed-row before-state and the
-savepoint that keeps a failed history write from aborting the caller's transaction. CI runs it in the
-`e2e-postgres` job against a `postgres:15` service.
+The sql.js suite pins the behaviour without a before-state: every update is recorded with
+`meta.noBefore = "unsupported"`, created and deleted entities with their values, stock adjustments, cascades and
+the diff against an earlier save in the same transaction.
+
+The Postgres suite covers what needs a real second connection: exact before → after values of products and
+variants (translations, custom fields, facet values, prices), no entry for a save that changes nothing, the
+savepoint that keeps a failed history write from aborting the mutation, a host rollback that takes the entry
+with it, handler order against a fan-out plugin (`e2e/fixtures/fan-out-plugin.ts`) with derived entries, the
+API-key actor and batches. CI runs it in the `e2e-postgres` job against a `postgres:15` service.
 
 ## Running the Postgres suite locally
 
