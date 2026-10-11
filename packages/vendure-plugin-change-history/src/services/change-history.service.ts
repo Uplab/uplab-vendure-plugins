@@ -10,12 +10,13 @@ import {
   TransactionalConnection,
 } from '@vendure/core';
 import { randomUUID } from 'node:crypto';
-import { Brackets, In } from 'typeorm';
+import { Brackets, In, SelectQueryBuilder } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { CapturePipeline } from '../capture/capture-pipeline';
 import { CollectionCapture } from '../capture/collection-capture';
 import { ChangeHistoryWriter } from '../capture/entry-writer.service';
 import { DETAIL_COLUMN_LENGTHS, fitColumns, warnClipped } from '../capture/fit';
+import { inChannels, readableChannelIds } from '../read/channel-scope';
 import {
   CHANGE_HISTORY_ACTIONS,
   CHANGE_HISTORY_ENTITY_TYPES,
@@ -315,6 +316,9 @@ export class ChangeHistoryService {
     opts: { skip?: number; take?: number } = {},
   ): Promise<PaginatedList<ChangeHistoryDetail>> {
     return this.context.serialize(ctx, async () => {
+      if (!(await this.reader.readable(ctx, entryId))) {
+        return { items: [], totalItems: 0 };
+      }
       const [items, totalItems] = await this.connection.getRepository(ctx, ChangeHistoryDetail).findAndCount({
         where: { entryId },
         order: { id: 'ASC' },
@@ -355,11 +359,7 @@ export class ChangeHistoryService {
     subject: { entityType: string; entityId: ID },
     opts: { skip?: number; take?: number },
   ): Promise<PaginatedList<{ entry: ChangeHistoryEntry; details: ChangeHistoryDetail[] }>> {
-    const query = () =>
-      this.connection
-        .getRepository(ctx, ChangeHistoryDetail)
-        .createQueryBuilder('detail')
-        .where(subjectCondition(subject));
+    const query = () => this.runRows(ctx, subject);
     const counted = await query()
       .select('COUNT(DISTINCT detail.entryId)', 'count')
       .getRawOne<{ count: string | number }>();
@@ -388,6 +388,23 @@ export class ChangeHistoryService {
     };
   }
 
+  /** The subject's detail rows, of runs in the channels `ctx` may read. */
+  private runRows(
+    ctx: RequestContext,
+    subject: { entityType: string; entityId: ID },
+  ): SelectQueryBuilder<ChangeHistoryDetail> {
+    const query = this.connection
+      .getRepository(ctx, ChangeHistoryDetail)
+      .createQueryBuilder('detail')
+      .where(subjectCondition(subject));
+    const channels = readableChannelIds(ctx);
+    if (channels) {
+      query.innerJoin(ChangeHistoryEntry, 'run', 'run.id = detail.entryId');
+      inChannels(query, 'run', channels);
+    }
+    return query;
+  }
+
   private async loadRunDetailsForEntity(
     ctx: RequestContext,
     subject: { entityType: string; entityId: ID },
@@ -395,10 +412,7 @@ export class ChangeHistoryService {
   ): Promise<Map<string, ChangeHistoryDetail[]>> {
     const grouped = new Map<string, ChangeHistoryDetail[]>();
     for (let i = 0; i < entryIds.length; i += DETAIL_CHUNK_SIZE) {
-      const rows = await this.connection
-        .getRepository(ctx, ChangeHistoryDetail)
-        .createQueryBuilder('detail')
-        .where(subjectCondition(subject))
+      const rows = await this.runRows(ctx, subject)
         .andWhere({ entryId: In(entryIds.slice(i, i + DETAIL_CHUNK_SIZE)) })
         .orderBy('detail.id', 'ASC')
         .getMany();

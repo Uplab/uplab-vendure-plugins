@@ -42,8 +42,6 @@ const clip = (value: string, length: number) => (value.length > length ? value.s
  */
 @Injectable()
 export class ChangeHistoryWriter {
-  /** Writes that saved entries in this process; read-side caches compare it to notice new values. */
-  writes = 0;
   private readonly listeners: SavedEntriesListener[] = [];
 
   constructor(
@@ -139,7 +137,6 @@ export class ChangeHistoryWriter {
           return entries;
         });
         if (saved.length > 0) {
-          this.writes++;
           // Only now, at the caller's depth: a rolled-back savepoint took the rows with it, and a later
           // rollback of the caller's own savepoint undoes these through the journal.
           if (batch) {

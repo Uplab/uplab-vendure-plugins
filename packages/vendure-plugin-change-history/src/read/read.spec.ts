@@ -1,6 +1,8 @@
 import { RequestContext, TransactionalConnection } from '@vendure/core';
+import type { ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 import { describe, expect, it, vi } from 'vitest';
 import { Batcher } from './batcher';
+import { inChannels, readableChannelIds, scopeKey } from './channel-scope';
 import { compareKeys, decodeCursor, encodeCursor } from './cursor';
 import { ordersTimestampsAsText, timestampAsText, withPrimaryManager } from './sql';
 
@@ -103,5 +105,44 @@ describe('Batcher', () => {
     });
     const scope = {};
     await expect(Promise.all([batcher.get(scope, 1), batcher.get(scope, 2)])).rejects.toThrow('db down');
+  });
+});
+
+describe('channel scope', () => {
+  const ctxWith = (channelPermissions?: Array<{ id: number; permissions: string[] }>) =>
+    ({ session: channelPermissions ? { user: { channelPermissions } } : undefined }) as unknown as RequestContext;
+  const query = () => {
+    const andWhere = vi.fn();
+    return { andWhere, builder: { andWhere } as unknown as SelectQueryBuilder<ObjectLiteral> };
+  };
+
+  it('reads every channel without a user and for a SuperAdmin', () => {
+    expect(readableChannelIds(ctxWith())).toBeUndefined();
+    expect(readableChannelIds(ctxWith([{ id: 2, permissions: ['SuperAdmin'] }]))).toBeUndefined();
+  });
+
+  it('reads the channels in which the user holds ReadChangeHistory', () => {
+    const ctx = ctxWith([
+      { id: 1, permissions: ['ReadCatalog'] },
+      { id: 2, permissions: ['ReadChangeHistory'] },
+      { id: 3, permissions: ['ReadChangeHistory', 'ReadCatalog'] },
+    ]);
+    expect(readableChannelIds(ctx)).toEqual(['2', '3']);
+    expect(scopeKey(['3', '2'])).toBe('2,3');
+    expect(scopeKey(undefined)).toBe('*');
+  });
+
+  it('narrows a query to the channels, to nothing for none, and leaves it alone for all', () => {
+    const some = query();
+    inChannels(some.builder, 'entry', ['2']);
+    expect(some.andWhere).toHaveBeenCalledWith('entry.channelId IN (:...chReadableChannels)', {
+      chReadableChannels: ['2'],
+    });
+    const none = query();
+    inChannels(none.builder, 'entry', []);
+    expect(none.andWhere).toHaveBeenCalledWith('1 = 0');
+    const all = query();
+    inChannels(all.builder, 'entry', undefined);
+    expect(all.andWhere).not.toHaveBeenCalled();
   });
 });

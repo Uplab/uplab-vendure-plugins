@@ -5,6 +5,7 @@ import type { DocumentNode } from 'graphql';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ChangeHistoryEntry, ChangeHistoryService } from '../src';
 import {
+  ACTIVE_CHANNEL_ZONES,
   ADD_OPTION_GROUP,
   CHANGE_HISTORY_ENTRY,
   CHANGE_HISTORY_FEED,
@@ -12,6 +13,7 @@ import {
   CHANGE_HISTORY_RUN_DETAILS,
   CHANGE_HISTORY_TIMELINE,
   CREATE_ADMINISTRATOR,
+  CREATE_CHANNEL,
   CREATE_COLLECTION,
   CREATE_FACET,
   CREATE_OPTION_GROUP,
@@ -593,6 +595,83 @@ export function apiScenarios(env: ApiEnv): void {
         for (const [document, variables] of queries) {
           await expect(query(document, variables)).rejects.toThrow(/not currently authorized/);
         }
+      } finally {
+        await env.adminClient.asSuperAdmin();
+      }
+    });
+
+    it('serves only the channels in which the reader holds ReadChangeHistory; a SuperAdmin sees all', async () => {
+      const ctx = await superadminCtx(env.app());
+      const defaultChannelId = String(ctx.channelId);
+      const { activeChannel } = await query(ACTIVE_CHANNEL_ZONES);
+      const { createChannel } = await query(CREATE_CHANNEL, {
+        input: {
+          code: 'p3-scope',
+          token: 'p3-scope-token',
+          defaultLanguageCode: 'en',
+          pricesIncludeTax: false,
+          defaultCurrencyCode: 'USD',
+          defaultShippingZoneId: activeChannel.defaultShippingZone.id,
+          defaultTaxZoneId: activeChannel.defaultTaxZone.id,
+        },
+      });
+      const scoped = decode(createChannel.id);
+      const subject = { entityType: 'Product', entityId: 'p3s-subject' };
+      const own = await insert({ ...subject, entityLabel: 'p3s-own', action: 'updated', channelId: scoped });
+      const other = await insert({
+        ...subject,
+        entityLabel: 'p3s-other',
+        action: 'p3s_hidden_action',
+        source: 'p3s_hidden_source',
+        channelId: defaultChannelId,
+      });
+      await history().recordRun(ctx, {
+        source: 'p3s_sync',
+        label: 'p3s-run',
+        counts: { updated: 1 },
+        details: [{ ...subject, kind: 'stock', from: 1, to: 2 }],
+      });
+      const [run] = await entriesWhere(env.app(), { entityLabel: 'p3s-run' });
+      const { createRole } = await query(CREATE_ROLE, {
+        input: {
+          code: 'p3-scope-reader',
+          description: 'p3-scope-reader',
+          permissions: ['ReadChangeHistory'],
+          channelIds: [createChannel.id],
+        },
+      });
+      await query(CREATE_ADMINISTRATOR, {
+        input: {
+          firstName: 'Scope',
+          lastName: 'Reader',
+          emailAddress: 'p3-scope-reader@example.com',
+          password: 'p3-scope-reader',
+          roleIds: [createRole.id],
+        },
+      });
+      const labels = async () =>
+        (await feed({ entityLabel: { contains: 'p3s-' } })).items.map((item) => item.entityLabel).sort();
+      const timelineLabels = async () => (await timeline(subject)).items.map((item) => item.entityLabel).sort();
+
+      expect(await labels()).toEqual(['p3s-other', 'p3s-own', 'p3s-run']);
+      expect(await timelineLabels()).toEqual(['p3s-other', 'p3s-own', 'p3s-run']);
+      try {
+        // Logging in selects the user's first channel: the one they may read.
+        await env.adminClient.asUserWithCredentials('p3-scope-reader@example.com', 'p3-scope-reader');
+        expect(await labels()).toEqual(['p3s-own']);
+        expect(await timelineLabels()).toEqual(['p3s-own']);
+        expect((await query(CHANGE_HISTORY_ENTRY, { id: encode(own.id) })).changeHistoryEntry).toMatchObject({
+          entityLabel: 'p3s-own',
+        });
+        expect((await query(CHANGE_HISTORY_ENTRY, { id: encode(other.id) })).changeHistoryEntry).toBeNull();
+        expect((await query(CHANGE_HISTORY_RUN_DETAILS, { entryId: encode(run.id) })).changeHistoryRunDetails).toEqual({
+          items: [],
+          totalItems: 0,
+        });
+        const { changeHistoryFilterOptions: options } = await query(CHANGE_HISTORY_FILTER_OPTIONS);
+        expect(options.actions).toContain('updated');
+        expect(options.actions).not.toContain('p3s_hidden_action');
+        expect(options.sources).not.toEqual(expect.arrayContaining(['p3s_hidden_source', 'p3s_sync']));
       } finally {
         await env.adminClient.asSuperAdmin();
       }

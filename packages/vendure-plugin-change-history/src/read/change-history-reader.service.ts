@@ -21,6 +21,7 @@ import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
 import { BatchCount } from '../retention/compact';
 import { ResolvedChangeHistoryPluginOptions } from '../types';
 import { Batcher } from './batcher';
+import { inChannels, readableChannelIds, scopeKey } from './channel-scope';
 import { compareKeys, decodeCursor, encodeCursor, TimelineKey } from './cursor';
 import { currentLabels, deletedRefs, refKey } from './entity-lookups';
 import { ordersTimestampsAsText, timestampAsText, withPrimaryManager } from './sql';
@@ -70,6 +71,45 @@ export interface ChangeHistoryFilterOptions {
   sources: string[];
   actions: string[];
   entityTypes: string[];
+}
+
+interface CachedActor {
+  id: string;
+  type: string;
+  label: string;
+  /** When it was last recorded: its label then wins. */
+  at: number;
+}
+
+interface CachedFilterOptions {
+  at: number;
+  /** The scope the values were read for (`undefined`: every channel). */
+  channels: string[] | undefined;
+  /** By `type:id`. */
+  actors: Map<string, CachedActor>;
+  sources: Set<string>;
+  actions: Set<string>;
+  entityTypes: Set<string>;
+}
+
+function rememberActor(actors: Map<string, CachedActor>, actor: CachedActor): void {
+  const key = `${actor.type}:${actor.id}`;
+  const known = actors.get(key);
+  if (!known || actor.at >= known.at) {
+    actors.set(key, actor);
+  }
+}
+
+function filterOptionsOf(cached: CachedFilterOptions): ChangeHistoryFilterOptions {
+  const sorted = (values: Set<string>) => [...values].sort(collator.compare);
+  return {
+    actors: [...cached.actors.values()]
+      .sort((a, b) => collator.compare(a.label, b.label) || collator.compare(a.type, b.type))
+      .map(({ id, type, label }) => ({ id, type, label })),
+    sources: sorted(cached.sources),
+    actions: sorted(cached.actions),
+    entityTypes: sorted(cached.entityTypes),
+  };
 }
 
 interface Candidate {
@@ -135,14 +175,22 @@ export class ChangeHistoryReader {
     (entry) => String(entry.id),
     (ctx, entries) => this.loadDeleted(ctx, entries),
   );
-  private filterOptionsCache?: { at: number; writes: number; value: ChangeHistoryFilterOptions };
+  /** Per channel scope (see `scopeKey`). */
+  private readonly filterOptionsCache = new Map<string, CachedFilterOptions>();
 
   constructor(
     @Inject(CHANGE_HISTORY_PLUGIN_OPTIONS) private readonly options: ResolvedChangeHistoryPluginOptions,
     private readonly connection: TransactionalConnection,
     private readonly listQueryBuilder: ListQueryBuilder,
-    private readonly writer: ChangeHistoryWriter,
-  ) {}
+    writer: ChangeHistoryWriter,
+  ) {
+    writer.onSaved((entries) => this.mergeFilterOptions(entries));
+  }
+
+  /** Whether `ctx` may read the entry: always, unless the entry is in a channel the user may not read. */
+  async readable(ctx: RequestContext, entryId: ID): Promise<boolean> {
+    return !readableChannelIds(ctx) || (await this.entry(ctx, entryId)) !== null;
+  }
 
   /**
    * The feed: Vendure's list options, newest first by default. Derived entries are left out unless the filter
@@ -162,6 +210,7 @@ export class ChangeHistoryReader {
       { ctx },
     );
     const alias = query.alias;
+    inChannels(query, alias, readableChannelIds(ctx));
     if (scope.derivedFromId !== undefined) {
       query.andWhere(`${alias}.derivedFromId = :chDerivedFromId`, { chDerivedFromId: scope.derivedFromId });
     } else if (!filterMentions(options.filter, 'derivedFromId')) {
@@ -176,8 +225,13 @@ export class ChangeHistoryReader {
     return { items, totalItems };
   }
 
+  /** One entry, `null` when it does not exist or belongs to a channel the user may not read. */
   entry(ctx: RequestContext, id: ID): Promise<ChangeHistoryEntry | null> {
-    return this.connection.getRepository(ctx, ChangeHistoryEntry).findOne({ where: { id } });
+    const query = this.connection
+      .getRepository(ctx, ChangeHistoryEntry)
+      .createQueryBuilder('entry')
+      .where('entry.id = :id', { id });
+    return inChannels(query, 'entry', readableChannelIds(ctx)).getOne();
   }
 
   /**
@@ -193,16 +247,17 @@ export class ChangeHistoryReader {
     const includeChildren = args.includeChildren !== false;
     const subject = { subjectType: args.entityType, subjectId: String(args.entityId) };
     const driver = this.connection.rawConnection.options.type;
+    const channels = readableChannelIds(ctx);
     return withPrimaryManager(this.connection, ctx, async (manager) => {
       const candidates: Candidate[] = [
-        ...(await this.entryBranch(manager, after, first + 1, (query) =>
+        ...(await this.entryBranch(manager, channels, after, first + 1, (query) =>
           query.where('entry.entityType = :subjectType AND entry.entityId = :subjectId', subject),
         )),
       ];
-      const runKeys = await this.runBranch(manager, 'entity', subject, after, first + 1);
+      const runKeys = await this.runBranch(manager, channels, 'entity', subject, after, first + 1);
       if (includeChildren) {
         candidates.push(
-          ...(await this.entryBranch(manager, after, first + 1, (query) => {
+          ...(await this.entryBranch(manager, channels, after, first + 1, (query) => {
             query
               .where('entry.parentType = :subjectType AND entry.parentId = :subjectId', subject)
               .andWhere('entry.derivedFromId IS NULL');
@@ -212,7 +267,7 @@ export class ChangeHistoryReader {
             }
           })),
         );
-        runKeys.push(...(await this.runBranch(manager, 'parent', subject, after, first + 1)));
+        runKeys.push(...(await this.runBranch(manager, channels, 'parent', subject, after, first + 1)));
       }
       candidates.push(...(await this.runCandidates(manager, runKeys)));
 
@@ -243,32 +298,44 @@ export class ChangeHistoryReader {
     const skip = Math.max(0, Math.trunc(opts.skip ?? 0));
     const take = clamp(opts.take, 100, MAX_DETAIL_PAGE);
     const manager = this.connection.getRepository(ctx, ChangeHistoryDetail).manager;
+    if (!(await this.readable(ctx, entryId))) {
+      return { items: [], totalItems: 0 };
+    }
     const rows = await manager.getRepository(ChangeHistoryDetail).find({ where: { entryId }, order: { id: 'ASC' } });
     const views = await this.detailViews(ctx, manager, rows);
     return { items: views.slice(skip, skip + take), totalItems: views.length };
   }
 
   /**
-   * Distinct actors, sources, actions and entity types of the last `summaryDays`, for the filter dropdowns.
-   * Cached for 60 s per process, and dropped as soon as this process writes an entry.
+   * Distinct actors, sources, actions and entity types of the last `summaryDays` in the channels the user may
+   * read, for the filter dropdowns. Cached for 60 s per process and channel scope; what this process writes in
+   * the meantime is merged into the cached values at once, so a write does not cost the next feed load four
+   * grouped scans.
    */
   async filterOptions(ctx: RequestContext): Promise<ChangeHistoryFilterOptions> {
     const now = Date.now();
-    const cached = this.filterOptionsCache;
-    if (cached && cached.writes === this.writer.writes && now - cached.at < FILTER_OPTIONS_TTL_MS) {
-      return cached.value;
+    const channels = readableChannelIds(ctx);
+    const key = scopeKey(channels);
+    const cached = this.filterOptionsCache.get(key);
+    if (cached && now - cached.at < FILTER_OPTIONS_TTL_MS) {
+      return filterOptionsOf(cached);
     }
-    const writes = this.writer.writes;
     const since = new Date(now - this.options.retention.summaryDays * DAY_MS);
     const recent = () =>
-      this.connection
-        .getRepository(ctx, ChangeHistoryEntry)
-        .createQueryBuilder('entry')
-        .where('entry.createdAt >= :since', { since });
+      inChannels(
+        this.connection
+          .getRepository(ctx, ChangeHistoryEntry)
+          .createQueryBuilder('entry')
+          .where('entry.createdAt >= :since', { since }),
+        'entry',
+        channels,
+      );
     const distinct = async (column: 'source' | 'action' | 'entityType') =>
-      (await recent().select(`entry.${column}`, 'value').groupBy(`entry.${column}`).getRawMany<{ value: string }>())
-        .map((row) => row.value)
-        .sort(collator.compare);
+      new Set(
+        (
+          await recent().select(`entry.${column}`, 'value').groupBy(`entry.${column}`).getRawMany<{ value: string }>()
+        ).map((row) => row.value),
+      );
     const actorRows = await recent()
       .select('entry.actorId', 'id')
       .addSelect('entry.actorType', 'type')
@@ -280,25 +347,40 @@ export class ChangeHistoryReader {
       .addGroupBy('entry.actorLabel')
       .getRawMany<{ id: string; type: string; label: string | null; lastAt: unknown }>();
     // One item per actor and type, under the label it was last recorded with.
-    const latest = new Map<string, { id: string; type: string; label: string; at: number }>();
+    const actors = new Map<string, CachedActor>();
     for (const row of actorRows) {
       const at = row.lastAt instanceof Date ? row.lastAt.getTime() : Date.parse(String(row.lastAt).replace(' ', 'T'));
-      const key = `${row.type}:${row.id}`;
-      const known = latest.get(key);
-      if (!known || at > known.at) {
-        latest.set(key, { id: String(row.id), type: row.type, label: row.label ?? String(row.id), at });
-      }
+      rememberActor(actors, { id: String(row.id), type: row.type, label: row.label ?? String(row.id), at });
     }
-    const value: ChangeHistoryFilterOptions = {
-      actors: [...latest.values()]
-        .sort((a, b) => collator.compare(a.label, b.label) || collator.compare(a.type, b.type))
-        .map(({ id, type, label }) => ({ id, type, label })),
+    const fresh: CachedFilterOptions = {
+      at: now,
+      channels,
+      actors,
       sources: await distinct('source'),
       actions: await distinct('action'),
       entityTypes: await distinct('entityType'),
     };
-    this.filterOptionsCache = { at: now, writes, value };
-    return value;
+    this.filterOptionsCache.set(key, fresh);
+    return filterOptionsOf(fresh);
+  }
+
+  /** New values of this process's writes go into every cached scope that may read them. */
+  private mergeFilterOptions(entries: ChangeHistoryEntry[]): void {
+    const now = Date.now();
+    for (const cached of this.filterOptionsCache.values()) {
+      for (const entry of entries) {
+        if (cached.channels && !cached.channels.includes(String(entry.channelId))) {
+          continue;
+        }
+        cached.sources.add(entry.source);
+        cached.actions.add(entry.action);
+        cached.entityTypes.add(entry.entityType);
+        if (entry.actorId != null) {
+          const id = String(entry.actorId);
+          rememberActor(cached.actors, { id, type: entry.actorType, label: entry.actorLabel ?? id, at: now });
+        }
+      }
+    }
   }
 
   /** Entries derived from this one; the snapshot compaction kept, once the rows are gone. */
@@ -325,6 +407,7 @@ export class ChangeHistoryReader {
 
   private async entryBranch(
     manager: EntityManager,
+    channels: string[] | undefined,
     after: TimelineKey | undefined,
     limit: number,
     where: (query: SelectQueryBuilder<ChangeHistoryEntry>) => void,
@@ -334,6 +417,7 @@ export class ChangeHistoryReader {
       .createQueryBuilder('entry')
       .addSelect(this.asText('entry.createdAt'), 'cursor_created_at');
     where(query);
+    inChannels(query, 'entry', channels);
     if (after) {
       query.andWhere('(entry.createdAt < :afterAt OR (entry.createdAt = :afterAt AND entry.id < :afterId))', {
         afterAt: after.createdAt,
@@ -356,6 +440,7 @@ export class ChangeHistoryReader {
   /** Runs with a row of the subject (`entity`) or of one of its children (`parent`): `(createdAt, entryId)`. */
   private async runBranch(
     manager: EntityManager,
+    channels: string[] | undefined,
     side: 'entity' | 'parent',
     subject: { subjectType: string; subjectId: string },
     after: TimelineKey | undefined,
@@ -368,6 +453,11 @@ export class ChangeHistoryReader {
       .select('detail.entryId', 'entryId')
       .addSelect(this.asText('detail.createdAt'), 'createdAt')
       .where(`detail.${typeColumn} = :subjectType AND detail.${idColumn} = :subjectId`, subject);
+    if (channels) {
+      // A run belongs to the channel of its entry.
+      query.innerJoin(ChangeHistoryEntry, 'run', 'run.id = detail.entryId');
+      inChannels(query, 'run', channels);
+    }
     if (after) {
       query.andWhere('(detail.createdAt < :afterAt OR (detail.createdAt = :afterAt AND detail.entryId < :afterId))', {
         afterAt: after.createdAt,
