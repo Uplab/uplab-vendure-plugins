@@ -43,14 +43,34 @@ export interface ChangeHistoryEntryData {
   meta: Record<string, unknown>;
   summary: string;
   compactedAt: string | null;
+  /** Compaction ran: long values are stripped, derived and member rows deleted (their counts kept). */
+  isCompacted: boolean;
+  /** Entries derived from this one (a variant price rewritten by a product save). */
+  derivedCount: number;
+  /** Members of a batch head by type and action; `null` for other entries. */
+  batchCounts: ChangeHistoryBatchCount[] | null;
+  /** The recorded catalogue entity no longer exists. */
+  entityDeleted: boolean;
+  /** Only on a run item of an entity timeline: the rows of that entity (and its children). */
+  details?: ChangeHistoryDetailData[] | null;
+}
+
+export interface ChangeHistoryBatchCount {
+  entityType: string;
+  action: string;
+  count: number;
 }
 
 /** A detail row of a run, as the dashboard receives it from the Admin API. */
 export interface ChangeHistoryDetailData {
   id: string;
+  entryId: string;
   entityType: string;
   entityId: string;
+  /** The current name (a variant's in the request language), `null` when the entity is gone. */
   entityLabel: string | null;
+  /** The current SKU of a variant. */
+  sku: string | null;
   parentType: string | null;
   parentId: string | null;
   kind: string;
@@ -69,13 +89,17 @@ export interface ChangeHistoryValueRendererProps {
 }
 
 /**
- * Props of a detail renderer (`registerChangeHistoryDetailRenderer`): the rows of a run. In `timeline`
- * mode it also renders the collapsed header's count line.
+ * Props of a detail renderer (`registerChangeHistoryDetailRenderer`): rows of a run, all of one `kind`.
+ *
+ * - `dialog`: one page of the whole run, in the entry dialog (the dialog pages it).
+ * - `timeline`: the rows of the page's entity (and its children) inside its history block.
+ * - `summary`: the count line of the collapsed timeline item («3 variants · 4 rows»), inline text —
+ *   render your own plural forms here.
  */
 export interface ChangeHistoryDetailRendererProps {
   rows: ChangeHistoryDetailData[];
   entry: ChangeHistoryEntryData;
-  mode: 'dialog' | 'timeline';
+  mode: 'dialog' | 'timeline' | 'summary';
 }
 
 /** `human`, `system` or `scheduled` — picks the badge's icon and colour. */
@@ -84,9 +108,9 @@ export type ChangeHistorySourceTone = 'human' | 'system' | 'scheduled';
 export interface ChangeHistorySourceDefinition {
   label: ChangeHistoryLabel;
   tone: ChangeHistorySourceTone;
-  /** A `lucide-react` icon name. */
-  icon?: string;
-  /** Labels for the keys of a run's `counts` (the package labels only created/updated/deleted/failed). */
+  /** The actor's icon (e.g. a `lucide-react` icon); default: the tone's icon. */
+  icon?: ComponentType<{ className?: string }>;
+  /** Labels for the keys of a run's `counts` (the package labels created/updated/deleted/failed/added/removed). */
   countLabels?: Record<string, ChangeHistoryLabel>;
 }
 

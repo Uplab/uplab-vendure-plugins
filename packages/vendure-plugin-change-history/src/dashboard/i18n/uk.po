@@ -17,37 +17,656 @@ msgstr ""
 msgid "change-history.nav.title"
 msgstr "Журнал змін"
 
-#: src/dashboard/routes/change-history-list.tsx
-msgctxt "change-history"
-msgid "Change history"
-msgstr "Журнал змін"
+#. js-lingui-explicit-id
+#: src/dashboard/components/history-block.tsx
+msgid "change-history.block.title"
+msgstr "Історія змін"
 
-#: src/dashboard/routes/change-history-list.tsx
-msgctxt "change-history"
-msgid "When"
-msgstr "Коли"
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.name"
+msgstr "Назва"
 
-#: src/dashboard/routes/change-history-list.tsx
-msgctxt "change-history"
-msgid "Type"
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.slug"
+msgstr "Slug"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.description"
+msgstr "Опис"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.enabled"
+msgstr "Увімкнено"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.sku"
+msgstr "SKU"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.price"
+msgstr "Ціна"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.prices"
+msgstr "Ціна"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.featuredAsset"
+msgstr "Головне зображення"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.assets"
+msgstr "Зображення"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.facetValues"
+msgstr "Характеристики"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.optionGroups"
+msgstr "Групи опцій"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.options"
+msgstr "Опції"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.taxCategory"
+msgstr "Податкова категорія"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.trackInventory"
+msgstr "Облік залишків"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.outOfStockThreshold"
+msgstr "Поріг відсутності"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.useGlobalOutOfStockThreshold"
+msgstr "Глобальний поріг відсутності"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.stock"
+msgstr "Склад"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.isPrivate"
+msgstr "Приватна"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.inheritFilters"
+msgstr "Успадковувати фільтри"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.parent"
+msgstr "Батьківська колекція"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.filters"
+msgstr "Фільтри"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.position"
+msgstr "Позиція"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.code"
+msgstr "Код"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.startsAt"
+msgstr "Діє з"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.endsAt"
+msgstr "Діє до"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.couponCode"
+msgstr "Промокод"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.perCustomerUsageLimit"
+msgstr "Ліміт на клієнта"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.usageLimit"
+msgstr "Ліміт використань"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.conditions"
+msgstr "Умови"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.actions"
+msgstr "Дії"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.type"
 msgstr "Тип"
 
-#: src/dashboard/routes/change-history-list.tsx
-msgctxt "change-history"
-msgid "Entity"
-msgstr "Об'єкт"
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.mimeType"
+msgstr "MIME-тип"
 
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.fileSize"
+msgstr "Розмір файлу"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.width"
+msgstr "Ширина"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.height"
+msgstr "Висота"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.focalPoint"
+msgstr "Фокусна точка"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.tags"
+msgstr "Теги"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Product"
+msgstr "Товар"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.ProductVariant"
+msgstr "Варіант"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Collection"
+msgstr "Колекція"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Facet"
+msgstr "Характеристика"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.FacetValue"
+msgstr "Значення характеристики"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Asset"
+msgstr "Зображення"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Promotion"
+msgstr "Акція"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Batch"
+msgstr "Масова операція"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Run"
+msgstr "Система"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.Product"
+msgstr "Товари"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.ProductVariant"
+msgstr "Варіанти"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.Collection"
+msgstr "Колекції"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.Facet"
+msgstr "Характеристики"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.FacetValue"
+msgstr "Значення характеристик"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.Asset"
+msgstr "Зображення"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.Promotion"
+msgstr "Акції"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.other"
+msgstr "Об’єкти"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.rows"
+msgstr "Рядки"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.created"
+msgstr "створено"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.updated"
+msgstr "оновлено"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.deleted"
+msgstr "видалено"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.moved"
+msgstr "переміщено"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.collection_added"
+msgstr "додано до колекції"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.collection_removed"
+msgstr "вилучено з колекції"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.stock_adjusted"
+msgstr "скориговано залишок"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.channel_assigned"
+msgstr "додано до каналу"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.channel_removed"
+msgstr "вилучено з каналу"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.option_group_added"
+msgstr "додано групу опцій"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.option_group_removed"
+msgstr "вилучено групу опцій"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.batch"
+msgstr "масова операція"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.run"
+msgstr "синхронізація"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.source.admin"
+msgstr "Адмін-панель"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.source.api_key"
+msgstr "API-ключ"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.source.collection_rules"
+msgstr "Правила колекції"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.source.unknown_system"
+msgstr "Система"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.batch.collection_rules"
+msgstr "оновлено склад колекції"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.created"
+msgstr "додано"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.updated"
+msgstr "оновлено"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.deleted"
+msgstr "видалено"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.failed"
+msgstr "помилок"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.added"
+msgstr "додано"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.removed"
+msgstr "вилучено"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "(shortened)"
+msgstr "(скорочено)"
+
+#: src/dashboard/routes/change-history-list.tsx
 #: src/dashboard/routes/change-history-list.tsx
 msgctxt "change-history"
 msgid "Action"
 msgstr "Дія"
 
+#: src/dashboard/widgets/recent-changes-widget.tsx
+msgctxt "change-history"
+msgid "All changes"
+msgstr "Усі зміни"
+
+#: src/dashboard/components/actor.tsx
+msgctxt "change-history"
+msgid "API key"
+msgstr "API-ключ"
+
+#: src/dashboard/components/details.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "Became"
+msgstr "Стало"
+
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Change history"
+msgstr "Журнал змін"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "changed"
+msgstr "змінено"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "characters"
+msgstr "символів"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Clear the period"
+msgstr "Скинути період"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "collapse"
+msgstr "згорнути"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Collapse bulk operations"
+msgstr "Згортати масові операції"
+
+#: src/dashboard/components/entity-link.tsx
+msgctxt "change-history"
+msgid "deleted"
+msgstr "видалено"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "derived"
+msgstr "похідна"
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/summary.tsx
+#: src/dashboard/components/timeline.tsx
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "Derived changes:"
+msgstr "Похідні зміни:"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Detailed values are kept for a limited time; the complete record of this entry is in the archive."
+msgstr "Детальні значення зберігаються обмежений час; повний запис — в архіві."
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/summary.tsx
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "details unavailable"
+msgstr "деталі недоступні"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "expand"
+msgstr "розгорнути"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "Field"
+msgstr "Поле"
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Full history"
+msgstr "Повна історія"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Hide system changes"
+msgstr "Приховати системні зміни"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Last state"
+msgstr "Останній стан"
+
+#: src/dashboard/components/details.tsx
+msgctxt "change-history"
+msgid "Name"
+msgstr "Назва"
+
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "No"
+msgstr "Ні"
+
+#: src/dashboard/widgets/recent-changes-widget.tsx
+msgctxt "change-history"
+msgid "No changes in this period."
+msgstr "За цей період змін немає."
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "No changes recorded yet."
+msgstr "Змін ще не записано."
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "No rows."
+msgstr "Рядків немає."
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Object"
+msgstr "Об’єкт"
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "open"
+msgstr "відкрити"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "order changed"
+msgstr "порядок змінено"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "order unchanged"
+msgstr "порядок без змін"
+
+#: src/dashboard/widgets/recent-changes-widget.tsx
+msgctxt "change-history"
+msgid "Recent changes"
+msgstr "Останні зміни"
+
+#: src/dashboard/components/summary.tsx
+msgctxt "change-history"
+msgid "s"
+msgstr "с"
+
+#: src/dashboard/components/details.tsx
+msgctxt "change-history"
+msgid "Scope"
+msgstr "Склад"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "show in full"
+msgstr "показати повністю"
+
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "show less"
+msgstr "згорнути"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "Show more"
+msgstr "Показати ще"
+
+#: src/dashboard/components/details.tsx
+msgctxt "change-history"
+msgid "SKU / ID"
+msgstr "SKU / ID"
+
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Source"
+msgstr "Джерело"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Source:"
+msgstr "Джерело:"
+
+#: src/dashboard/components/actor.tsx
+msgctxt "change-history"
+msgid "System change"
+msgstr "системна зміна"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "This entry no longer exists."
+msgstr "Цього запису вже немає."
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Time"
+msgstr "Час"
+
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Type"
+msgstr "Тип"
+
+#: src/dashboard/components/details.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "Was"
+msgstr "Було"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "What changed"
+msgstr "Що змінилось"
+
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
 #: src/dashboard/routes/change-history-list.tsx
 msgctxt "change-history"
 msgid "Who"
 msgstr "Хто"
 
-#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
 msgctxt "change-history"
-msgid "Summary"
-msgstr "Зміни"
+msgid "Yes"
+msgstr "Так"

@@ -169,6 +169,9 @@ importers:
       graphql:
         specifier: ^16.11.0
         version: 16.14.2
+      lucide-react:
+        specifier: ^0.475.0
+        version: 0.475.0(react@19.2.8)
       pg:
         specifier: ^8.23.1
         version: 8.23.1

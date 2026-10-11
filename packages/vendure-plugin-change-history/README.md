@@ -13,8 +13,9 @@ changed value, and shows it all in the dashboard — in English and Ukrainian.
 > collections and their contents, facets, facet values, assets, promotions, channel assignments), records
 > external runs with their detail rows, runs tiered retention with an archive, and ships the
 > `ChangeHistoryService` facade, the before-state and archive strategies, the Admin API read queries (feed,
-> entry, entity timeline, run details, filter options), the dashboard feed and the dashboard registration
-> entry. The entity history blocks and the batch and run views in the dashboard follow before 0.1.0.
+> entry, entity timeline, run details, filter options) and the dashboard: the change history feed, the entry
+> window, a history block on five detail pages, an Insights widget and the registration entry for your labels
+> and renderers.
 
 ## Contents
 
@@ -287,32 +288,105 @@ object) instead.
 
 ## Dashboard
 
-The feed is under **System → Change history** (`/change-history`, permission `ReadChangeHistory`). Its
-navigation `order` is exported as `CHANGE_HISTORY_NAV_ORDER`; give an item of your own
-`order: CHANGE_HISTORY_NAV_ORDER + 1` to place it right after.
+Everything needs the **ReadChangeHistory** permission. The dashboard is in English and Ukrainian.
 
-Your own dashboard extension labels your values through the `./dashboard` entry:
+- **Feed** — **System → Change history** (`/change-history`). One row per change: time, who, type, object
+  (a link to it, «deleted» when it is gone), action and what changed. Search by name or SKU, filter by type,
+  action, source and who, pick a period, and two switches: **Collapse bulk operations** (on: a batch is one
+  row) and **Hide system changes** (off: collection rules and external runs are listed too). Filters, switches,
+  period and the open entry are in the URL, so a view is a link you can send. Clicking a row opens the entry.
+- **Entry window** — who, when, from where, a link to the entity; the changed fields as _field · was · became_;
+  the derived entries (variant prices a product save rewrote), a batch's members and a run's rows, each paged;
+  for a deleted entity its last state and **Full history**, the entity's timeline in the same window.
+- **History block** — at the bottom of the product, variant, collection, facet and promotion pages: the
+  entity's history newest first, 20 at a time with **Show more**, the changes of its children (variants, facet
+  values, child collections) marked with their name, derived entries folded under their cause, collection
+  rules batches with their counts and members, and each external run as one collapsed item with its count
+  line («Variants: 3 · Rows: 4») that unfolds into this entity's rows. On a page whose entity a run touched
+  alone (a variant), the rows show directly.
+- **Insights widget «Recent changes»** — the last 10 rows of the feed's default view in the Insights date
+  range, with **All changes →** opening the feed for the same period.
 
-```ts
+Values are drawn by their `kind`: `text`, `enum`, `bool`, `date`, `money` (the channel's currency), `prices`,
+`ref` / `refs` (labels, removed on the left and added on the right), `assets` (thumbnails, added and removed
+outlined, «order changed»), `richtext` (plain text, collapsed, «show in full»), `json` (side by side, changed
+lines highlighted, facet value ids shown by name), `stock` (with the delta), and a compacted value as
+«changed (3,412 → 3,587 characters)». The feed's navigation `order` is `CHANGE_HISTORY_NAV_ORDER`; give an
+item of your own `order: CHANGE_HISTORY_NAV_ORDER + 1` to place it right after.
+
+### Your labels, sources and renderers
+
+Your own dashboard extension registers what the package cannot know through the `./dashboard` entry. A label
+is a Lingui message descriptor (``msg`…` ``, translated by your catalogs) or a plain string. Registrations run
+when your extension loads; the package reads them when it renders, so the order of the extensions does not
+matter, and yours win over the built-in ones.
+
+```tsx
 import { msg } from '@lingui/core/macro';
 import { defineDashboardExtension } from '@vendure/dashboard';
+import { CalendarClock, Plug } from 'lucide-react';
 import {
   registerChangeHistoryAction,
+  registerChangeHistoryBatchKind,
+  registerChangeHistoryDetailRenderer,
+  registerChangeHistoryEntityType,
   registerChangeHistoryFieldLabels,
   registerChangeHistorySource,
+  registerChangeHistoryValueRenderer,
+  type ChangeHistoryDetailRendererProps,
+  type ChangeHistoryValueRendererProps,
 } from '@uplab/vendure-plugin-change-history/dashboard';
 
-registerChangeHistoryFieldLabels('Product', { 'customFields.subtitle': msg`Subtitle` });
-registerChangeHistorySource('erp_stock_sync', { label: msg`ERP stock sync`, tone: 'system' });
-registerChangeHistoryAction('products_reordered', { label: msg`reordered products` });
+// Field names, keyed as in `changes` without the language suffix ("(uk)" is added for you).
+registerChangeHistoryFieldLabels('Product', {
+  'customFields.price': msg`Price`,
+  'customFields.discountStartAt': msg`Discount from`,
+});
+
+// A source of yours: label, tone (human / system / scheduled), icon, and labels for its runs' count keys.
+registerChangeHistorySource('erp_stock_sync', {
+  label: msg`ERP: stock sync`,
+  tone: 'system',
+  icon: Plug,
+  countLabels: { updated: msg`updated`, zeroed: msg`zeroed`, created: msg`added`, failed: msg`failed` },
+});
+registerChangeHistorySource('scheduled_action', {
+  label: msg`Scheduled action`,
+  tone: 'scheduled',
+  icon: CalendarClock,
+});
+
+registerChangeHistoryAction('archived', { label: msg`archived` });
+registerChangeHistoryBatchKind('bulk_edit', { label: msg`Bulk edit` });
+registerChangeHistoryEntityType('ProductOrder', { label: msg`Product order`, route: () => '/product-order/global' });
+
+// One side of a value of your kind (`entities.<Type>.fieldKinds` or a field extractor names the kind).
+function Swatch({ change, side }: ChangeHistoryValueRendererProps) {
+  const color = change[side];
+  return typeof color === 'string' ? (
+    <span style={{ background: color }} className="inline-block h-4 w-4 rounded" />
+  ) : null;
+}
+registerChangeHistoryValueRenderer('color', Swatch);
+
+// Rows of an external run of your kind: `dialog` (a page of the whole run), `timeline` (this entity's rows),
+// `summary` (the inline count line of the collapsed item — your own plural forms go here).
+function StockRows({ rows, mode }: ChangeHistoryDetailRendererProps) {
+  if (mode === 'summary') return <span>{rows.length} rows</span>;
+  return <table>{/* … */}</table>;
+}
+registerChangeHistoryDetailRenderer('stock', StockRows);
 
 defineDashboardExtension({});
 ```
 
-Also available: `registerChangeHistoryValueRenderer`, `registerChangeHistoryDetailRenderer`,
-`registerChangeHistoryBatchKind`, `registerChangeHistoryEntityType`. Exclude the package from Vite's
-dependency pre-bundling in your dashboard's `vite.config`, so the entry is compiled like the rest of your
-extension:
+Without a renderer of its own, a run's rows use the package's table: _SKU / ID · name · scope · was · became
+(±delta)_, sorted by SKU, with the count line «Variants: 3 · Rows: 4». A field nobody labelled shows its key in
+words (`customFields.fullPrice` → «Full price»), a source nobody registered its value in words.
+
+Exclude the package from Vite's dependency pre-bundling in your dashboard's `vite.config`, so the entry is
+compiled like the rest of your extension (the registry lives on `globalThis`, so a second copy would still
+share it):
 
 ```ts
 optimizeDeps: { exclude: ['@uplab/vendure-plugin-change-history'] },

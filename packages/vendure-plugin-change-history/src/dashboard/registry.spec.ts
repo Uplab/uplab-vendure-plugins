@@ -17,6 +17,12 @@ describe('change history dashboard registry', () => {
     expect(second).not.toBe(first);
 
     first.registerChangeHistorySource('erp_sync', { label: 'ERP sync', tone: 'system' });
+    first.registerChangeHistorySource('erp_stock', {
+      label: 'ERP stock',
+      tone: 'system',
+      icon: Renderer,
+      countLabels: { zeroed: { id: 'host.zeroed' } },
+    });
     second.registerChangeHistoryAction('archived', { label: { id: 'host.archived', message: 'archived' } });
 
     const store = registry.getChangeHistoryRegistry();
@@ -64,6 +70,12 @@ describe('change history dashboard registry', () => {
     expect(() => pub.registerChangeHistoryValueRenderer('color', bad(undefined))).toThrow(/React component/);
     expect(() => pub.registerChangeHistoryDetailRenderer('stock', bad('table'))).toThrow(/React component/);
     expect(() => pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'loud' }))).toThrow(/tone must be/);
+    expect(() => pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'system', icon: 'plug' }))).toThrow(
+      /icon of source "erp" must be a React component/,
+    );
+    expect(() =>
+      pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'system', countLabels: { zeroed: 3 } })),
+    ).toThrow(/count "zeroed" of source "erp" needs a label/);
     expect(() => pub.registerChangeHistoryAction('archived', bad({}))).toThrow(/needs a label/);
     expect(() => pub.registerChangeHistoryBatchKind(bad(1), { label: 'x' })).toThrow(/kind must be/);
     expect(() => pub.registerChangeHistoryEntityType('Order', bad(undefined))).toThrow(/needs a label/);

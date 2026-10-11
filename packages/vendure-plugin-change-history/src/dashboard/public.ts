@@ -26,6 +26,7 @@ import {
 } from './registry';
 
 export type {
+  ChangeHistoryBatchCount,
   ChangeHistoryDetailData,
   ChangeHistoryDetailRendererProps,
   ChangeHistoryEntityTypeDefinition,
@@ -102,12 +103,21 @@ export function registerChangeHistoryDetailRenderer(
   getChangeHistoryRegistry().detailRenderers.set(kind, component);
 }
 
-/** Label and badge of a host source (`erp_stock_sync`, …). */
+/**
+ * Label, tone and icon of a host source (`erp_stock_sync`, …), and the labels of its runs' `counts` keys.
+ * `tone: 'system'` shows the grey robot badge, `'scheduled'` the clock, `'human'` the person.
+ */
 export function registerChangeHistorySource(source: string, definition: ChangeHistorySourceDefinition): void {
   requireKey('source', source);
   requireLabel(`source "${source}"`, definition);
   if (!TONES.includes(definition.tone)) {
     throw new Error(`[ChangeHistory] source "${source}": tone must be one of ${TONES.join(', ')}`);
+  }
+  if (definition.icon !== undefined) {
+    requireComponent(`icon of source "${source}"`, definition.icon);
+  }
+  for (const [key, label] of Object.entries(definition.countLabels ?? {})) {
+    requireLabel(`count "${key}" of source "${source}"`, { label });
   }
   getChangeHistoryRegistry().sources.set(source, definition);
 }
