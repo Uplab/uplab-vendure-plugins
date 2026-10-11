@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { In } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { CapturePipeline } from '../capture/capture-pipeline';
+import { CollectionCapture } from '../capture/collection-capture';
 import { ChangeHistoryWriter } from '../capture/entry-writer.service';
 import {
   CHANGE_HISTORY_ACTIONS,
@@ -75,6 +76,7 @@ export class ChangeHistoryService {
     private readonly writer: ChangeHistoryWriter,
     private readonly pipeline: CapturePipeline,
     private readonly definitions: ChangeHistoryDefinitions,
+    private readonly collections: CollectionCapture,
   ) {}
 
   /**
@@ -82,7 +84,8 @@ export class ChangeHistoryService {
    * repository save), in the caller's transaction. Call it **after** the write, with the caller's `ctx`:
    * the before-state is what the transaction saw last for the entity, else its last committed row.
    * `created: true` means the rows are new (the before-state is empty). An entity whose diff is empty gets
-   * no entry. Captures `Product` and `ProductVariant`; other types resolve without recording (logged once).
+   * no entry. Captures the core catalogue types (`Product`, `ProductVariant`, `Collection`, `Facet`,
+   * `FacetValue`, `Promotion`, `Asset`); any other type resolves without recording (logged once).
    *
    * @example
    * ```ts
@@ -104,7 +107,7 @@ export class ChangeHistoryService {
       if (!this.uncapturedWarned.has(entityType)) {
         this.uncapturedWarned.add(entityType);
         Logger.warn(
-          `[ChangeHistory] capture() does not support ${entityType} in this release; nothing was recorded`,
+          `[ChangeHistory] capture() does not support ${entityType}; nothing was recorded (use recordAction)`,
           loggerCtx,
         );
       }
@@ -115,6 +118,15 @@ export class ChangeHistoryService {
       action: opts.action,
       meta: opts.meta,
     });
+  }
+
+  /**
+   * Overwrites the package's snapshot of every collection's products with the current contents. Call it
+   * after a period with capture switched off; otherwise the first change of each collection afterwards
+   * records the whole difference since then. Unlike the write methods, it rejects when it fails.
+   */
+  async reseedCollectionMembership(ctx: RequestContext): Promise<{ collections: number }> {
+    return this.collections.reseed(ctx);
   }
 
   /** An action-only entry: no diff, no before-read. `entityType` may be a host type. */

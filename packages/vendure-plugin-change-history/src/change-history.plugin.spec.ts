@@ -101,6 +101,7 @@ describe('ChangeHistoryService with the kill switch off', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const ctx = {} as RequestContext;
 

@@ -9,13 +9,26 @@ Two e2e suites, both in `e2e/`:
 
 The sql.js suite pins the behaviour without a before-state: every update is recorded with
 `meta.noBefore = "unsupported"`, created and deleted entities with their values, stock adjustments, cascades and
-the diff against an earlier save in the same transaction.
+the diff against an earlier save in the same transaction. It also covers everything that needs no before-state:
+collection contents through the filters job (one `collection_rules` batch per collection and run, nothing for a
+run that changed nothing), the snapshot recorded at startup and the first change after it, re-recording on
+request, a collection deleted with its descendants (derived, with their member counts), a facet value rename
+recorded on the value only, a force-deleted facet with its values, an asset's upload / edit / deletion, a
+promotion, channel assignments and `capture()` of a collection.
 
 The Postgres suite covers what needs a real second connection: exact before → after values of products and
 variants (translations, custom fields, facet values, prices), no entry for a save that changes nothing, the
 savepoint that keeps a failed history write from aborting the mutation, a host rollback that takes the entry
 with it, handler order against a fan-out plugin (`e2e/fixtures/fan-out-plugin.ts`) with derived entries, the
-API-key actor and batches. CI runs it in the `e2e-postgres` job against a `postgres:15` service.
+API-key actor and batches. For the other catalogue entities: a collection's changed fields with its filters
+labelled, a move (parent and position only), contents changed through a facet-value filter including the first
+change after the startup snapshot, a deleted collection and its descendant from their committed rows, a facet
+update and a value rename recorded once on the value, a force-deleted facet with its values' usage, an asset's
+name / tags / focal point, a promotion's conditions as JSON before → after without `priorityScore`, and
+`capture()` after a raw write. CI runs it in the `e2e-postgres` job against a `postgres:15` service.
+
+The collection filters run in Vendure's job queue: the specs wait for it (`settleJobs`) and then poll for the
+entries the history writes after the job (`waitFor`).
 
 ## Running the Postgres suite locally
 

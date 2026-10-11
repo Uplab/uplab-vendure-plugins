@@ -1,7 +1,17 @@
-import { Logger, Product, ProductService, TaxCategory, TransactionalConnection, mergeConfig } from '@vendure/core';
+import {
+  Collection,
+  Logger,
+  Product,
+  ProductService,
+  TaxCategory,
+  TransactionalConnection,
+  mergeConfig,
+} from '@vendure/core';
+import { In } from 'typeorm';
 import { createTestEnvironment, registerInitializer, testConfig } from '@vendure/testing';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  ChangeHistoryCollectionMembers,
   ChangeHistoryDetail,
   ChangeHistoryEntry,
   ChangeHistoryPlugin,
@@ -9,6 +19,7 @@ import {
   CommittedRowBeforeStateStrategy,
   ResolvedActor,
 } from '../src';
+import { CollectionCapture } from '../src/capture/collection-capture';
 import { ChangeHistoryStrategies } from '../src/services/change-history-strategies.service';
 import { DedicatedPostgresInitializer } from './dedicated-postgres-initializer';
 import {
@@ -22,17 +33,31 @@ import {
   ADD_OPTION_GROUP,
   CHANGE_HISTORY_ENTRIES,
   CREATE_API_KEY,
+  CREATE_ASSETS,
+  CREATE_COLLECTION,
   CREATE_OPTION_GROUP,
   CREATE_FACET,
   CREATE_PRODUCT_WITH,
+  CREATE_PROMOTION,
   CREATE_VARIANTS,
+  DELETE_ASSET,
+  DELETE_COLLECTION,
+  DELETE_FACET,
+  DELETE_FACET_VALUES,
   DELETE_PRODUCT,
+  DELETE_PROMOTION,
   DELETE_VARIANT,
+  MOVE_COLLECTION,
   ROLES,
+  UPDATE_ASSET,
+  UPDATE_COLLECTION,
+  UPDATE_FACET,
+  UPDATE_FACET_VALUES,
   UPDATE_PRODUCT,
+  UPDATE_PROMOTION,
   UPDATE_VARIANTS,
 } from './graphql';
-import { decode, entriesWhere, superadminCtx, systemCtx } from './helpers';
+import { decode, entriesWhere, facetFilter, pngFile, settleJobs, superadminCtx, systemCtx, waitFor } from './helpers';
 
 /**
  * The Postgres suite: everything that needs a real second connection — exact before → after values, no-op
@@ -74,6 +99,7 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
         { name: 'defaultTaxCategory', type: 'relation', entity: TaxCategory },
       ],
       ProductVariant: [{ name: 'fullPrice', type: 'int' }],
+      Collection: [{ name: 'banner', type: 'string' }],
     },
     plugins: [
       FanOutTestPlugin,
@@ -633,6 +659,396 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
         meta: expect.objectContaining({ fields: ['enabled'] }),
       });
       expect(Number(head.id)).toBeLessThan(Number(members[0]?.id));
+    });
+  });
+
+  describe('collections, facets, assets, promotions', () => {
+    const members = () => connection().rawConnection.getRepository(ChangeHistoryCollectionMembers);
+    const collections = () => server.app.get(CollectionCapture);
+    let red: string;
+    let blue: string;
+    let redProduct: string;
+    let blueProduct: string;
+
+    const createCollection = async (name: string, input: Record<string, unknown> = {}) =>
+      (
+        await adminClient.query(CREATE_COLLECTION, {
+          input: { translations: [{ languageCode: 'en', name, slug: name, description: '' }], filters: [], ...input },
+        })
+      ).createCollection.id as string;
+    /** The entries under a collection (its contents and their batch heads), oldest first. */
+    const under = (collectionId: string) =>
+      entriesWhere(server.app, { parentType: 'Collection', parentId: decode(collectionId) });
+    const product = async (name: string, facetValueIds: string[]) => {
+      const id = await createProduct({
+        translations: [{ languageCode: 'en', name, slug: name, description: '' }],
+        facetValueIds,
+      });
+      await createVariants(id, [{ sku: name.toUpperCase(), price: 100 }]);
+      return id;
+    };
+
+    beforeAll(async () => {
+      const { createFacet } = await adminClient.query(CREATE_FACET, {
+        input: {
+          code: 'pg-colour',
+          isPrivate: false,
+          translations: [{ languageCode: 'en', name: 'Colour' }],
+          values: [
+            { code: 'pg-red', translations: [{ languageCode: 'en', name: 'Red' }] },
+            { code: 'pg-blue', translations: [{ languageCode: 'en', name: 'Blue' }] },
+          ],
+        },
+      });
+      const values = createFacet.values as Array<{ id: string; code: string }>;
+      red = values.find((v) => v.code === 'pg-red')!.id;
+      blue = values.find((v) => v.code === 'pg-blue')!.id;
+      redProduct = await product('pg-red-shirt', [red]);
+      blueProduct = await product('pg-blue-shirt', [blue]);
+      await settleJobs(adminClient);
+    });
+
+    it('records exactly the changed fields of a collection, its filters labelled', async () => {
+      const id = await createCollection('pg-sale', { filters: facetFilter([red]), customFields: { banner: 'A' } });
+      await adminClient.query(UPDATE_COLLECTION, {
+        input: {
+          id,
+          isPrivate: true,
+          filters: facetFilter([red, blue]),
+          translations: [{ languageCode: 'en', name: 'PG Sale' }],
+          customFields: { banner: 'B' },
+        },
+      });
+
+      const entry = await lastOf('Collection', id);
+      expect(entry).toMatchObject({
+        action: 'updated',
+        entityLabel: 'PG Sale',
+        parentType: null,
+        summary: '4 fields: customFields.banner, filters, isPrivate, name.en',
+      });
+      const filter = (ids: string[]) => [
+        {
+          code: 'facet-value-filter',
+          args: [
+            { name: 'facetValueIds', value: JSON.stringify(ids.map((v) => Number(decode(v)))) },
+            { name: 'containsAny', value: 'true' },
+          ],
+        },
+      ];
+      expect(entry?.changes).toEqual({
+        'name.en': { kind: 'text', from: 'pg-sale', to: 'PG Sale' },
+        isPrivate: { kind: 'bool', from: false, to: true },
+        'customFields.banner': { kind: 'text', from: 'A', to: 'B' },
+        filters: {
+          kind: 'json',
+          from: filter([red]),
+          to: filter([red, blue]),
+          labels: { [decode(red)]: 'Colour: Red', [decode(blue)]: 'Colour: Blue' },
+        },
+      });
+      await settleJobs(adminClient);
+    });
+
+    it('records a move: the parent and the position before and after, nothing else', async () => {
+      const from = await createCollection('pg-from');
+      const to = await createCollection('pg-to');
+      await createCollection('pg-first', { parentId: from });
+      const moved = await createCollection('pg-moved', { parentId: from });
+      await createCollection('pg-sibling', { parentId: to });
+      await adminClient.query(MOVE_COLLECTION, { input: { collectionId: moved, parentId: to, index: 0 } });
+
+      const entry = await lastOf('Collection', moved);
+      expect(entry).toMatchObject({
+        action: 'moved',
+        summary: '2 fields: parent, position',
+        parentType: 'Collection',
+        parentId: decode(to),
+      });
+      expect(entry?.changes?.parent).toEqual({
+        kind: 'ref',
+        from: decode(from),
+        to: decode(to),
+        labels: { [decode(from)]: 'pg-from', [decode(to)]: 'pg-to' },
+      });
+      expect(entry?.changes?.position.from).not.toEqual(entry?.changes?.position.to);
+    });
+
+    it('records products entering and leaving through a filter change, also first after the boot snapshot (R2-3)', async () => {
+      const id = await createCollection('pg-reds', { filters: facetFilter([red]) });
+      await settleJobs(adminClient);
+      const [head, added] = await waitFor(
+        () => under(id),
+        (entries) => entries.length >= 2,
+      );
+      expect(head).toMatchObject({ entityType: 'Batch', summary: '+1 / −0', source: 'collection_rules' });
+      expect(added).toMatchObject({ entityId: decode(redProduct), action: 'collection_added', batchId: head.batchId });
+
+      // As after a deploy: no snapshot of this collection until the boot records its contents.
+      await collections().seedMissing();
+      await members().delete({ collectionId: decode(id) });
+      expect(await collections().seedMissing()).toBe(1);
+
+      await adminClient.query(UPDATE_COLLECTION, { input: { id, filters: facetFilter([blue]) } });
+      await settleJobs(adminClient);
+      const entries = await waitFor(
+        () => under(id),
+        (all) => all.length >= 5,
+      );
+      expect(entries.slice(2).map((e) => [e.entityType, e.action, e.entityId, e.actorType, e.source])).toEqual([
+        ['Batch', 'batch', expect.any(String), 'system', 'collection_rules'],
+        ['Product', 'collection_added', decode(blueProduct), 'system', 'collection_rules'],
+        ['Product', 'collection_removed', decode(redProduct), 'system', 'collection_rules'],
+      ]);
+      expect(entries[2]).toMatchObject({
+        summary: '+1 / −1',
+        meta: expect.objectContaining({ counts: { added: 1, removed: 1 } }),
+      });
+      // On the product's own history too.
+      expect((await entriesOf('Product', blueProduct)).at(-1)).toMatchObject({
+        action: 'collection_added',
+        parentId: decode(id),
+        summary: 'added to pg-reds',
+      });
+    });
+
+    it('records a deleted collection and its descendants from their committed rows', async () => {
+      const parent = await createCollection('pg-parent', { filters: facetFilter([red]) });
+      const child = await createCollection('pg-child', { parentId: parent, inheritFilters: false });
+      await settleJobs(adminClient);
+      await waitFor(
+        () => under(parent),
+        (entries) => entries.some((e) => e.entityType === 'Batch'),
+      );
+
+      await adminClient.query(DELETE_COLLECTION, { id: parent });
+
+      const [own] = await entriesWhere(server.app, {
+        entityType: 'Collection',
+        entityId: decode(parent),
+        action: 'deleted',
+      });
+      expect(own).toMatchObject({ entityLabel: 'pg-parent', parentType: null, derivedFromId: null, changes: null });
+      expect(own.meta).toMatchObject({
+        memberCount: 1,
+        lastState: expect.objectContaining({ 'name.en': 'pg-parent', 'slug.en': 'pg-parent', isPrivate: false }),
+      });
+      expect(own.meta).not.toHaveProperty('noBefore');
+      const [descendant] = await entriesWhere(server.app, {
+        entityType: 'Collection',
+        entityId: decode(child),
+        action: 'deleted',
+      });
+      expect(descendant).toMatchObject({
+        derivedFromId: own.id,
+        parentType: 'Collection',
+        parentId: decode(parent),
+        meta: expect.objectContaining({
+          memberCount: 0,
+          lastState: expect.objectContaining({ 'name.en': 'pg-child' }),
+        }),
+      });
+      expect(await members().count({ where: { collectionId: In([decode(parent), decode(child)]) } })).toBe(0);
+    });
+
+    it('records a facet update, and a value rename once, on the value', async () => {
+      const { createFacet } = await adminClient.query(CREATE_FACET, {
+        input: {
+          code: 'pg-size',
+          isPrivate: false,
+          translations: [{ languageCode: 'en', name: 'Size' }],
+          values: [{ code: 'pg-m', translations: [{ languageCode: 'en', name: 'M' }] }],
+        },
+      });
+      const facetId = createFacet.id as string;
+      const valueId = createFacet.values[0].id as string;
+      const user = await product('pg-sized', [valueId]);
+      const productEntries = (await entriesOf('Product', user)).length;
+
+      await adminClient.query(UPDATE_FACET, {
+        input: { id: facetId, code: 'pg-size-2', translations: [{ languageCode: 'en', name: 'Fit' }] },
+      });
+      await adminClient.query(UPDATE_FACET_VALUES, {
+        input: [{ id: valueId, translations: [{ languageCode: 'en', name: 'Medium' }] }],
+      });
+
+      expect((await lastOf('Facet', facetId))?.changes).toEqual({
+        code: { kind: 'text', from: 'pg-size', to: 'pg-size-2' },
+        'name.en': { kind: 'text', from: 'Size', to: 'Fit' },
+      });
+      expect(await lastOf('FacetValue', valueId)).toMatchObject({
+        action: 'updated',
+        entityLabel: 'Fit: Medium',
+        parentType: 'Facet',
+        parentId: decode(facetId),
+        changes: { 'name.en': { kind: 'text', from: 'M', to: 'Medium' } },
+      });
+      expect(await entriesOf('Product', user)).toHaveLength(productEntries);
+      await settleJobs(adminClient);
+    });
+
+    it('records a force-deleted facet with its values derived from it, and how many products used them', async () => {
+      const { createFacet } = await adminClient.query(CREATE_FACET, {
+        input: {
+          code: 'pg-material',
+          isPrivate: false,
+          translations: [{ languageCode: 'en', name: 'Material' }],
+          values: [
+            { code: 'pg-wool', translations: [{ languageCode: 'en', name: 'Wool' }] },
+            { code: 'pg-silk', translations: [{ languageCode: 'en', name: 'Silk' }] },
+          ],
+        },
+      });
+      const values = createFacet.values as Array<{ id: string; code: string }>;
+      const wool = values.find((v) => v.code === 'pg-wool')!.id;
+      const silk = values.find((v) => v.code === 'pg-silk')!.id;
+      await product('pg-woollen', [wool]);
+      await adminClient.query(DELETE_FACET_VALUES, { ids: [silk], force: true });
+      await adminClient.query(DELETE_FACET, { id: createFacet.id, force: true });
+
+      expect(await lastOf('FacetValue', silk)).toMatchObject({
+        action: 'deleted',
+        derivedFromId: null,
+        meta: expect.objectContaining({ usedByProducts: 0, usedByVariants: 0 }),
+      });
+      const facet = await lastOf('Facet', createFacet.id);
+      expect(facet).toMatchObject({
+        action: 'deleted',
+        meta: expect.objectContaining({ lastState: expect.objectContaining({ code: 'pg-material' }) }),
+      });
+      expect(await lastOf('FacetValue', wool)).toMatchObject({
+        action: 'deleted',
+        entityLabel: 'Material: Wool',
+        derivedFromId: facet?.id,
+        meta: expect.objectContaining({
+          usedByProducts: 1,
+          usedByVariants: 0,
+          lastState: expect.objectContaining({ code: 'pg-wool', 'name.en': 'Wool' }),
+        }),
+      });
+      await settleJobs(adminClient);
+    });
+
+    it('records the changed name, tags and focal point of an asset, and its last state when deleted', async () => {
+      const { createAssets } = await adminClient.fileUploadMutation({
+        mutation: CREATE_ASSETS,
+        filePaths: [pngFile('pg-pixel')],
+        mapVariables: () => ({ input: [{ file: null, tags: ['hero'] }] }),
+      });
+      const id = createAssets[0].id as string;
+      await adminClient.query(UPDATE_ASSET, {
+        input: { id, name: 'Banner', tags: ['hero', 'sale'], focalPoint: { x: 0.5, y: 0.25 } },
+      });
+      await adminClient.query(UPDATE_ASSET, { input: { id, name: 'Banner' } });
+      await adminClient.query(DELETE_ASSET, { input: { assetId: id, force: true } });
+
+      const entries = await entriesOf('Asset', id);
+      expect(entries.map((e) => e.action)).toEqual(['created', 'updated', 'deleted']);
+      expect(entries[1].changes).toEqual({
+        'name.en': { kind: 'text', from: 'change-history-pg-pixel.png', to: 'Banner' },
+        tags: { kind: 'refs', added: ['sale'], removed: [] },
+        focalPoint: { kind: 'json', from: null, to: { x: 0.5, y: 0.25 } },
+      });
+      expect(entries[2].meta).toMatchObject({
+        lastState: expect.objectContaining({ 'name.en': 'Banner', tags: ['hero', 'sale'], mimeType: 'image/png' }),
+      });
+      expect(entries[2].meta).not.toHaveProperty('noBefore');
+    });
+
+    it("records a promotion's conditions and actions before and after, without the priority score", async () => {
+      const minimum = (amount: number) => ({
+        code: 'minimum_order_amount',
+        arguments: [
+          { name: 'amount', value: String(amount) },
+          { name: 'taxInclusive', value: 'false' },
+        ],
+      });
+      const discount = { code: 'order_percentage_discount', arguments: [{ name: 'discount', value: '10' }] };
+      const { createPromotion } = await adminClient.query(CREATE_PROMOTION, {
+        input: {
+          enabled: true,
+          couponCode: 'PG-10',
+          conditions: [minimum(1000)],
+          actions: [discount],
+          translations: [{ languageCode: 'en', name: 'Ten off', description: '' }],
+        },
+      });
+      const id = createPromotion.id as string;
+      await adminClient.query(UPDATE_PROMOTION, {
+        input: {
+          id,
+          enabled: false,
+          usageLimit: 5,
+          endsAt: '2027-01-01T00:00:00.000Z',
+          conditions: [
+            minimum(2000),
+            {
+              code: 'at_least_n_with_facets',
+              arguments: [
+                { name: 'minimum', value: '1' },
+                { name: 'facets', value: JSON.stringify([red]) },
+              ],
+            },
+          ],
+          actions: [discount],
+        },
+      });
+      await adminClient.query(DELETE_PROMOTION, { id });
+
+      const [created, updated, deleted] = await entriesOf('Promotion', id);
+      expect(created).toMatchObject({ action: 'created', entityLabel: 'Ten off' });
+      expect(updated.summary).toBe('4 fields: conditions, enabled, endsAt, usageLimit');
+      expect(updated.changes).toEqual({
+        enabled: { kind: 'bool', from: true, to: false },
+        usageLimit: { kind: 'text', from: null, to: 5 },
+        endsAt: { kind: 'date', from: null, to: '2027-01-01T00:00:00.000Z' },
+        conditions: {
+          kind: 'json',
+          from: [
+            {
+              code: 'minimum_order_amount',
+              args: [
+                { name: 'amount', value: '1000' },
+                { name: 'taxInclusive', value: 'false' },
+              ],
+            },
+          ],
+          to: [
+            {
+              code: 'minimum_order_amount',
+              args: [
+                { name: 'amount', value: '2000' },
+                { name: 'taxInclusive', value: 'false' },
+              ],
+            },
+            {
+              code: 'at_least_n_with_facets',
+              args: [
+                { name: 'minimum', value: '1' },
+                { name: 'facets', value: JSON.stringify([Number(decode(red))]) },
+              ],
+            },
+          ],
+          labels: { [decode(red)]: 'Colour: Red' },
+        },
+      });
+      expect(deleted).toMatchObject({
+        action: 'deleted',
+        meta: expect.objectContaining({ lastState: expect.objectContaining({ couponCode: 'PG-10', enabled: false }) }),
+      });
+    });
+
+    it('captures a collection a host changed with a raw write, in its transaction', async () => {
+      const id = await createCollection('pg-raw');
+      const ctx = await superadminCtx(server.app);
+      await connection().withTransaction(ctx, async (tctx) => {
+        await connection().getRepository(tctx, Collection).update(decode(id), { isPrivate: true });
+        await history().capture(tctx, 'Collection', [decode(id)], { action: 'visibility_set' });
+      });
+      expect(await lastOf('Collection', id)).toMatchObject({
+        action: 'visibility_set',
+        changes: { isPrivate: { kind: 'bool', from: false, to: true } },
+      });
     });
   });
 

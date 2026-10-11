@@ -9,7 +9,7 @@ import { ChangeHistoryFieldChanges } from '../types';
 import { ChangeHistoryContextService } from '../services/change-history-context.service';
 import { ChangeHistoryStrategies } from '../services/change-history-strategies.service';
 import { CapturePipeline } from './capture-pipeline';
-import { ChangeHistoryWriter } from './entry-writer.service';
+import { ChangeHistoryWriter, EntryDraft } from './entry-writer.service';
 
 type Rows = Record<string, Record<string, unknown> | undefined>;
 
@@ -116,7 +116,7 @@ function setup(
     new ChangeHistoryWriter(connection, context),
   );
   const ctx = { apiType: 'admin', channel: { id: 1 } } as unknown as RequestContext;
-  return { pipeline, definition, ctx, saved, load, withCommittedReader, context, save };
+  return { pipeline, definition, ctx, saved, load, withCommittedReader, context, save, connection };
 }
 
 const updated = { mode: 'updated' as const, action: 'updated', input: { id: 1 } };
@@ -303,6 +303,81 @@ describe('CapturePipeline', () => {
       'ChangeHistory',
       expect.any(String),
     );
+  });
+
+  it('compares only the fields a capture names, with the groups it asks for', async () => {
+    const { pipeline, definition, ctx, saved, load } = setup({
+      committed: { '1': { sku: 'A', name: 'Old' } },
+      current: { '1': { sku: 'B', name: 'New' } },
+    });
+    const scope = new Set([BASE_GROUP]);
+    await pipeline.run(ctx, definition, [1], { mode: 'updated', action: 'moved', scope, fields: ['name'] });
+
+    expect(load.mock.calls.map((call) => [...call[3]])).toEqual([[BASE_GROUP], [BASE_GROUP]]);
+    expect(saved[0]).toMatchObject({ action: 'moved', changes: { name: { from: 'Old', to: 'New' } } });
+    expect(saved[0].changes).not.toHaveProperty('sku');
+  });
+
+  it("records a hard-deleted row without a before-state from the event's entity, with meta per id", async () => {
+    const { pipeline, definition, ctx, saved } = setup({ committed: { noBefore: 'unsupported' }, current: {} });
+    definition.fromEntity = (_ctx, entity) => ({
+      values: { ...(entity as Record<string, unknown>) },
+      groups: new Set([BASE_GROUP]),
+      label: 'From the event',
+      parentId: '3',
+      deleted: false,
+    });
+    await pipeline.run(ctx, definition, [1, 2], {
+      mode: 'deleted',
+      action: 'deleted',
+      entities: new Map([['1', { sku: 'GONE' }]]),
+      metaById: new Map([['1', { usedByProducts: 4 }]]),
+    });
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({
+      entityId: '1',
+      entityLabel: 'From the event',
+      parentId: '3',
+      meta: expect.objectContaining({ usedByProducts: 4, noBefore: 'unsupported', lastState: { sku: 'GONE' } }),
+    });
+  });
+
+  it('hands the drafts to the caller instead of writing them', async () => {
+    const { pipeline, definition, ctx, saved } = setup({
+      committed: { '1': { sku: 'A' } },
+      current: {},
+    });
+    const collected: EntryDraft[] = [];
+    await pipeline.run(ctx, definition, [1], { mode: 'deleted', action: 'deleted', collect: collected });
+
+    expect(saved).toEqual([]);
+    expect(collected).toEqual([expect.objectContaining({ entityId: '1', action: 'deleted' })]);
+  });
+
+  it("writes a write-only batch's head with its summary and parent, unless an outer batch runs", async () => {
+    const { ctx, saved, context, connection } = setup({ current: {} });
+    const writer = new ChangeHistoryWriter(connection, context);
+    const draft = { entityType: 'Product', entityId: '5', entityLabel: 'P', action: 'collection_added', summary: 's' };
+    const own = () => ({
+      kind: 'collection_rules',
+      id: `collection_rules:${saved.length}`,
+      headWritten: false,
+      label: 'Sale',
+      summary: '+1 / −0',
+      parent: { type: 'Collection', id: '9' },
+    });
+
+    await writer.write(ctx, 'test', async () => [{ ...draft, derivedFromId: 77 }], { batch: own() });
+    expect(saved.map((e) => [e.entityType, e.summary, e.parentType, e.parentId, e.derivedFromId])).toEqual([
+      ['Batch', '+1 / −0', 'Collection', '9', null],
+      ['Product', 's', null, null, 77],
+    ]);
+
+    context.stateOf(ctx).batch = { kind: 'bulk_edit', id: 'bulk_edit:outer', headWritten: true };
+    await writer.write(ctx, 'test', async () => [draft], { batch: own() });
+    expect(saved.at(-1)).toMatchObject({ entityType: 'Product', batchId: 'bulk_edit:outer' });
+    expect(saved).toHaveLength(3);
   });
 
   it('does nothing when disabled or without ids', async () => {

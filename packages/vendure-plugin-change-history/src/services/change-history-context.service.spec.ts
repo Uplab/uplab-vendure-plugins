@@ -1,4 +1,11 @@
-import { AdministratorService, ProcessContext, RequestContext, TransactionalConnection } from '@vendure/core';
+import {
+  AdministratorService,
+  Collection,
+  CollectionModificationEvent,
+  ProcessContext,
+  RequestContext,
+  TransactionalConnection,
+} from '@vendure/core';
 import { describe, expect, it, vi } from 'vitest';
 import { ChangeHistoryActorResolver, ResolvedActor, ResolvedChangeHistoryPluginOptions } from '../types';
 import { ChangeHistoryContextService, LAST_SEEN_CAPACITY } from './change-history-context.service';
@@ -107,6 +114,26 @@ describe('ChangeHistoryContextService', () => {
       actorType: 'system',
       source: 'unknown_system',
       meta: { apiType: 'admin', processType: 'worker' },
+    });
+  });
+
+  it('attributes a change of collection contents without a user to the collection rules, decided per event', async () => {
+    const { context, administratorService } = service([], null);
+    const ctx = ctxOf();
+    const membership = new CollectionModificationEvent(ctx, {} as Collection, []);
+
+    expect(await context.resolveActor(ctx, membership)).toEqual({ actorType: 'system', source: 'collection_rules' });
+    expect(await context.resolveActor(ctx)).toMatchObject({ actorType: 'system', source: 'unknown_system' });
+    expect(await context.resolveActor(ctx, membership)).toMatchObject({ source: 'collection_rules' });
+    expect(administratorService.resolveActorAdministrator).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the session's administrator for a change of collection contents inside their request", async () => {
+    const { context } = service();
+    const ctx = ctxOf();
+    expect(await context.resolveActor(ctx, new CollectionModificationEvent(ctx, {} as Collection, []))).toMatchObject({
+      actorType: 'admin',
+      source: 'admin',
     });
   });
 

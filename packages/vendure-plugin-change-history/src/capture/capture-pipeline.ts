@@ -26,6 +26,19 @@ export interface CaptureRequest {
   input?: unknown;
   event?: VendureEvent;
   meta?: Record<string, unknown>;
+  /** Extra `meta` per id (merged over `meta`). */
+  metaById?: ReadonlyMap<string, Record<string, unknown>>;
+  /** Overrides the groups to load (default: from `input`, or everything). */
+  scope?: ReadonlySet<string>;
+  /** Only these keys are compared (a move compares `parent` and `position`, nothing else). */
+  fields?: readonly string[];
+  /**
+   * The entities as the event carries them, by id: the last state of a `deleted` row that neither the
+   * committed read nor the transaction can see any more (a hard delete without a before-state).
+   */
+  entities?: ReadonlyMap<string, object>;
+  /** Collect the drafts here instead of writing them (the caller writes them later). */
+  collect?: EntryDraft[];
 }
 
 type CommittedRead = Map<string, LoadedState> | NoBeforeState;
@@ -86,7 +99,10 @@ export class CapturePipeline {
     const transaction = this.context.transactionStateOf(ctx);
     const key = (id: string) => `${def.entityType}:${id}`;
     const scope =
-      request.mode === 'updated' && request.input !== undefined ? def.scopeFor(request.input) : new Set(def.fullScope);
+      request.scope ??
+      (request.mode === 'updated' && request.input !== undefined
+        ? def.scopeFor(request.input)
+        : new Set(def.fullScope));
 
     // 1. Before: what this transaction saw last, completed by a committed read of whatever it does not cover.
     const seen = new Map<string, LoadedState>();
@@ -119,11 +135,13 @@ export class CapturePipeline {
         const read = await committed;
         const drafts: EntryDraft[] = [];
         for (const id of ids) {
+          const entity = request.entities?.get(id);
           const draft = this.draft(def, id, request, {
             seen: seen.get(id),
             read: read instanceof Map ? read.get(id) : undefined,
             noBefore: read instanceof Map || !toRead.includes(id) ? undefined : read.noBefore,
             after: after.get(id),
+            fallback: entity && def.fromEntity ? def.fromEntity(tctx, entity) : undefined,
           });
           if (draft) {
             drafts.push(draft);
@@ -134,7 +152,12 @@ export class CapturePipeline {
             await def.addLabels(tctx, manager, draft.changes);
           }
         }
-        return request.mode === 'deleted' ? this.withoutEarlierDeletions(manager, def, drafts) : drafts;
+        const result = request.mode === 'deleted' ? await this.withoutEarlierDeletions(manager, def, drafts) : drafts;
+        if (request.collect) {
+          request.collect.push(...result);
+          return [];
+        }
+        return result;
       },
       { event: request.event },
     );
@@ -189,9 +212,17 @@ export class CapturePipeline {
     def: ChangeHistoryEntityDefinition,
     id: string,
     request: CaptureRequest,
-    sides: { seen?: LoadedState; read?: LoadedState; noBefore?: NoBeforeState['noBefore']; after?: LoadedState },
+    sides: {
+      seen?: LoadedState;
+      read?: LoadedState;
+      noBefore?: NoBeforeState['noBefore'];
+      after?: LoadedState;
+      fallback?: LoadedState;
+    },
   ): EntryDraft | undefined {
     const { after, noBefore } = sides;
+    const meta = { ...request.meta, ...request.metaById?.get(id) };
+    const fields = request.fields;
     const before = sides.seen ? merge(def, sides.read, sides.seen) : sides.read;
     const base = (state: LoadedState) => ({
       entityType: def.entityType,
@@ -204,7 +235,7 @@ export class CapturePipeline {
     const diffOptions = (groups: ReadonlySet<string>) => ({
       kindOf: (k: string) => def.kindOf(k),
       maxValueBytes: this.options.maxValueBytes,
-      include: (k: string) => groups.has(def.groupOf(k)),
+      include: (k: string) => groups.has(def.groupOf(k)) && (!fields || fields.includes(k)),
     });
 
     if (request.mode === 'created') {
@@ -215,7 +246,7 @@ export class CapturePipeline {
         ...base(after),
         summary: CHANGE_HISTORY_ACTIONS.created,
         changes: diffStates({}, after.values, diffOptions(after.groups)),
-        meta: request.meta,
+        meta,
       };
     }
 
@@ -224,7 +255,7 @@ export class CapturePipeline {
       if (before?.deleted && !sides.seen) {
         return undefined;
       }
-      const last = before ?? after;
+      const last = before ?? after ?? sides.fallback;
       if (!last) {
         return undefined;
       }
@@ -233,7 +264,7 @@ export class CapturePipeline {
         summary: CHANGE_HISTORY_ACTIONS.deleted,
         changes: null,
         meta: {
-          ...request.meta,
+          ...meta,
           lastState: capState(last.values, this.options.maxValueBytes),
           ...(before ? {} : { noBefore: noBefore ?? 'no_row' }),
         },
@@ -248,7 +279,7 @@ export class CapturePipeline {
         ...base(after),
         summary: `${request.action} (details unavailable)`,
         changes: null,
-        meta: { ...request.meta, noBefore },
+        meta: { ...meta, noBefore },
       };
     }
     const beforeState: LoadedState = before ?? { values: {}, groups: after.groups, label: after.label, deleted: false };
@@ -264,7 +295,7 @@ export class CapturePipeline {
       ...base(after),
       summary: changesSummary(changes),
       changes,
-      meta: { ...request.meta, ...(before ? {} : { noBefore: 'no_row' }) },
+      meta: { ...meta, ...(before ? {} : { noBefore: 'no_row' }) },
     };
   }
 

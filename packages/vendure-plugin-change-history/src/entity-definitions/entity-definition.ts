@@ -42,6 +42,11 @@ export interface ChangeHistoryEntityDefinition {
   ): Promise<Map<string, LoadedState>>;
   groupOf(key: string): string;
   kindOf(key: string): ChangeHistoryValueKind;
+  /**
+   * The state of an entity object as an event carries it (no database read): its own columns, translations
+   * and the relations it has loaded. The last state of a hard-deleted row that cannot be read any more.
+   */
+  fromEntity?(ctx: RequestContext, entity: object): LoadedState;
   /** Adds display labels to the changed references, after the diff (only changed ids are looked up). */
   addLabels(ctx: RequestContext, manager: EntityManager, changes: ChangeHistoryFieldChanges): Promise<void>;
 }

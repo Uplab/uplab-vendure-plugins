@@ -1,4 +1,11 @@
-import { AdministratorService, API_KEY_AUTH_STRATEGY_NAME, ProcessContext, RequestContext } from '@vendure/core';
+import {
+  AdministratorService,
+  API_KEY_AUTH_STRATEGY_NAME,
+  CollectionModificationEvent,
+  ProcessContext,
+  RequestContext,
+  VendureEvent,
+} from '@vendure/core';
 import { CHANGE_HISTORY_ACTOR_TYPES, CHANGE_HISTORY_SOURCES } from '../constants';
 import { ChangeHistoryActorResolver, ResolvedActor } from '../types';
 
@@ -29,6 +36,20 @@ export function sessionAdministratorResolver(administratorService: Administrator
             source: CHANGE_HISTORY_SOURCES.admin,
           };
     },
+  };
+}
+
+/**
+ * Collection contents recomputed by Vendure itself: the `apply-collection-filters` job runs with a context
+ * that has no user, after a filter, product or variant change. Matches `CollectionModificationEvent` only.
+ */
+export function collectionRulesResolver(): ChangeHistoryActorResolver {
+  return {
+    name: 'collection-rules',
+    resolve: (_ctx: RequestContext, event?: VendureEvent): ResolvedActor | undefined =>
+      event instanceof CollectionModificationEvent
+        ? { actorType: CHANGE_HISTORY_ACTOR_TYPES.system, source: CHANGE_HISTORY_SOURCES.collection_rules }
+        : undefined,
   };
 }
 

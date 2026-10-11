@@ -9,11 +9,11 @@ variants, collections, facets, assets and promotions with their before → after
 operations into batches, records the runs of external syncs (an ERP, a PIM, a price feed) with one row per
 changed value, and shows it all in the dashboard — in English and Ukrainian.
 
-> **Pre-release.** This version records products and variants automatically (Vendure's catalogue events)
-> and ships the `ChangeHistoryService` facade, the before-state and archive strategies, the
-> `changeHistoryEntries` query, the dashboard feed and the dashboard registration entry. Collections, facets,
-> assets, promotions, collection membership, the entity history blocks and tiered retention follow before
-> 0.1.0; until then `capture()` records only `Product` / `ProductVariant`, and `compact()` / `purge()` reject.
+> **Pre-release.** This version records the catalogue automatically (Vendure's events: products, variants,
+> collections and their contents, facets, facet values, assets, promotions, channel assignments) and ships the
+> `ChangeHistoryService` facade, the before-state and archive strategies, the `changeHistoryEntries` query, the
+> dashboard feed and the dashboard registration entry. The entity history blocks, the batch and run views and
+> tiered retention follow before 0.1.0; until then `compact()` / `purge()` reject.
 
 ## Contents
 
@@ -77,10 +77,15 @@ Every change is recorded **inside the transaction that makes it** (a blocking ev
 an entry commits or rolls back with its change, and a failing history write never fails your mutation — it is
 logged with a `[ChangeHistory]` prefix.
 
-| Entity         | Actions                                                                       | Fields                                                                                                                                                                                                                                 |
-| -------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product        | `created`, `updated`, `deleted`, `option_group_added`, `option_group_removed` | `enabled`, `name` / `slug` / `description` per language, `featuredAsset`, `assets` (order kept), `facetValues`, `optionGroups`, custom fields                                                                                          |
-| ProductVariant | `created`, `updated`, `deleted`, `stock_adjusted`                             | `sku`, `enabled`, `name` per language, `prices` (per channel and currency), `taxCategory`, `trackInventory`, `outOfStockThreshold`, `useGlobalOutOfStockThreshold`, `options`, `facetValues`, `featuredAsset`, `assets`, custom fields |
+| Entity         | Actions                                                                                                                              | Fields                                                                                                                                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product        | `created`, `updated`, `deleted`, `option_group_added`, `option_group_removed`, `collection_added`, `collection_removed`, `channel_*` | `enabled`, `name` / `slug` / `description` per language, `featuredAsset`, `assets` (order kept), `facetValues`, `optionGroups`, custom fields                                                                                          |
+| ProductVariant | `created`, `updated`, `deleted`, `stock_adjusted`, `channel_*`                                                                       | `sku`, `enabled`, `name` per language, `prices` (per channel and currency), `taxCategory`, `trackInventory`, `outOfStockThreshold`, `useGlobalOutOfStockThreshold`, `options`, `facetValues`, `featuredAsset`, `assets`, custom fields |
+| Collection     | `created`, `updated`, `moved`, `deleted`                                                                                             | `name` / `slug` / `description` per language, `isPrivate`, `inheritFilters`, `parent`, `filters` (JSON, facet values labelled), `featuredAsset`, `assets`, custom fields; `position` on a move only                                    |
+| Facet          | `created`, `updated`, `deleted`                                                                                                      | `name` per language, `code`, `isPrivate`, custom fields                                                                                                                                                                                |
+| FacetValue     | `created`, `updated`, `deleted`                                                                                                      | `name` per language, `code`, custom fields; under its facet, labelled "Facet: Value"                                                                                                                                                   |
+| Asset          | `created`, `updated`, `deleted`, `channel_*`                                                                                         | `name` per language, `type`, `mimeType`, `fileSize`, `width`, `height`, `focalPoint`, `tags`, custom fields                                                                                                                            |
+| Promotion      | `created`, `updated`, `deleted`                                                                                                      | `name` / `description` per language, `enabled`, `startsAt`, `endsAt`, `couponCode`, `perCustomerUsageLimit`, `usageLimit`, `conditions` / `actions` (JSON, facet values labelled), custom fields — not the computed `priorityScore`    |
 
 - **`updated`** lists only the fields that changed, with the value from before the save and after it. A save
   that changes nothing writes nothing.
@@ -88,6 +93,25 @@ logged with a `[ChangeHistory]` prefix.
   `meta.lastState`. Deleting a product records its variants' deletions too.
 - **`stock_adjusted`**: a manual stock change (an `ADJUSTMENT` movement), with the location and stock on hand
   before → after. Sales and allocations are not recorded, nor is the initial stock of a new variant.
+- **Collection contents.** A product is in a collection when one of its variants is. Every change of a
+  collection's products — the filters job after a filter, product or variant change, or a change inside a
+  request — writes one `collection_added` / `collection_removed` entry per product (on the Product, with the
+  collection as its parent, so it shows on both), grouped under one batch per collection and run: its head
+  (`entityType = 'Batch'`, `meta.kind = 'collection_rules'`, parent = the collection) says
+  `+3 / −1` and carries `meta.counts = { added, removed }`. A product that left because it was deleted gets no
+  entry (its own `deleted` entry says it). The plugin keeps the last known products of each collection in
+  `change_history_collection_members`; at every startup it records the contents of each collection it has no
+  row for, so the first change after you install it is recorded too. After running with `enabled: false`, call
+  `ChangeHistoryService.reseedCollectionMembership(ctx)` before re-enabling, or the first change of each
+  collection records everything that changed meanwhile.
+- **`moved`**: a collection moved under another parent or to another position, with `parent` and `position`
+  before → after. The siblings Vendure renumbers are not recorded.
+- **Cascades.** Deleting a collection records its descendants' deletions too, derived from it, each with its
+  last state and `meta.memberCount`. Deleting a facet records its values' deletions, derived from it. A deleted
+  facet value keeps how many products and variants used it (`meta.usedByProducts` / `meta.usedByVariants`).
+- **`channel_assigned` / `channel_removed`**: a product, variant or asset assigned to or removed from a
+  channel, with the channel in `meta` (`channelId`, `channelCode`). Removing an asset from its last channel is
+  part of deleting it and is left to its `deleted` entry.
 - **Custom fields** are recorded by key (`customFields.<name>`, `customFields.<name>.<language>` for
   translatable ones). Fields declared `readonly` or `internal` are written by code and left out, unless you list
   them in `entities.<Type>.includeReadonlyCustomFields`. Relation fields are stored as ids with the target's
@@ -100,8 +124,8 @@ logged with a `[ChangeHistory]` prefix.
 
 **Who.** The actor is resolved once per request: a `runBatch` actor first, then your `actorResolvers`, then the
 session's administrator (`admin`) or the owner of the API key the request authenticated with (`api_key`), and
-otherwise `system` with source `unknown_system` (its `meta` says which API and process). An entry's `source` is
-the actor's.
+otherwise `system`: with source `collection_rules` for a change of a collection's contents made by Vendure's
+filters job, else `unknown_system` (its `meta` says which API and process). An entry's `source` is the actor's.
 
 **Derived changes.** An entry gets `derivedFromId` when, in the same transaction, its parent already has an
 entry (a variant after its product) or the entity itself was created earlier in it. A plugin that rewrites the
@@ -142,6 +166,9 @@ await this.changeHistory.runBatch(ctx, { kind: 'bulk_edit', label: 'Bulk edit' }
   await this.saveAll(ctx, input);
 });
 ```
+
+`capture()` diffs any core type: `Product`, `ProductVariant`, `Collection`, `Facet`, `FacetValue`, `Promotion`
+and `Asset`. Use `recordAction` for anything else.
 
 For `ProductVariant` and `FacetValue` detail rows the plugin resolves the parent Product / Facet itself.
 `entityType`, `action`, `source` and batch `kind` are free strings; give yours labels in the dashboard.

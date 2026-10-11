@@ -63,6 +63,8 @@ export const CHANGE_HISTORY_HANDLER_IDS = {
   Product: 'change-history-product',
   ProductVariant: 'change-history-product-variant',
   Collection: 'change-history-collection',
+  /** The contents of a collection (`collection_added` / `collection_removed` on the products). */
+  CollectionMembership: 'change-history-collection-membership',
   Facet: 'change-history-facet',
   FacetValue: 'change-history-facet-value',
   Asset: 'change-history-asset',
@@ -71,6 +73,8 @@ export const CHANGE_HISTORY_HANDLER_IDS = {
   ProductOptionGroup: 'change-history-product-option-group',
   /** Manual stock adjustments of variants (`stock_adjusted`). */
   StockMovement: 'change-history-stock-movement',
+  /** Products, variants and assets assigned to / removed from a channel. */
+  Channel: 'change-history-channel',
 } as const;
 
 /**

@@ -1,12 +1,15 @@
 import {
   Asset,
   Channel,
+  Collection,
+  Facet,
   FacetValue,
   ID,
   Product,
   ProductOption,
   ProductOptionGroup,
   ProductVariant,
+  Promotion,
   RequestContext,
   TaxCategory,
   Type,
@@ -14,7 +17,7 @@ import {
 import { CustomFieldConfig } from '@vendure/core';
 import { customFieldSpecs } from '../custom-fields/custom-field-specs';
 import { ChangeHistoryFieldChange, ResolvedChangeHistoryPluginOptions } from '../types';
-import { CatalogEntityDefinition, CatalogRow, LabelLoader } from './catalog-definition';
+import { CatalogEntityDefinition, CatalogRow, ColumnField, LabelLoader } from './catalog-definition';
 import { labelsOf, pickTranslation } from './labels';
 
 const labels =
@@ -176,5 +179,233 @@ export function productVariantDefinition(
       const name = nameOf(row, ctx) ?? `Variant ${String(row.id)}`;
       return row.sku ? `${name} (${String(row.sku)})` : name;
     },
+  });
+}
+
+/** A configurable operation as stored by core (a collection filter, a promotion condition or action). */
+interface Operation {
+  code: string;
+  args: Array<{ name: string; value: string }>;
+}
+
+/** The operations as plain JSON: `[{ code, args: [{ name, value }] }]`, in their configured order. */
+const operationsOf = (key: string) => (row: CatalogRow) =>
+  ((row[key] as Operation[] | undefined) ?? []).map((op) => ({
+    code: op.code,
+    args: (op.args ?? []).map((arg) => ({ name: arg.name, value: arg.value })),
+  }));
+
+/**
+ * Arguments that hold facet value ids in core's operations: the facet filter (`facetValueIds`), the
+ * `at_least_n_with_facets` condition and the `facet_based_discount` action (`facets`).
+ */
+const FACET_VALUE_ARGS = new Set(['facetValueIds', 'facets']);
+
+/** Facet value ids inside the operations' facet value arguments, for their labels. */
+export const facetValueIdsOfOperations = (change: ChangeHistoryFieldChange): string[] => {
+  const ids = new Set<string>();
+  for (const side of [change.from, change.to]) {
+    for (const op of Array.isArray(side) ? (side as Operation[]) : []) {
+      for (const arg of op?.args ?? []) {
+        if (!FACET_VALUE_ARGS.has(arg?.name)) {
+          continue;
+        }
+        try {
+          const parsed: unknown = JSON.parse(arg.value);
+          (Array.isArray(parsed) ? parsed : []).forEach((id) => ids.add(String(id)));
+        } catch {
+          // Not a JSON list: nothing to label.
+        }
+      }
+    }
+  }
+  return [...ids];
+};
+
+/** A JSON column of configurable operations, its facet values labelled "Facet: Value". */
+const operationsColumn = (key: string): ColumnField => ({
+  key,
+  kind: 'json',
+  read: operationsOf(key),
+  labels: labels(FacetValue, 'facet'),
+  labelIds: facetValueIdsOfOperations,
+});
+
+/** The group of a collection's `position`: loaded and compared for a move only. */
+export const COLLECTION_POSITION_GROUP = 'position';
+
+/**
+ * The Collection definition: name / slug / description per language, `isPrivate`, `inheritFilters`, the parent,
+ * the filters (JSON), featured asset and assets, custom fields. `position` is compared only for a move (core
+ * renumbers siblings without events). The parent link is the parent collection, unless that is the root.
+ */
+export function collectionDefinition(
+  options: ResolvedChangeHistoryPluginOptions,
+  customFields: CustomFieldsConfig,
+): CatalogEntityDefinition {
+  const overrides = options.entities.Collection ?? {};
+  return new CatalogEntityDefinition({
+    entityType: 'Collection',
+    entity: Collection,
+    parentType: 'Collection',
+    parentId: (row) => ((row.parent as { isRoot?: boolean } | undefined)?.isRoot ? undefined : (row.parentId as ID)),
+    translatedFields: { name: 'text', slug: 'text', description: 'richtext' },
+    columns: [
+      { key: 'isPrivate', kind: 'bool', read: (row) => row.isPrivate },
+      { key: 'inheritFilters', kind: 'bool', read: (row) => row.inheritFilters },
+      { key: 'parent', kind: 'ref', read: (row) => idString(row.parentId), labels: labels(Collection) },
+      { key: 'featuredAsset', kind: 'ref', read: (row) => idString(row.featuredAssetId), labels: labels(Asset) },
+      operationsColumn('filters'),
+      { key: 'position', kind: 'text', read: (row) => row.position, group: COLLECTION_POSITION_GROUP },
+    ],
+    relations: [
+      {
+        key: 'assets',
+        relation: 'assets',
+        inputKeys: ['assetIds'],
+        kind: 'assets',
+        read: orderedAssetIds,
+        labels: labels(Asset),
+      },
+    ],
+    enrich: async (_ctx, manager, rows) => {
+      // Not a `parent` relation: TypeORM's query strategy cannot join the collection to itself on SQLite.
+      const root = await manager
+        .getRepository(Collection)
+        .findOne({ where: { isRoot: true }, select: { id: true }, loadEagerRelations: false });
+      for (const row of rows) {
+        row.parent = { id: row.parentId, isRoot: root != null && String(row.parentId) === String(root.id) };
+      }
+    },
+    customFields: customFieldSpecs(customFields.Collection, overrides),
+    extractors: options.fieldExtractors.filter((e) => e.entityType === 'Collection'),
+    overrides,
+    label: (row, ctx) => nameOf(row, ctx) ?? `Collection ${String(row.id)}`,
+  });
+}
+
+/** The Facet definition: name per language, `code`, `isPrivate`, custom fields. */
+export function facetDefinition(
+  options: ResolvedChangeHistoryPluginOptions,
+  customFields: CustomFieldsConfig,
+): CatalogEntityDefinition {
+  const overrides = options.entities.Facet ?? {};
+  return new CatalogEntityDefinition({
+    entityType: 'Facet',
+    entity: Facet,
+    translatedFields: { name: 'text' },
+    columns: [
+      { key: 'code', kind: 'text', read: (row) => row.code },
+      { key: 'isPrivate', kind: 'bool', read: (row) => row.isPrivate },
+    ],
+    relations: [],
+    customFields: customFieldSpecs(customFields.Facet, overrides),
+    extractors: options.fieldExtractors.filter((e) => e.entityType === 'Facet'),
+    overrides,
+    label: (row, ctx) => nameOf(row, ctx) ?? `Facet ${String(row.id)}`,
+  });
+}
+
+/** The FacetValue definition: name per language, `code`, custom fields; under its facet, labelled "Facet: Value". */
+export function facetValueDefinition(
+  options: ResolvedChangeHistoryPluginOptions,
+  customFields: CustomFieldsConfig,
+): CatalogEntityDefinition {
+  const overrides = options.entities.FacetValue ?? {};
+  return new CatalogEntityDefinition({
+    entityType: 'FacetValue',
+    entity: FacetValue,
+    parentType: 'Facet',
+    parentId: (row) => row.facetId as ID | undefined,
+    translatedFields: { name: 'text' },
+    columns: [{ key: 'code', kind: 'text', read: (row) => row.code }],
+    relations: [],
+    enrich: async (ctx, manager, rows) => {
+      const names = await labelsOf(
+        ctx,
+        manager,
+        Facet,
+        rows.map((row) => String(row.facetId)),
+      );
+      for (const row of rows) {
+        row.facetName = names[String(row.facetId)];
+      }
+    },
+    customFields: customFieldSpecs(customFields.FacetValue, overrides),
+    extractors: options.fieldExtractors.filter((e) => e.entityType === 'FacetValue'),
+    overrides,
+    label: (row, ctx) => {
+      const name = nameOf(row, ctx) ?? `FacetValue ${String(row.id)}`;
+      // Loaded by `enrich`, or the facet an event attached (a deleted facet's values).
+      const facet = row.facet as CatalogRow | undefined;
+      const facetName = (row.facetName as string | undefined) ?? (facet ? nameOf(facet, ctx) : undefined);
+      return facetName ? `${facetName}: ${name}` : name;
+    },
+  });
+}
+
+/**
+ * The Promotion definition: name / description per language, `enabled`, `startsAt` / `endsAt`, `couponCode`,
+ * the usage limits, conditions and actions (JSON), custom fields. `priorityScore` is computed by core from the
+ * conditions and actions and is left out.
+ */
+export function promotionDefinition(
+  options: ResolvedChangeHistoryPluginOptions,
+  customFields: CustomFieldsConfig,
+): CatalogEntityDefinition {
+  const overrides = options.entities.Promotion ?? {};
+  return new CatalogEntityDefinition({
+    entityType: 'Promotion',
+    entity: Promotion,
+    translatedFields: { name: 'text', description: 'richtext' },
+    columns: [
+      { key: 'enabled', kind: 'bool', read: (row) => row.enabled },
+      { key: 'startsAt', kind: 'date', read: (row) => row.startsAt },
+      { key: 'endsAt', kind: 'date', read: (row) => row.endsAt },
+      { key: 'couponCode', kind: 'text', read: (row) => row.couponCode },
+      { key: 'perCustomerUsageLimit', kind: 'text', read: (row) => row.perCustomerUsageLimit },
+      { key: 'usageLimit', kind: 'text', read: (row) => row.usageLimit },
+      operationsColumn('conditions'),
+      operationsColumn('actions'),
+    ],
+    relations: [],
+    customFields: customFieldSpecs(customFields.Promotion, overrides),
+    extractors: options.fieldExtractors.filter((e) => e.entityType === 'Promotion'),
+    overrides,
+    label: (row, ctx) => nameOf(row, ctx) ?? `Promotion ${String(row.id)}`,
+  });
+}
+
+/** Tag values, sorted: a tag is its value, so the value is the "id" and needs no label. */
+const tagValuesOf = (row: CatalogRow) =>
+  ((row.tags as Array<{ value: string }> | undefined) ?? []).map((tag) => tag.value).sort();
+
+/**
+ * The Asset definition: name per language, the file facts (`type`, `mimeType`, `fileSize`, `width`,
+ * `height`), `focalPoint`, tags, custom fields. Where an asset is used is recorded on the product, variant or
+ * collection that uses it.
+ */
+export function assetDefinition(
+  options: ResolvedChangeHistoryPluginOptions,
+  customFields: CustomFieldsConfig,
+): CatalogEntityDefinition {
+  const overrides = options.entities.Asset ?? {};
+  return new CatalogEntityDefinition({
+    entityType: 'Asset',
+    entity: Asset,
+    translatedFields: { name: 'text' },
+    columns: [
+      { key: 'type', kind: 'enum', read: (row) => row.type },
+      { key: 'mimeType', kind: 'text', read: (row) => row.mimeType },
+      { key: 'fileSize', kind: 'text', read: (row) => row.fileSize },
+      { key: 'width', kind: 'text', read: (row) => row.width },
+      { key: 'height', kind: 'text', read: (row) => row.height },
+      { key: 'focalPoint', kind: 'json', read: (row) => row.focalPoint },
+    ],
+    relations: [{ key: 'tags', relation: 'tags', inputKeys: ['tags'], kind: 'refs', read: tagValuesOf }],
+    customFields: customFieldSpecs(customFields.Asset, overrides),
+    extractors: options.fieldExtractors.filter((e) => e.entityType === 'Asset'),
+    overrides,
+    label: (row, ctx) => nameOf(row, ctx) ?? `Asset ${String(row.id)}`,
   });
 }

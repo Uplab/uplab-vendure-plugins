@@ -10,7 +10,12 @@ import {
 } from '@vendure/core';
 import { randomUUID } from 'node:crypto';
 import type { QueryRunner } from 'typeorm';
-import { sessionAdministratorResolver, unknownSystemResolver } from '../actors/built-in-resolvers';
+import {
+  collectionRulesResolver,
+  sessionAdministratorResolver,
+  unknownSystemResolver,
+} from '../actors/built-in-resolvers';
+import type { EntryDraft } from '../capture/entry-writer.service';
 import { Lru } from '../capture/lru';
 import { CHANGE_HISTORY_PLUGIN_OPTIONS, loggerCtx } from '../constants';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
@@ -28,11 +33,15 @@ const CHANGE_HISTORY_STATE = Symbol('changeHistoryState');
 export const LAST_SEEN_CAPACITY = 500;
 const ENTRIES_CAPACITY = 10_000;
 
-interface BatchState extends ChangeHistoryBatchInput {
+export interface BatchState extends ChangeHistoryBatchInput {
   /** `<kind>:<uuid>`. */
   id: string;
   /** The head entry is written lazily, together with the first member. */
   headWritten: boolean;
+  /** The head's summary (default: the label). */
+  summary?: string;
+  /** The entity the head belongs to (a collection-rules batch: its collection). */
+  parent?: { type: string; id: string };
 }
 
 /**
@@ -45,12 +54,18 @@ export interface TransactionState {
   entriesByEntity: Lru<string, ID>;
   createdIds: Lru<string, true>;
   lastSeen: Lru<string, LoadedState>;
+  /**
+   * Collections found deleted by their membership event, written when core's `CollectionEvent deleted` of the
+   * deleted collection follows (the deleted collection first, its descendants derived from it).
+   */
+  collectionDeletions: Map<string, EntryDraft>;
 }
 
 /** Per-request state, attached to the RequestContext. */
 export interface ChangeHistoryState {
   correlationId: string;
-  actor?: ResolvedActor;
+  /** The host's or the session's actor; `null` once neither matched (the fallback then depends on the event). */
+  actor?: ResolvedActor | null;
   batch?: BatchState;
   /** Keyed by the transaction's query runner. */
   transactions: WeakMap<QueryRunner, TransactionState>;
@@ -61,6 +76,7 @@ function newTransactionState(): TransactionState {
     entriesByEntity: new Lru(ENTRIES_CAPACITY),
     createdIds: new Lru(ENTRIES_CAPACITY),
     lastSeen: new Lru(LAST_SEEN_CAPACITY),
+    collectionDeletions: new Map(),
   };
 }
 
@@ -73,6 +89,7 @@ function newTransactionState(): TransactionState {
 export class ChangeHistoryContextService {
   /** The built-in links after the host's resolvers (Chain of responsibility). */
   private readonly session: ChangeHistoryActorResolver;
+  private readonly collectionRules: ChangeHistoryActorResolver;
   private readonly unknown: ChangeHistoryActorResolver;
 
   constructor(
@@ -82,6 +99,7 @@ export class ChangeHistoryContextService {
     private readonly connection: TransactionalConnection,
   ) {
     this.session = sessionAdministratorResolver(administratorService);
+    this.collectionRules = collectionRulesResolver();
     this.unknown = unknownSystemResolver(processContext);
   }
 
@@ -118,20 +136,24 @@ export class ChangeHistoryContextService {
 
   /**
    * The chain: a `runBatch` actor override → the host's resolvers → the session's administrator (or the
-   * owner of the API key) → an unknown system actor. Resolved once per request (the override excepted).
+   * owner of the API key) → the collection rules (a `CollectionModificationEvent` without a user) → an
+   * unknown system actor. The host / session result is resolved once per request; the two system fallbacks
+   * depend on the event and are decided per write.
    */
   async resolveActor(ctx: RequestContext, event?: VendureEvent): Promise<ResolvedActor> {
     const state = this.stateOf(ctx);
     if (state.batch?.actor) {
       return state.batch.actor;
     }
-    if (!state.actor) {
-      state.actor = await this.resolveUncached(ctx, event);
+    if (state.actor === undefined) {
+      state.actor = (await this.resolveUncached(ctx, event)) ?? null;
     }
-    return state.actor;
+    return (
+      state.actor ?? ((this.collectionRules.resolve(ctx, event) ?? this.unknown.resolve(ctx, event)) as ResolvedActor)
+    );
   }
 
-  private async resolveUncached(ctx: RequestContext, event?: VendureEvent): Promise<ResolvedActor> {
+  private async resolveUncached(ctx: RequestContext, event?: VendureEvent): Promise<ResolvedActor | undefined> {
     for (const resolver of this.options.actorResolvers) {
       try {
         const actor = await resolver.resolve(ctx, event);
@@ -143,6 +165,6 @@ export class ChangeHistoryContextService {
       }
     }
     // A failing built-in lookup fails the write instead of attributing the change to an unknown actor.
-    return (await this.session.resolve(ctx, event)) ?? (this.unknown.resolve(ctx, event) as ResolvedActor);
+    return (await this.session.resolve(ctx, event)) as ResolvedActor | undefined;
   }
 }

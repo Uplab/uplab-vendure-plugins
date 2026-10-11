@@ -23,11 +23,18 @@ export type LabelLoader = (
 ) => Promise<Record<string, string>>;
 
 /** A column of the entity's own row. */
-interface ColumnField {
+export interface ColumnField {
   key: string;
   kind: ChangeHistoryValueKind;
   read: (row: CatalogRow) => unknown;
   labels?: LabelLoader;
+  /** Ids to label in a change (default: the ids of the change itself). */
+  labelIds?: (change: ChangeHistoryFieldChange) => string[];
+  /**
+   * An on-demand group: the column is compared only when a capture asks for this group explicitly (a
+   * collection's `position`, which only a move changes on purpose). Not part of the full scope.
+   */
+  group?: string;
 }
 
 /** A relation loaded as its own query, only when the save could have changed it. */
@@ -54,6 +61,11 @@ export interface CatalogDefinitionConfig {
   translatedFields: Record<string, ChangeHistoryValueKind>;
   columns: ColumnField[];
   relations: RelationGroup[];
+  /**
+   * Adds what the label or the parent link needs to the loaded rows, with the reading manager (a facet value's
+   * facet name, whether a collection's parent is the root).
+   */
+  enrich?: (ctx: RequestContext, manager: EntityManager, rows: CatalogRow[]) => Promise<void>;
   customFields: CustomFieldSpec[];
   extractors: ChangeHistoryFieldExtractor[];
   overrides: ChangeHistoryEntityOverrides;
@@ -73,9 +85,9 @@ export type CatalogRow = Record<string, unknown> & {
 const extractorGroup = (key: string) => `extractor:${key}`;
 
 /**
- * The definition shared by the translatable catalogue entities (Product, ProductVariant): own columns,
- * translations, custom fields (scalars on the row and the translations, relations as ids), relation groups
- * loaded on demand and host field extractors.
+ * The definition shared by the translatable catalogue entities (Product, ProductVariant, Collection, Facet,
+ * FacetValue, Promotion, Asset): own columns, translations, custom fields (scalars on the row and the
+ * translations, relations as ids), relation groups loaded on demand and host field extractors.
  */
 export class CatalogEntityDefinition implements ChangeHistoryEntityDefinition {
   readonly entityType: ChangeHistoryCoreEntityType;
@@ -96,8 +108,11 @@ export class CatalogEntityDefinition implements ChangeHistoryEntityDefinition {
     }
     for (const column of config.columns) {
       this.kinds.set(column.key, column.kind);
+      if (column.group) {
+        this.groups.set(column.key, column.group);
+      }
       if (column.labels) {
-        this.labelLoaders.set(column.key, { load: column.labels });
+        this.labelLoaders.set(column.key, { load: column.labels, ids: column.labelIds });
       }
     }
     for (const relation of config.relations) {
@@ -181,6 +196,9 @@ export class CatalogEntityDefinition implements ChangeHistoryEntityDefinition {
       return states;
     }
     const rows = await this.loadRows(ids, manager, scope);
+    if (rows.length > 0) {
+      await this.config.enrich?.(ctx, manager, rows);
+    }
 
     const extracted = new Map<string, Map<string, unknown>>();
     for (const extractor of this.config.extractors) {
@@ -202,6 +220,23 @@ export class CatalogEntityDefinition implements ChangeHistoryEntityDefinition {
     return states;
   }
 
+  fromEntity(ctx: RequestContext, entity: object): LoadedState {
+    const row = entity as CatalogRow;
+    // What the object carries: its own row and translations, and each relation it has loaded.
+    const scope = new Set([
+      BASE_GROUP,
+      ...this.config.relations.filter((r) => Array.isArray(row[r.relation])).map((r) => r.key),
+    ]);
+    const parentId = this.config.parentId?.(row);
+    return {
+      values: this.normalise(row, scope, new Map()),
+      groups: scope,
+      label: this.labelOf(row, ctx),
+      parentId: parentId != null ? String(parentId) : undefined,
+      deleted: row.deletedAt != null,
+    };
+  }
+
   /** One row as the flat history view: own columns, translations, custom fields, relations, extractors. */
   private normalise(
     row: CatalogRow,
@@ -210,7 +245,9 @@ export class CatalogEntityDefinition implements ChangeHistoryEntityDefinition {
   ): Record<string, unknown> {
     const values: Record<string, unknown> = {};
     for (const column of this.config.columns) {
-      values[column.key] = normaliseScalar(column.read(row));
+      if (!column.group || scope.has(column.group)) {
+        values[column.key] = normaliseScalar(column.read(row));
+      }
     }
     const translatedFields = Object.keys(this.config.translatedFields);
     const translatedCustomFields = this.config.customFields.filter((spec) => spec.translatable);
@@ -289,6 +326,7 @@ export class CatalogEntityDefinition implements ChangeHistoryEntityDefinition {
           continue;
         }
         if (property) {
+          // One relation custom field: merged into the scalar custom fields of the row.
           row[head] = { ...(row[head] as object), [property]: (partial[head] as Record<string, unknown>)?.[property] };
         } else {
           row[head] = partial[head];

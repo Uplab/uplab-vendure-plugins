@@ -6,8 +6,11 @@ import { ModuleRef } from '@nestjs/core';
 import { adminApiExtensions } from './api/api-extensions';
 import { ChangeHistoryAdminResolver } from './api/change-history-admin.resolver';
 import { CapturePipeline } from './capture/capture-pipeline';
+import { ChannelCapture } from './capture/channel-capture';
+import { CollectionCapture } from './capture/collection-capture';
 import { ChangeHistoryWriter } from './capture/entry-writer.service';
 import { ChangeHistoryEventHandlers } from './capture/event-handlers';
+import { FacetCapture } from './capture/facet-capture';
 import { StockAdjustmentCapture } from './capture/stock-adjustments';
 import { CHANGE_HISTORY_PLUGIN_OPTIONS, readChangeHistory } from './constants';
 import { ChangeHistoryCollectionMembers } from './entities/change-history-collection-members.entity';
@@ -51,6 +54,9 @@ import { ChangeHistoryPluginOptions, ResolvedChangeHistoryPluginOptions } from '
     ChangeHistoryWriter,
     CapturePipeline,
     StockAdjustmentCapture,
+    CollectionCapture,
+    FacetCapture,
+    ChannelCapture,
     ChangeHistoryEventHandlers,
     ChangeHistoryService,
     ChangeHistoryRetentionService,
@@ -76,6 +82,7 @@ export class ChangeHistoryPlugin implements OnApplicationBootstrap, OnApplicatio
     private readonly moduleRef: ModuleRef,
     private readonly strategies: ChangeHistoryStrategies,
     private readonly eventHandlers: ChangeHistoryEventHandlers,
+    private readonly collections: CollectionCapture,
   ) {}
 
   /** Validates the options (throws on anything unusable) and applies the defaults. */
@@ -88,6 +95,8 @@ export class ChangeHistoryPlugin implements OnApplicationBootstrap, OnApplicatio
   async onApplicationBootstrap(): Promise<void> {
     await this.strategies.init(new Injector(this.moduleRef));
     this.eventHandlers.register();
+    // Never fails the bootstrap; a collection without a snapshot would lose its first change of contents.
+    await this.collections.seedMissing();
   }
 
   async onApplicationShutdown(): Promise<void> {

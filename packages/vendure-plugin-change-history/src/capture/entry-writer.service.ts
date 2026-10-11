@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ID, Logger, RequestContext, TransactionalConnection, VendureEvent } from '@vendure/core';
-import { CHANGE_HISTORY_ACTIONS, CHANGE_HISTORY_ENTITY_TYPES, loggerCtx } from '../constants';
+import { CHANGE_HISTORY_ACTIONS, CHANGE_HISTORY_ENTITY_TYPES, DETAIL_CHUNK_SIZE, loggerCtx } from '../constants';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
-import { ChangeHistoryContextService, TransactionState } from '../services/change-history-context.service';
+import { BatchState, ChangeHistoryContextService, TransactionState } from '../services/change-history-context.service';
 import { ChangeHistoryFieldChanges } from '../types';
 
 /** An entry before the writer adds the actor, batch, channel, derived link and correlation id. */
@@ -18,6 +18,8 @@ export interface EntryDraft {
   /** Overrides the actor's source (an external run names its own). */
   source?: string;
   meta?: Record<string, unknown>;
+  /** Overrides the derived rule (a cascade names its cause itself). */
+  derivedFromId?: ID | null;
 }
 
 const clip = (value: string, length: number) => (value.length > length ? value.slice(0, length) : value);
@@ -50,11 +52,13 @@ export class ChangeHistoryWriter {
     options: {
       event?: VendureEvent;
       afterInsert?: (tctx: RequestContext, entries: ChangeHistoryEntry[]) => Promise<void>;
+      /** A batch of this write only (a collection-rules run); an outer `runBatch` wins over it. */
+      batch?: BatchState;
     } = {},
   ): Promise<ChangeHistoryEntry[] | undefined> {
     const state = this.context.stateOf(ctx);
     const transaction = this.context.transactionStateOf(ctx);
-    const { batch } = state;
+    const batch = state.batch ?? options.batch;
     try {
       const saved = await this.connection.withTransaction(ctx, async (tctx) => {
         const drafts = await produce(tctx);
@@ -91,14 +95,21 @@ export class ChangeHistoryWriter {
                 entityId: batch.id.slice(batch.kind.length + 1),
                 entityLabel: label,
                 action: CHANGE_HISTORY_ACTIONS.batch,
-                summary: label,
+                summary: batch.summary ?? label,
+                parentType: batch.parent?.type,
+                parentId: batch.parent?.id,
                 meta: { ...batch.meta, kind: batch.kind, label: batch.label },
               },
               null,
             ),
           );
         }
-        const entries = await repository.save(drafts.map((draft) => build(draft, derivedFrom(transaction, draft))));
+        const entries = await repository.save(
+          drafts.map((draft) =>
+            build(draft, draft.derivedFromId !== undefined ? draft.derivedFromId : derivedFrom(transaction, draft)),
+          ),
+          { chunk: DETAIL_CHUNK_SIZE },
+        );
         await options.afterInsert?.(tctx, entries);
         return entries;
       });
