@@ -197,6 +197,21 @@ describe('CapturePipeline', () => {
     expect(saved[0].meta).not.toHaveProperty('noBefore');
   });
 
+  it('keeps the kind and the labels of each non-text value of the last state', async () => {
+    const { pipeline, definition, ctx, saved } = setup({
+      committed: { '1': { sku: 'A', facetValues: ['7'] }, '2': { sku: 'B', facetValues: [] } },
+      current: { '1': { sku: 'A', deleted: true }, '2': { sku: 'B', deleted: true } },
+    });
+    await pipeline.run(ctx, definition, [1, 2], { mode: 'deleted', action: 'deleted' });
+
+    expect(saved.map((entry) => entry.meta.lastStateFields)).toEqual([
+      // `sku` is text: no item. The id list carries its labels.
+      { facetValues: { kind: 'refs', labels: { x: 'label' } } },
+      // A blank value needs no kind.
+      {},
+    ]);
+  });
+
   it.each([
     ['unsupported', { noBefore: 'unsupported' as const }],
     ['pool', { noBefore: 'pool' as const }],

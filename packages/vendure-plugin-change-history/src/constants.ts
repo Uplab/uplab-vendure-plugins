@@ -105,6 +105,12 @@ export const MAX_COMPACT_DETAIL_ROWS = 50_000;
 /** Largest page of `ChangeHistoryService.runDetails`. */
 export const MAX_DETAIL_PAGE = 500;
 
+/**
+ * Detail rows a run item of an entity timeline carries at most (`details`); `detailsTotal` says how many the run
+ * has, the rest is paged through `changeHistoryRunDetails`.
+ */
+export const MAX_TIMELINE_RUN_DETAILS = 50;
+
 export const DEFAULTS = {
   maxValueBytes: 16_384,
   archiveKeyPrefix: 'change-history-archive',

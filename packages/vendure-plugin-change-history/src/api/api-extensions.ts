@@ -36,8 +36,14 @@ export const adminApiExtensions: Document = gql`
     batchCounts: [ChangeHistoryBatchCount!]
     "The recorded catalogue entity no longer exists or is soft-deleted. Always false for batches, runs and host types."
     entityDeleted: Boolean!
-    "Only on a run item of changeHistoryEntityTimeline: the rows of the timeline's entity (and its children)."
+    "The parent (a rules batch head's collection, a membership row's collection, a variant's product) no longer exists or is soft-deleted. Always false without a catalogue parent."
+    parentDeleted: Boolean!
+    "Only on a run item of changeHistoryEntityTimeline: the first 50 rows of the timeline's entity (and its children); page the rest with changeHistoryRunDetails."
     details: [ChangeHistoryDetail!]
+    "Only on a run item of changeHistoryEntityTimeline: how many rows of the timeline's entity (and its children) the run has."
+    detailsTotal: Int
+    "Only on a run item of changeHistoryEntityTimeline: how many entities those rows touch."
+    detailsEntityCount: Int
     "Entries derived from this one, newest first."
     derivedEntries(options: ChangeHistoryEntryListOptions): ChangeHistoryEntryList!
     "The members of a batch head (the head excluded), newest first; empty for other entries."

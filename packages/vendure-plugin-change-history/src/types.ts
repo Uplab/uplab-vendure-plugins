@@ -52,6 +52,17 @@ export type ChangeHistoryFieldChanges = Record<string, ChangeHistoryFieldChange>
 
 /**
  * @description
+ * How the dashboard renders one value of a deleted entity's `meta.lastState`, kept next to it in
+ * `meta.lastStateFields`: the value's kind and the display labels of the ids inside it. A key without an item
+ * is plain text; entries recorded before these were kept have no `lastStateFields` at all.
+ */
+export interface ChangeHistoryLastStateField {
+  kind: ChangeHistoryValueKind;
+  labels?: Record<string, string>;
+}
+
+/**
+ * @description
  * Per built-in entity: noise filters, readonly exceptions, value kinds, label. Hosts tune the built-in
  * capture definitions, they do not replace them.
  */

@@ -43,6 +43,7 @@ export type {
   ChangeHistoryFieldChange,
   ChangeHistoryFieldChanges,
   ChangeHistoryFieldExtractor,
+  ChangeHistoryLastStateField,
   ChangeHistoryPluginOptions,
   ChangeHistoryRetentionOptions,
   ChangeHistoryRunInput,

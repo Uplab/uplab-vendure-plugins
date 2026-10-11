@@ -9,7 +9,7 @@ import { changesSummary, diffStates } from '../diff/diff';
 import { capState } from '../diff/truncate';
 import { ChangeHistoryContextService } from '../services/change-history-context.service';
 import { ChangeHistoryStrategies } from '../services/change-history-strategies.service';
-import { ResolvedChangeHistoryPluginOptions } from '../types';
+import { ChangeHistoryFieldChanges, ChangeHistoryLastStateField, ResolvedChangeHistoryPluginOptions } from '../types';
 import { ChangeHistoryWriter, EntryDraft, logFailure } from './entry-writer.service';
 
 /**
@@ -161,6 +161,10 @@ export class CapturePipeline {
         for (const draft of drafts) {
           if (draft.changes) {
             await def.addLabels(tctx, manager, draft.changes);
+          }
+          const lastState = draft.meta?.lastState as Record<string, unknown> | undefined;
+          if (request.mode === 'deleted' && lastState) {
+            draft.meta!.lastStateFields = await lastStateFields(tctx, manager, def, lastState);
           }
         }
         const result = request.mode === 'deleted' ? await this.withoutEarlierDeletions(manager, def, drafts) : drafts;
@@ -330,6 +334,33 @@ export class CapturePipeline {
     const deleted = new Set(earlier.map((entry) => entry.entityId));
     return drafts.filter((draft) => !deleted.has(draft.entityId));
   }
+}
+
+const isBlank = (value: unknown) =>
+  value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
+
+/**
+ * The kind of each value of a deleted entity's last state and the labels of the ids inside it — what the
+ * dashboard needs to render the last state like a diff (rich text as text, money formatted, references by
+ * name). Plain-text values are left out.
+ */
+async function lastStateFields(
+  ctx: RequestContext,
+  manager: EntityManager,
+  def: ChangeHistoryEntityDefinition,
+  state: Record<string, unknown>,
+): Promise<Record<string, ChangeHistoryLastStateField>> {
+  const fields: ChangeHistoryFieldChanges = {};
+  for (const [key, value] of Object.entries(state)) {
+    const kind = def.kindOf(key);
+    if (kind !== 'text' && !isBlank(value)) {
+      fields[key] = { kind, to: value };
+    }
+  }
+  await def.addLabels(ctx, manager, fields);
+  return Object.fromEntries(
+    Object.entries(fields).map(([key, { kind, labels }]) => [key, { kind: kind!, ...(labels ? { labels } : {}) }]),
+  );
 }
 
 /** `next` completed by the values of `previous` for the groups `next` did not load. */

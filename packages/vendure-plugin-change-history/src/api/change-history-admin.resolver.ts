@@ -82,6 +82,11 @@ export class ChangeHistoryEntryResolver {
   }
 
   @ResolveField()
+  parentDeleted(@Ctx() ctx: RequestContext, @Parent() entry: ChangeHistoryEntry): Promise<boolean> {
+    return this.reader.parentDeleted(ctx, entry);
+  }
+
+  @ResolveField()
   derivedEntries(
     @Ctx() ctx: RequestContext,
     @Parent() entry: ChangeHistoryEntry,

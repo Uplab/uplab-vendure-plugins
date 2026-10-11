@@ -18,6 +18,7 @@ import {
   CREATE_FACET,
   CREATE_OPTION_GROUP,
   CREATE_PRODUCT,
+  CREATE_PRODUCT_WITH,
   CREATE_ROLE,
   CREATE_VARIANTS,
   DELETE_PRODUCT,
@@ -223,6 +224,32 @@ export function apiScenarios(env: ApiEnv): void {
         ]);
       });
 
+      it("says whether an entry's parent is gone", async () => {
+        const collection = await insert({
+          entityType: 'Batch',
+          entityId: 'pd-parent',
+          entityLabel: 'pd-gone-parent',
+          action: 'batch',
+          batchId: 'collection_rules:pd-gone',
+          parentType: 'Collection',
+          parentId: '999999',
+        });
+        const host = await insert({
+          entityType: 'Product',
+          entityId: 'pd-host',
+          entityLabel: 'pd-host-parent',
+          action: 'updated',
+          parentType: 'Wishlist',
+          parentId: '999999',
+        });
+        const read = async (id: unknown) =>
+          (await query(CHANGE_HISTORY_ENTRY, { id: encode(id) })).changeHistoryEntry as Item;
+        expect(await read(collection.id)).toMatchObject({ parentDeleted: true, entityDeleted: false });
+        // A host type is never checked; an entry without a parent has none to lose.
+        expect(await read(host.id)).toMatchObject({ parentDeleted: false });
+        expect(await read(seeded.one.id)).toMatchObject({ parentDeleted: false });
+      });
+
       it('counts derived entries and batch members, live and from the compaction snapshot', async () => {
         await insert({
           entityType: 'Product',
@@ -401,6 +428,7 @@ export function apiScenarios(env: ApiEnv): void {
           ['P2-TEE-M', 'Lviv', 0, 2],
           ['P2-TEE-S', 'Kyiv', 7, 8],
         ]);
+        expect(run).toMatchObject({ detailsTotal: 3, detailsEntityCount: 2 });
         expect(run.details[0]).toMatchObject({
           entityType: 'ProductVariant',
           entityId: decode(variantM),
@@ -421,6 +449,8 @@ export function apiScenarios(env: ApiEnv): void {
           expect.arrayContaining(['created', 'updated', 'collection_added']),
         );
         expect(items.filter((item) => item.entityType !== 'Run').every((item) => item.details === null)).toBe(true);
+        expect(items.filter((item) => item.entityType !== 'Run').every((item) => item.detailsTotal === null)).toBe(true);
+        expect(added).toMatchObject({ parentDeleted: false });
 
         const own = await timeline({ entityType: 'Product', entityId: decode(productId), includeChildren: false });
         expect(own.items.every((item) => item.entityType === 'Product')).toBe(true);
@@ -490,6 +520,36 @@ export function apiScenarios(env: ApiEnv): void {
         expect(items).toContainEqual(expect.objectContaining({ entityType: 'Facet', action: 'created' }));
       });
 
+      it('caps the rows of a large run on a timeline item and counts them all', async () => {
+        const rows = [variantS, variantM].flatMap((variant) =>
+          Array.from({ length: 30 }, (_, index) => ({
+            entityType: 'ProductVariant',
+            entityId: decode(variant),
+            kind: 'stock',
+            scope: `cap-${index}`,
+            from: index,
+            to: index + 1,
+          })),
+        );
+        await history().recordRun(await superadminCtx(env.app()), {
+          source: 'p2_stock_sync',
+          label: 'p2 large sync',
+          counts: { updated: rows.length },
+          details: rows,
+        });
+        const { items } = await timeline({ entityType: 'Product', entityId: decode(productId), first: 1 });
+        expect(items[0]).toMatchObject({ entityType: 'Run', detailsTotal: 60, detailsEntityCount: 2 });
+        expect(items[0].details).toHaveLength(50);
+        const variant = await timeline({ entityType: 'ProductVariant', entityId: decode(variantS), first: 1 });
+        expect(variant.items[0]).toMatchObject({ detailsTotal: 30, detailsEntityCount: 1 });
+        expect(variant.items[0].details).toHaveLength(30);
+        const [run] = await entriesWhere(env.app(), { entityLabel: 'p2 large sync' });
+        const all = (await query(CHANGE_HISTORY_RUN_DETAILS, { entryId: encode(run.id), skip: 50, take: 100 }))
+          .changeHistoryRunDetails;
+        expect(all).toMatchObject({ totalItems: 60 });
+        expect(all.items).toHaveLength(10);
+      });
+
       it("serves a run's rows with current labels, sorted by SKU, paged", async () => {
         const [run] = await entriesWhere(env.app(), { entityLabel: 'p2 stock sync' });
         const page = async (skip: number) =>
@@ -514,6 +574,23 @@ export function apiScenarios(env: ApiEnv): void {
         expect(deleted.items[0]).toMatchObject({ entityType: 'Product', action: 'deleted', entityDeleted: true });
         expect(deleted.items.map((item) => item.entityType)).toContain('ProductVariant');
         expect(deleted.items.every((item) => item.entityDeleted)).toBe(true);
+        // Each value's kind and the labels of the ids in it, so the last state renders like a diff.
+        const { createProduct: described } = await query(CREATE_PRODUCT_WITH, {
+          input: {
+            enabled: false,
+            facetValueIds: [tagId],
+            translations: [{ languageCode: 'en', name: 'p2-described', slug: 'p2-described', description: '<p>Soft</p>' }],
+          },
+        });
+        await query(DELETE_PRODUCT, { id: described.id });
+        const [last] = (await feed({ entityLabel: { eq: 'p2-described' }, action: { eq: 'deleted' } })).items;
+        expect(last.meta.lastState).toMatchObject({ 'description.en': '<p>Soft</p>', enabled: false });
+        expect(last.meta.lastStateFields).toMatchObject({
+          'description.en': { kind: 'richtext' },
+          enabled: { kind: 'bool' },
+          facetValues: { kind: 'refs', labels: { [decode(tagId)]: expect.stringMatching(/^Tag: /) } },
+        });
+        expect(last.meta.lastStateFields).not.toHaveProperty('name.en');
         const alive = await feed({ entityType: { eq: 'Product' }, entityId: { eq: decode(productId) } });
         expect(alive.items.length).toBeGreaterThan(0);
         expect(alive.items.every((item) => !item.entityDeleted)).toBe(true);

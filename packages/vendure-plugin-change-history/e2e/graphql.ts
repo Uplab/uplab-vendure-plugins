@@ -369,6 +369,7 @@ const ENTRY_FIELDS = `
     count
   }
   entityDeleted
+  parentDeleted
 `;
 
 const DETAIL_FIELDS = `
@@ -440,6 +441,8 @@ export const CHANGE_HISTORY_TIMELINE: Document = gql`
         details {
           ${DETAIL_FIELDS}
         }
+        detailsTotal
+        detailsEntityCount
       }
       endCursor
       hasMore

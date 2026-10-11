@@ -15,6 +15,7 @@ import {
   CHANGE_HISTORY_PLUGIN_OPTIONS,
   DETAIL_CHUNK_SIZE,
   MAX_DETAIL_PAGE,
+  MAX_TIMELINE_RUN_DETAILS,
 } from '../constants';
 import { ChangeHistoryDetail } from '../entities/change-history-detail.entity';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
@@ -45,8 +46,15 @@ export interface ChangeHistoryDetailView {
   to: unknown;
 }
 
-/** A timeline item; a run carries the subject's rows of it in `details`. */
-export type ChangeHistoryTimelineEntry = ChangeHistoryEntry & { details?: ChangeHistoryDetailView[] };
+/**
+ * A timeline item; a run carries the subject's rows of it in `details` (the first {@link MAX_TIMELINE_RUN_DETAILS}),
+ * how many it has in `detailsTotal` and how many entities they touch in `detailsEntityCount`.
+ */
+export type ChangeHistoryTimelineEntry = ChangeHistoryEntry & {
+  details?: ChangeHistoryDetailView[];
+  detailsTotal?: number;
+  detailsEntityCount?: number;
+};
 
 export interface ChangeHistoryEntityTimeline {
   items: ChangeHistoryTimelineEntry[];
@@ -174,6 +182,10 @@ export class ChangeHistoryReader {
   private readonly deleted = new Batcher<RequestContext, ChangeHistoryEntry, boolean>(
     (entry) => String(entry.id),
     (ctx, entries) => this.loadDeleted(ctx, entries),
+  );
+  private readonly parentsDeleted = new Batcher<RequestContext, ChangeHistoryEntry, boolean>(
+    (entry) => String(entry.id),
+    (ctx, entries) => this.loadParentsDeleted(ctx, entries),
   );
   /** Per channel scope (see `scopeKey`). */
   private readonly filterOptionsCache = new Map<string, CachedFilterOptions>();
@@ -401,6 +413,17 @@ export class ChangeHistoryReader {
     return (await this.deleted.get(ctx, entry)) ?? false;
   }
 
+  /**
+   * Whether the entry's parent (a rules batch head's collection, the collection of a membership row, a variant's
+   * product) no longer exists or is soft-deleted. Always `false` without a core parent.
+   */
+  async parentDeleted(ctx: RequestContext, entry: ChangeHistoryEntry): Promise<boolean> {
+    if (!entry.parentType || !entry.parentId) {
+      return false;
+    }
+    return (await this.parentsDeleted.get(ctx, entry)) ?? false;
+  }
+
   private asText(path: string): string {
     return timestampAsText(this.connection.rawConnection.options.type, path);
   }
@@ -485,7 +508,11 @@ export class ChangeHistoryReader {
     return keys.filter((key) => byId.has(key.id)).map((key) => ({ entry: byId.get(key.id)!, key, run: true }));
   }
 
-  /** Puts the subject's rows of each run of the page on the run's item, labelled and sorted. */
+  /**
+   * Puts the subject's rows of each run of the page on the run's item — the first
+   * {@link MAX_TIMELINE_RUN_DETAILS} by insertion order, labelled and sorted — with their total and the number
+   * of entities they touch. A run of thousands of rows costs one grouped count and one capped read.
+   */
   private async fillDetails(
     ctx: RequestContext,
     manager: EntityManager,
@@ -497,27 +524,56 @@ export class ChangeHistoryReader {
     if (runs.length === 0) {
       return;
     }
-    const rows = await manager
-      .getRepository(ChangeHistoryDetail)
-      .createQueryBuilder('detail')
-      .where({ entryId: In(runs.map((candidate) => candidate.entry.id)) })
-      .andWhere(
-        new Brackets((query) => {
-          query.where('(detail.entityType = :subjectType AND detail.entityId = :subjectId)', subject);
-          if (includeChildren) {
-            query.orWhere('(detail.parentType = :subjectType AND detail.parentId = :subjectId)', subject);
-          }
-        }),
-      )
-      .orderBy('detail.id', 'ASC')
-      .getMany();
+    const ofSubject = (entryIds: ID[]) =>
+      manager
+        .getRepository(ChangeHistoryDetail)
+        .createQueryBuilder('detail')
+        .where({ entryId: In(entryIds) })
+        .andWhere(
+          new Brackets((query) => {
+            query.where('(detail.entityType = :subjectType AND detail.entityId = :subjectId)', subject);
+            if (includeChildren) {
+              query.orWhere('(detail.parentType = :subjectType AND detail.parentId = :subjectId)', subject);
+            }
+          }),
+        );
+    const counts = await ofSubject(runs.map((candidate) => candidate.entry.id))
+      .select('detail.entryId', 'entryId')
+      .addSelect('COUNT(*)', 'total')
+      .addSelect('COUNT(DISTINCT detail.entityId)', 'entities')
+      .groupBy('detail.entryId')
+      .addGroupBy('detail.entityType')
+      .getRawMany<{ entryId: unknown; total: string | number; entities: string | number }>();
+    const totals = new Map<string, { total: number; entities: number }>();
+    for (const row of counts) {
+      const known = totals.get(String(row.entryId)) ?? { total: 0, entities: 0 };
+      totals.set(String(row.entryId), {
+        total: known.total + Number(row.total),
+        entities: known.entities + Number(row.entities),
+      });
+    }
+    const rows: ChangeHistoryDetail[] = [];
+    for (const candidate of runs) {
+      const total = totals.get(String(candidate.entry.id))?.total ?? 0;
+      if (total > 0) {
+        rows.push(
+          ...(await ofSubject([candidate.entry.id])
+            .orderBy('detail.id', 'ASC')
+            .limit(MAX_TIMELINE_RUN_DETAILS)
+            .getMany()),
+        );
+      }
+    }
     const grouped = new Map<string, ChangeHistoryDetailView[]>();
     for (const view of await this.detailViews(ctx, manager, rows)) {
       const key = String(view.entryId);
       grouped.set(key, [...(grouped.get(key) ?? []), view]);
     }
     for (const candidate of runs) {
-      candidate.entry.details = grouped.get(String(candidate.entry.id)) ?? [];
+      const key = String(candidate.entry.id);
+      candidate.entry.details = grouped.get(key) ?? [];
+      candidate.entry.detailsTotal = totals.get(key)?.total ?? 0;
+      candidate.entry.detailsEntityCount = totals.get(key)?.entities ?? 0;
     }
   }
 
@@ -618,5 +674,12 @@ export class ChangeHistoryReader {
     const manager = this.connection.getRepository(ctx, ChangeHistoryEntry).manager;
     const deleted = await deletedRefs(manager, entries);
     return new Map(entries.map((entry) => [String(entry.id), deleted.has(refKey(entry))]));
+  }
+
+  private async loadParentsDeleted(ctx: RequestContext, entries: ChangeHistoryEntry[]): Promise<Map<string, boolean>> {
+    const manager = this.connection.getRepository(ctx, ChangeHistoryEntry).manager;
+    const parentOf = (entry: ChangeHistoryEntry) => ({ entityType: entry.parentType!, entityId: entry.parentId! });
+    const deleted = await deletedRefs(manager, entries.map(parentOf));
+    return new Map(entries.map((entry) => [String(entry.id), deleted.has(refKey(parentOf(entry)))]));
   }
 }
