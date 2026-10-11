@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": ["src/**/*", "e2e/**/*", "vitest.config.mts"],
+  "exclude": ["src/dashboard/**/*"]
+}

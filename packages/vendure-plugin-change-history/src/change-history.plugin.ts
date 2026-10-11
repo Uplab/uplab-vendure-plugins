@@ -1,0 +1,83 @@
+// Keep this import first: the dashboard's plugin discovery only scans compiled files that mention
+// `@vendure/core` within their first 5 KB.
+import { Injector, PluginCommonModule, Type, VendurePlugin } from '@vendure/core';
+import { OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import { adminApiExtensions } from './api/api-extensions';
+import { ChangeHistoryAdminResolver } from './api/change-history-admin.resolver';
+import { CHANGE_HISTORY_PLUGIN_OPTIONS, readChangeHistory } from './constants';
+import { ChangeHistoryCollectionMembers } from './entities/change-history-collection-members.entity';
+import { ChangeHistoryDetail } from './entities/change-history-detail.entity';
+import { ChangeHistoryEntry } from './entities/change-history-entry.entity';
+import { resolveOptions } from './options';
+import { ChangeHistoryContextService } from './services/change-history-context.service';
+import { ChangeHistoryRetentionService } from './services/change-history-retention.service';
+import { ChangeHistoryStrategies } from './services/change-history-strategies.service';
+import { ChangeHistoryService } from './services/change-history.service';
+import { ChangeHistoryPluginOptions, ResolvedChangeHistoryPluginOptions } from './types';
+
+/**
+ * @description
+ * Records who changed what in the catalogue and when — products, variants, collections, facets, assets
+ * and promotions — with before → after values, batches of bulk operations and runs of external syncs,
+ * and shows it in the dashboard. Entities only: the host generates the migration.
+ *
+ * @example
+ * ```ts
+ * plugins: [
+ *   ChangeHistoryPlugin.init({
+ *     retention: { archive: new FileSystemArchiveStorage({ dir: './change-history-archive' }) },
+ *   }),
+ * ]
+ * ```
+ */
+@VendurePlugin({
+  imports: [PluginCommonModule],
+  entities: [ChangeHistoryEntry, ChangeHistoryDetail, ChangeHistoryCollectionMembers],
+  adminApiExtensions: {
+    schema: adminApiExtensions,
+    resolvers: [ChangeHistoryAdminResolver],
+  },
+  providers: [
+    { provide: CHANGE_HISTORY_PLUGIN_OPTIONS, useFactory: () => ChangeHistoryPlugin.options },
+    ChangeHistoryContextService,
+    ChangeHistoryStrategies,
+    ChangeHistoryService,
+    ChangeHistoryRetentionService,
+  ],
+  exports: [ChangeHistoryService, ChangeHistoryRetentionService],
+  // Resolved relative to the compiled plugin file; the sources are copied to `dist/dashboard/`. Must stay
+  // a string literal: the dashboard finds it by a static scan.
+  dashboard: './dashboard/index.tsx',
+  compatibility: '^3.7.0',
+  configuration: (config) => {
+    if (!ChangeHistoryPlugin.options) {
+      throw new Error('ChangeHistoryPlugin: register it as ChangeHistoryPlugin.init({ retention: { archive } })');
+    }
+    config.authOptions.customPermissions = [...(config.authOptions.customPermissions ?? []), readChangeHistory];
+    return config;
+  },
+})
+export class ChangeHistoryPlugin implements OnApplicationBootstrap, OnApplicationShutdown {
+  /** @internal */
+  static options: ResolvedChangeHistoryPluginOptions;
+
+  constructor(
+    private readonly moduleRef: ModuleRef,
+    private readonly strategies: ChangeHistoryStrategies,
+  ) {}
+
+  /** Validates the options (throws on anything unusable) and applies the defaults. */
+  static init(options: ChangeHistoryPluginOptions): Type<ChangeHistoryPlugin> {
+    this.options = resolveOptions(options);
+    return ChangeHistoryPlugin;
+  }
+
+  async onApplicationBootstrap(): Promise<void> {
+    await this.strategies.init(new Injector(this.moduleRef));
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.strategies.destroy();
+  }
+}

@@ -1,0 +1,137 @@
+import type { ComponentType } from 'react';
+
+/**
+ * A label: a Lingui `MessageDescriptor` (`msg\`…\``), translated by the host's catalogs, or a plain
+ * string, shown verbatim.
+ */
+export type ChangeHistoryLabel =
+  string | { id: string; message?: string; comment?: string; values?: Record<string, unknown> };
+
+/** One changed field of an entry, as the API returns it in `changes`. */
+export interface ChangeHistoryFieldChange {
+  from?: unknown;
+  to?: unknown;
+  kind?: string;
+  added?: string[];
+  removed?: string[];
+  reordered?: boolean;
+  labels?: Record<string, string>;
+  truncated?: boolean;
+  stripped?: boolean;
+  fromLength?: number;
+  toLength?: number;
+  [extra: string]: unknown;
+}
+
+/** An entry as the dashboard receives it from the Admin API. */
+export interface ChangeHistoryEntryData {
+  id: string;
+  createdAt: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string | null;
+  parentType: string | null;
+  parentId: string | null;
+  action: string;
+  source: string;
+  actorType: string;
+  actorId: string | null;
+  actorLabel: string | null;
+  batchId: string | null;
+  derivedFromId: string | null;
+  changes: Record<string, ChangeHistoryFieldChange> | null;
+  meta: Record<string, unknown>;
+  summary: string;
+  compactedAt: string | null;
+}
+
+/** A detail row of a run, as the dashboard receives it from the Admin API. */
+export interface ChangeHistoryDetailData {
+  id: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string | null;
+  parentType: string | null;
+  parentId: string | null;
+  kind: string;
+  scope: string | null;
+  scopeLabel: string | null;
+  from: unknown;
+  to: unknown;
+}
+
+/** Props of a value renderer (`registerChangeHistoryValueRenderer`): one side of one changed field. */
+export interface ChangeHistoryValueRendererProps {
+  change: ChangeHistoryFieldChange;
+  fieldKey: string;
+  entityType: string;
+  side: 'from' | 'to';
+}
+
+/**
+ * Props of a detail renderer (`registerChangeHistoryDetailRenderer`): the rows of a run. In `timeline`
+ * mode it also renders the collapsed header's count line.
+ */
+export interface ChangeHistoryDetailRendererProps {
+  rows: ChangeHistoryDetailData[];
+  entry: ChangeHistoryEntryData;
+  mode: 'dialog' | 'timeline';
+}
+
+/** `human`, `system` or `scheduled` — picks the badge's icon and colour. */
+export type ChangeHistorySourceTone = 'human' | 'system' | 'scheduled';
+
+export interface ChangeHistorySourceDefinition {
+  label: ChangeHistoryLabel;
+  tone: ChangeHistorySourceTone;
+  /** A `lucide-react` icon name. */
+  icon?: string;
+  /** Labels for the keys of a run's `counts` (the package labels only created/updated/deleted/failed). */
+  countLabels?: Record<string, ChangeHistoryLabel>;
+}
+
+export interface ChangeHistoryLabelDefinition {
+  label: ChangeHistoryLabel;
+}
+
+export interface ChangeHistoryEntityTypeDefinition {
+  label: ChangeHistoryLabel;
+  /** Link target of an entry's entity, or `undefined` for no link. */
+  route?: (entry: ChangeHistoryEntryData) => string | undefined;
+}
+
+export interface ChangeHistoryRegistry {
+  /** entity type → field key → label */
+  fieldLabels: Map<string, Map<string, ChangeHistoryLabel>>;
+  valueRenderers: Map<string, ComponentType<ChangeHistoryValueRendererProps>>;
+  detailRenderers: Map<string, ComponentType<ChangeHistoryDetailRendererProps>>;
+  sources: Map<string, ChangeHistorySourceDefinition>;
+  actions: Map<string, ChangeHistoryLabelDefinition>;
+  batchKinds: Map<string, ChangeHistoryLabelDefinition>;
+  entityTypes: Map<string, ChangeHistoryEntityTypeDefinition>;
+}
+
+/**
+ * The store lives on `globalThis` under a registry-wide symbol, not in this module: in the Vite dev
+ * server the host's import of `./dashboard` may be pre-bundled into a second copy of this file, and both
+ * copies must see the same registrations.
+ */
+const REGISTRY_KEY = Symbol.for('@uplab/vendure-plugin-change-history/registry');
+
+export function getChangeHistoryRegistry(): ChangeHistoryRegistry {
+  const holder = globalThis as unknown as Record<symbol, ChangeHistoryRegistry | undefined>;
+  let registry = holder[REGISTRY_KEY];
+  if (!registry) {
+    registry = {
+      fieldLabels: new Map(),
+      valueRenderers: new Map(),
+      detailRenderers: new Map(),
+      sources: new Map(),
+      actions: new Map(),
+      batchKinds: new Map(),
+      entityTypes: new Map(),
+    };
+    holder[REGISTRY_KEY] = registry;
+  }
+  return registry;
+}

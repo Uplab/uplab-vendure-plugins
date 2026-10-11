@@ -1,0 +1,53 @@
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: en\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "change-history.nav.title"
+msgstr "Change history"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Change history"
+msgstr "Change history"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "When"
+msgstr "When"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Type"
+msgstr "Type"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Entity"
+msgstr "Entity"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Action"
+msgstr "Action"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Who"
+msgstr "Who"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Summary"
+msgstr "Summary"

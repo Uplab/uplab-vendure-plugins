@@ -1,0 +1,44 @@
+export { ChangeHistoryPlugin } from './change-history.plugin';
+export {
+  CHANGE_HISTORY_ACTIONS,
+  CHANGE_HISTORY_ACTOR_TYPES,
+  CHANGE_HISTORY_ENTITY_TYPES,
+  CHANGE_HISTORY_HANDLER_IDS,
+  CHANGE_HISTORY_PLUGIN_OPTIONS,
+  CHANGE_HISTORY_SOURCES,
+  readChangeHistory,
+} from './constants';
+export { ChangeHistoryCollectionMembers } from './entities/change-history-collection-members.entity';
+export { ChangeHistoryDetail } from './entities/change-history-detail.entity';
+export { ChangeHistoryEntry } from './entities/change-history-entry.entity';
+export { ChangeHistoryService } from './services/change-history.service';
+export {
+  ChangeHistoryRetentionService,
+  type ChangeHistoryCompactResult,
+  type ChangeHistoryPurgeResult,
+} from './services/change-history-retention.service';
+export type { BeforeStateStrategy, NoBeforeState } from './before-state/before-state-strategy';
+export { CommittedRowBeforeStateStrategy } from './before-state/committed-row.strategy';
+export { NoBeforeStateStrategy } from './before-state/no-before-state.strategy';
+export type { ChangeHistoryArchiveStorage } from './retention/archive-storage';
+export { FileSystemArchiveStorage } from './retention/file-system-archive-storage';
+export type {
+  ChangeHistoryActionInput,
+  ChangeHistoryActorResolver,
+  ChangeHistoryBatchInput,
+  ChangeHistoryCaptureOptions,
+  ChangeHistoryCoreEntityType,
+  ChangeHistoryDetailInput,
+  ChangeHistoryEntityOverrides,
+  ChangeHistoryFieldChange,
+  ChangeHistoryFieldChanges,
+  ChangeHistoryFieldExtractor,
+  ChangeHistoryPluginOptions,
+  ChangeHistoryRetentionOptions,
+  ChangeHistoryRunInput,
+  ChangeHistoryValueKind,
+  ResolvedActor,
+  ResolvedChangeHistoryPluginOptions,
+  ResolvedChangeHistoryRetentionOptions,
+  RetentionRunOptions,
+} from './types';
