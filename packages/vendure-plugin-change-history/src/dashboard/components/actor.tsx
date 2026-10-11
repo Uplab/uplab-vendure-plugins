@@ -1,7 +1,8 @@
-import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 import { Badge } from '@vendure/dashboard';
 import { Bot, Clock, KeyRound, User } from 'lucide-react';
 import type { ComponentType } from 'react';
+import { distinctBadges } from '../format';
 import type { ChangeHistoryEntryData } from '../registry';
 import type { Labels, ResolvedSource } from './use-labels';
 
@@ -52,30 +53,51 @@ export function actorOf(entry: ChangeHistoryEntryData, labels: Labels): ActorVie
   return { tone, name, source, Icon: source.icon ?? TONE_ICONS[tone] };
 }
 
-/** The badge after the author: «System change», «API key», or the scheduled source's own label. */
-export function ActorBadge({ actor }: { actor: ActorView }) {
-  if (actor.tone === 'system') {
-    return (
-      <Badge variant="secondary" className="font-normal">
-        <Trans context="change-history">System change</Trans>
-      </Badge>
-    );
-  }
-  if (actor.tone === 'api_key') {
-    return (
-      <Badge variant="outline" className="border-blue-200 text-blue-700 font-normal dark:text-blue-300">
-        <Trans context="change-history">API key</Trans>
-      </Badge>
-    );
-  }
-  if (actor.tone === 'scheduled') {
-    return (
-      <Badge variant="outline" className="border-amber-200 text-amber-700 font-normal dark:text-amber-300">
-        {actor.source.label}
-      </Badge>
-    );
-  }
-  return null;
+/** One badge of an entry's title line; badges with the same visible text show once. */
+export interface EntryBadge {
+  key: string;
+  text: string;
+  variant?: 'outline' | 'secondary' | 'destructive';
+  className?: string;
+}
+
+/**
+ * The badges after the author: the actor's («System change», «API key», or the scheduled source's own label),
+ * then the entry's own — each visible text once, and none repeating a text in `shown` (already on the line).
+ */
+export function EntryBadges({
+  actor,
+  badges = [],
+  shown,
+}: {
+  actor: ActorView;
+  badges?: Array<EntryBadge | false | null | undefined>;
+  shown?: string[];
+}) {
+  const { t } = useLingui();
+  const actorBadges: Record<ActorTone, EntryBadge | undefined> = {
+    system: { key: 'actor', variant: 'secondary', text: t({ message: 'System change', context: 'change-history' }) },
+    api_key: {
+      key: 'actor',
+      text: t({ message: 'API key', context: 'change-history' }),
+      className: 'border-blue-200 text-blue-700 dark:text-blue-300',
+    },
+    scheduled: {
+      key: 'actor',
+      text: actor.source.label,
+      className: 'border-amber-200 text-amber-700 dark:text-amber-300',
+    },
+    human: undefined,
+  };
+  return (
+    <>
+      {distinctBadges([actorBadges[actor.tone], ...badges], shown).map((badge) => (
+        <Badge key={badge.key} variant={badge.variant ?? 'outline'} className={`font-normal ${badge.className ?? ''}`}>
+          {badge.text}
+        </Badge>
+      ))}
+    </>
+  );
 }
 
 /** Icon and name in one line, greyed for the system — the feed's and the widget's «who». */
@@ -86,7 +108,7 @@ export function ActorName({ actor, className }: { actor: ActorView; className?: 
       className={`inline-flex items-center gap-1.5 ${actor.tone === 'system' ? 'text-muted-foreground' : ''} ${className ?? ''}`}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{actor.name}</span>
+      <span className="min-w-0 truncate">{actor.name}</span>
       {actor.tone === 'api_key' && (
         <Badge variant="outline" className="border-blue-200 px-1 py-0 text-[10px] text-blue-700 dark:text-blue-300">
           API

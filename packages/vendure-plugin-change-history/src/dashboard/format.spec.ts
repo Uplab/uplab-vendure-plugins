@@ -7,6 +7,7 @@ import {
   countEntries,
   countsLine,
   diffLines,
+  distinctBadges,
   durationSeconds,
   encodeActor,
   feedFilter,
@@ -27,6 +28,7 @@ import {
   periodBounds,
   rowEntities,
   stripHtml,
+  titleWhenCut,
 } from './format';
 import type { ChangeHistoryDetailData } from './registry';
 
@@ -394,5 +396,59 @@ describe('builtInRoute', () => {
     expect(builtInRoute('FacetValue', '5', '1')).toBe('/facets/1/values/5');
     expect(builtInRoute('FacetValue', '5', null)).toBeUndefined();
     expect(builtInRoute('Batch', 'x')).toBeUndefined();
+  });
+});
+
+describe('distinctBadges', () => {
+  it('keeps the first badge of each visible text, whatever its case and spacing', () => {
+    const badges = distinctBadges([
+      { key: 'actor', text: 'Scheduled action' },
+      false,
+      null,
+      undefined,
+      { key: 'derived', text: 'derived' },
+      { key: 'batch', text: '  scheduled   ACTION ' },
+      { key: 'deleted', text: 'deleted' },
+    ]);
+    expect(badges.map((badge) => badge.key)).toEqual(['actor', 'derived', 'deleted']);
+  });
+
+  it('drops a badge repeating a text the line already shows, and a blank one', () => {
+    const badges = distinctBadges(
+      [
+        { key: 'actor', text: 'Scheduled action' },
+        { key: 'blank', text: '  ' },
+        { key: 'batch', text: 'archiving' },
+      ],
+      ['scheduled action'],
+    );
+    expect(badges.map((badge) => badge.key)).toEqual(['batch']);
+  });
+});
+
+describe('titleWhenCut', () => {
+  const element = (size: { scrollHeight?: number; scrollWidth?: number }, textContent: string | null) => ({
+    clientHeight: 60,
+    clientWidth: 300,
+    scrollHeight: 60,
+    scrollWidth: 300,
+    ...size,
+    textContent,
+    title: 'stale',
+  });
+
+  it('puts the whole text in the tooltip when the clamp cuts lines or the ellipsis cuts the line', () => {
+    const clamped = element({ scrollHeight: 100 }, '  Name (uk):\n  Tee → Oversized   tee ');
+    titleWhenCut(clamped);
+    expect(clamped.title).toBe('Name (uk): Tee → Oversized tee');
+    const ellipsis = element({ scrollWidth: 420 }, null);
+    titleWhenCut(ellipsis);
+    expect(ellipsis.title).toBe('');
+  });
+
+  it('takes the tooltip away when the text fits, a pixel of rounding included', () => {
+    const fits = element({ scrollHeight: 61, scrollWidth: 301 }, 'Price');
+    titleWhenCut(fits);
+    expect(fits.title).toBe('');
   });
 });

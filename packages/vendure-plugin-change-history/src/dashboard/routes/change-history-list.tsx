@@ -32,6 +32,7 @@ import {
   parseFeedSearch,
   parseListSearch,
   periodBounds,
+  titleWhenCut,
   type FeedSearch,
 } from '../format';
 import { changeHistoryEntriesDocument, changeHistoryFilterOptionsDocument, type ListOptions } from '../graphql';
@@ -118,7 +119,12 @@ function Cell({
   children: ReactNode;
 }) {
   return (
-    <div data-change-history-entry={id} className={className} title={title}>
+    <div
+      data-change-history-entry={id}
+      className={className}
+      title={title}
+      onMouseEnter={title ? undefined : (event) => titleWhenCut(event.currentTarget)}
+    >
       {children}
     </div>
   );
@@ -310,18 +316,22 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   header: () => <Trans context="change-history">Who</Trans>,
                   enableColumnFilter: false,
                   meta: { dependencies: [...ROW_FIELDS] },
-                  cell: ({ row }) => (
-                    <Cell id={row.original.id} className="whitespace-nowrap">
-                      <ActorName actor={actorOf(row.original, labels)} />
-                    </Cell>
-                  ),
+                  // A long name («Odoo: stock refresh after an order») is cut, the whole name in the tooltip.
+                  cell: ({ row }) => {
+                    const actor = actorOf(row.original, labels);
+                    return (
+                      <Cell id={row.original.id} className="max-w-[10rem]" title={actor.name}>
+                        <ActorName actor={actor} className="max-w-full" />
+                      </Cell>
+                    );
+                  },
                 },
                 entityType: {
                   header: () => <Trans context="change-history">Type</Trans>,
                   enableSorting: false,
                   meta: { dependencies: [...ROW_FIELDS] },
                   cell: ({ row }) => (
-                    <Cell id={row.original.id} className="whitespace-nowrap">
+                    <Cell id={row.original.id} className="min-w-[5rem] max-w-[7.5rem] whitespace-normal">
                       <EntryType entry={row.original} />
                     </Cell>
                   ),
@@ -334,7 +344,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="max-w-[16rem] truncate"
+                      className="max-w-[12rem] truncate"
                       title={row.original.entityLabel ?? undefined}
                     >
                       <EntryObject entry={row.original} />
@@ -346,7 +356,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   enableSorting: false,
                   meta: { dependencies: [...ROW_FIELDS] },
                   cell: ({ row }) => (
-                    <Cell id={row.original.id} className="max-w-[12rem] truncate">
+                    <Cell id={row.original.id} className="min-w-[6rem] max-w-[9rem] whitespace-normal">
                       <EntryAction entry={row.original} />
                     </Cell>
                   ),
@@ -356,8 +366,10 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   enableColumnFilter: false,
                   enableSorting: false,
                   meta: { dependencies: [...ROW_FIELDS] },
+                  // The table cells do not wrap: this column alone does, takes the width the compact columns
+                  // leave and shows up to three lines, the whole text in the tooltip when it is longer.
                   cell: ({ row }) => (
-                    <Cell id={row.original.id} className="min-w-[12rem] max-w-xl truncate">
+                    <Cell id={row.original.id} className="line-clamp-3 min-w-[12rem] whitespace-normal break-words">
                       <EntrySummary entry={row.original} />
                     </Cell>
                   ),

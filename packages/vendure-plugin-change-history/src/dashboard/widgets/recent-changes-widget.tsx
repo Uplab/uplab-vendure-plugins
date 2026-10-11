@@ -15,7 +15,7 @@ import { ActorName, actorOf } from '../components/actor';
 import { EntryDialog } from '../components/entry-dialog';
 import { EntryAction, EntryObject, EntrySummary } from '../components/summary';
 import { useLabels } from '../components/use-labels';
-import { feedFilter, feedSearchParams, periodBounds } from '../format';
+import { feedFilter, feedSearchParams, periodBounds, titleWhenCut } from '../format';
 import { changeHistoryEntriesDocument } from '../graphql';
 
 export const RECENT_CHANGES_WIDGET_ID = 'change-history-recent';
@@ -91,7 +91,11 @@ export function RecentChangesWidget() {
                         </>
                       )}
                     </div>
-                    <div className="truncate text-xs text-muted-foreground">
+                    {/* Up to two lines of what changed, the whole line in the tooltip when it is longer. */}
+                    <div
+                      className="line-clamp-2 break-words text-xs text-muted-foreground"
+                      onMouseEnter={(event) => titleWhenCut(event.currentTarget)}
+                    >
                       <EntryAction entry={entry} /> · <EntrySummary entry={entry} />
                     </div>
                   </div>

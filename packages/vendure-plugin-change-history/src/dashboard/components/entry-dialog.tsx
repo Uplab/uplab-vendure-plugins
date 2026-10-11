@@ -16,7 +16,7 @@ import { ArrowLeft, ArrowRight, Info } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { changeHistoryEntryDocument, changeHistoryRunDetailsDocument } from '../graphql';
 import type { ChangeHistoryEntryData } from '../registry';
-import { ActorBadge, actorOf } from './actor';
+import { actorOf, EntryBadges } from './actor';
 import { DetailRows } from './details';
 import { DeletedBadge, EntityLink, useEntityRoute } from './entity-link';
 import {
@@ -241,7 +241,8 @@ function DialogBody({ entryId, onFullHistory }: { entryId: string; onFullHistory
           <span>
             <Trans context="change-history">Source:</Trans> {actor.source.label}
           </span>
-          <ActorBadge actor={actor} />
+          {/* A scheduled action's badge is its source's label, already on the line. */}
+          <EntryBadges actor={actor} shown={[actor.source.label]} />
         </div>
       </DialogHeader>
 

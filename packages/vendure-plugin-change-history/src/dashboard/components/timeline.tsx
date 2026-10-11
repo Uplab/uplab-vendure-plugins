@@ -1,13 +1,13 @@
-import { Trans } from '@lingui/react/macro';
-import { api, Badge, Button, HistoryEntryDate, Skeleton, useInfiniteQuery, useQuery } from '@vendure/dashboard';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { api, Button, HistoryEntryDate, Skeleton, useInfiniteQuery, useQuery } from '@vendure/dashboard';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { changeHistoryEntityTimelineDocument, changeHistoryEntriesDocument } from '../graphql';
 import { batchKindOf } from '../labels';
 import type { ChangeHistoryDetailData, ChangeHistoryEntryData } from '../registry';
-import { ActorBadge, actorOf, TONE_ICON_CLASSES } from './actor';
+import { actorOf, EntryBadges, TONE_ICON_CLASSES, type EntryBadge } from './actor';
 import { DetailRows } from './details';
-import { DeletedBadge, EntityLink } from './entity-link';
+import { EntityLink } from './entity-link';
 import { EntryDialog } from './entry-dialog';
 import { BatchSummary, batchSubject, EntryAction, EntryCounts, EntrySummary, hasCounts } from './summary';
 import { useLabels } from './use-labels';
@@ -36,16 +36,18 @@ function Toggle({ open, onClick, children }: { open: boolean; onClick: () => voi
   );
 }
 
-/** The round icon, the title line and the time of one timeline item. */
+/** The round icon, the title line and the time of one timeline item; `extra` follows the badges. */
 function ItemFrame({
   entry,
   title,
   badges,
+  extra,
   children,
 }: {
   entry: ChangeHistoryEntryData;
   title: ReactNode;
-  badges?: ReactNode;
+  badges?: Array<EntryBadge | false | null | undefined>;
+  extra?: ReactNode;
   children?: ReactNode;
 }) {
   const labels = useLabels();
@@ -66,8 +68,8 @@ function ItemFrame({
             date={entry.createdAt}
             className="cursor-help text-xs text-muted-foreground underline decoration-dotted underline-offset-2"
           />
-          <ActorBadge actor={actor} />
-          {badges}
+          <EntryBadges actor={actor} badges={badges} />
+          {extra}
         </div>
         {children && <div className="mt-1.5">{children}</div>}
       </div>
@@ -225,7 +227,7 @@ function RunItem({ entry, subject }: { entry: TimelineEntry; subject: TimelineSu
           <DetailRows rows={rows} entry={entry} mode="summary" />
         </span>
       }
-      badges={
+      extra={
         <Toggle open={open} onClick={() => setOpen(!open)}>
           {open ? <Trans context="change-history">collapse</Trans> : <Trans context="change-history">expand</Trans>}
         </Toggle>
@@ -242,9 +244,11 @@ function RunItem({ entry, subject }: { entry: TimelineEntry; subject: TimelineSu
 }
 
 function EntryItem({ entry, subject }: { entry: ChangeHistoryEntryData; subject: TimelineSubject }) {
+  const { t } = useLingui();
   const labels = useLabels();
   const isOther = entry.entityType !== subject.entityType || entry.entityId !== subject.entityId;
   const membership = entry.action === 'collection_added' || entry.action === 'collection_removed';
+  // A member of a batch shows its kind; a scheduled action's source label can say the same, so it shows once.
   const batchKind = batchKindOf(entry.batchId);
   const changes = entry.changes ?? {};
   const hasChanges = Object.keys(changes).length > 0;
@@ -280,21 +284,16 @@ function EntryItem({ entry, subject }: { entry: ChangeHistoryEntryData; subject:
           )}
         </span>
       }
-      badges={
-        <>
-          {entry.derivedFromId && (
-            <Badge variant="outline" className="font-normal">
-              <Trans context="change-history">derived</Trans>
-            </Badge>
-          )}
-          {batchKind && batchKind !== 'collection_rules' && (
-            <Badge variant="outline" className="font-normal">
-              {labels.batchKind(batchKind)}
-            </Badge>
-          )}
-          {entry.action === 'deleted' && !isOther && <DeletedBadge />}
-        </>
-      }
+      badges={[
+        !!entry.derivedFromId && { key: 'derived', text: t({ message: 'derived', context: 'change-history' }) },
+        !!batchKind && batchKind !== 'collection_rules' && { key: 'batch', text: labels.batchKind(batchKind) },
+        entry.action === 'deleted' &&
+          !isOther && {
+            key: 'deleted',
+            variant: 'destructive',
+            text: t({ message: 'deleted', context: 'change-history' }),
+          },
+      ]}
     >
       {hasChanges && entry.action === 'created' && <CreatedValues entityType={entry.entityType} changes={changes} />}
       {hasChanges && entry.action !== 'created' && (

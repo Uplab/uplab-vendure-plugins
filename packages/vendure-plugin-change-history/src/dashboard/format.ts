@@ -296,6 +296,56 @@ export function rowEntities(rows: ChangeHistoryDetailData[]): { count: number; t
   return { count: keys.size, type: types.size === 1 ? rows[0]?.entityType : undefined };
 }
 
+/** What `titleWhenCut` reads and writes of an element. */
+interface CuttableElement {
+  scrollHeight: number;
+  clientHeight: number;
+  scrollWidth: number;
+  clientWidth: number;
+  textContent: string | null;
+  title: string;
+}
+
+/**
+ * Gives an element cut by its line clamp or ellipsis its whole text as the tooltip, and takes the tooltip away
+ * when the text fits (called on hover, so it follows the column's current width).
+ */
+export function titleWhenCut(element: CuttableElement): void {
+  const cut = element.scrollHeight > element.clientHeight + 1 || element.scrollWidth > element.clientWidth + 1;
+  element.title = cut ? (element.textContent ?? '').replace(/\s+/g, ' ').trim() : '';
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Badges
+
+/** A label as the eye compares it: case and runs of whitespace do not make two labels different. */
+function labelKey(text: string): string {
+  return text.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+}
+
+/**
+ * One entry's badges with each visible text once (the first kept), and none repeating a text the line already
+ * shows. Two labels can name one thing: a scheduled action's source and its batch kind both read «Scheduled
+ * action», and the entry would show that badge twice.
+ */
+export function distinctBadges<T extends { text: string }>(
+  badges: ReadonlyArray<T | false | null | undefined>,
+  shown: readonly string[] = [],
+): T[] {
+  const seen = new Set(shown.map(labelKey));
+  return badges.filter((badge): badge is T => {
+    if (!badge) {
+      return false;
+    }
+    const key = labelKey(badge.text);
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // A deleted entity's last state
 
