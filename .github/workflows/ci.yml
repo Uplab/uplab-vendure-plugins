@@ -95,12 +95,51 @@ jobs:
       - name: Release dry-run
         run: node scripts/release.mjs --dry-run
 
+  # The suites that need a real second database connection (the change history's committed-row
+  # before-state, savepoints). Everything else runs on sql.js in `checks`, where these specs skip.
+  e2e-postgres:
+    name: e2e (Postgres)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: change_history_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CHANGE_HISTORY_E2E_PG_URL: postgres://postgres:postgres@localhost:5432/change_history_e2e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Change history on Postgres
+        run: pnpm --filter @uplab/vendure-plugin-change-history test:e2e:pg
+
   # Terminal job: the single required status check for branch protection,
   # stable regardless of the matrix shape.
   ci-ok:
     name: CI OK
     runs-on: ubuntu-latest
-    needs: [checks, package-hygiene]
+    needs: [checks, package-hygiene, e2e-postgres]
     if: always()
     permissions: {}
     steps:
