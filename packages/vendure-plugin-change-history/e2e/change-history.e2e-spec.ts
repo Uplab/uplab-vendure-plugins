@@ -1,4 +1,5 @@
 import path from 'path';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { LanguageCode, Logger, ProductVariantService, TransactionalConnection, mergeConfig } from '@vendure/core';
 import { In } from 'typeorm';
@@ -52,20 +53,21 @@ import {
   systemCtx,
   waitFor,
 } from './helpers';
+import { retentionScenarios } from './retention-scenarios';
 
 registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__sqlite-data__')));
 
 describe('ChangeHistoryPlugin on sql.js', () => {
   const warn = vi.spyOn(Logger, 'warn');
+  const archiveDir = mkdtempSync(path.join(tmpdir(), 'change-history-e2e-archive-'));
+  const archive = new FileSystemArchiveStorage({ dir: archiveDir });
   const { server, adminClient } = createTestEnvironment(
     mergeConfig(testConfig, {
       // Its own port: vitest runs every e2e file of the repo in parallel.
       apiOptions: { port: 3057 },
       plugins: [
         ChangeHistoryPlugin.init({
-          retention: {
-            archive: new FileSystemArchiveStorage({ dir: path.join(tmpdir(), 'change-history-e2e-archive') }),
-          },
+          retention: { archive },
         }),
       ],
     }),
@@ -81,6 +83,7 @@ describe('ChangeHistoryPlugin on sql.js', () => {
 
   afterAll(async () => {
     await server.destroy();
+    rmSync(archiveDir, { recursive: true, force: true });
   });
 
   it('boots without a before-state on SQLite and says so', () => {
@@ -850,7 +853,7 @@ describe('ChangeHistoryPlugin on sql.js', () => {
     });
   });
 
-  it('previews retention and does not compact or purge yet', async () => {
+  it('previews retention with the configured and with given windows', async () => {
     const ctx = await systemCtx(server.app);
     const retention = server.app.get(ChangeHistoryRetentionService);
     expect(await retention.preview(ctx)).toEqual({ compactable: 0, purgeable: 0 });
@@ -860,7 +863,7 @@ describe('ChangeHistoryPlugin on sql.js', () => {
       purgeable: 0,
     });
     await expect(retention.preview(ctx, { purgeOlderThanDays: -1 })).rejects.toThrow(/non-negative/);
-    await expect(retention.compact(ctx, { olderThanDays: 90 })).rejects.toThrow(/not implemented/);
-    await expect(retention.purge(ctx, { olderThanDays: 365 })).rejects.toThrow(/not implemented/);
   });
+
+  retentionScenarios({ app: () => server.app, adminClient, archive, archiveDir });
 });

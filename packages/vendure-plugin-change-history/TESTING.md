@@ -27,6 +27,18 @@ update and a value rename recorded once on the value, a force-deleted facet with
 name / tags / focal point, a promotion's conditions as JSON before → after without `priorityScore`, and
 `capture()` after a raw write. CI runs it in the `e2e-postgres` job against a `postgres:15` service.
 
+Both suites run the same retention scenarios (`e2e/retention-scenarios.ts`) on their database, with
+`FileSystemArchiveStorage` in a temporary directory. The rows are written directly or through `recordRun` and
+backdated (`createdAt` set 100 / 400 days back), so nothing else in the suite is old enough to be touched:
+preview and dry run change nothing; a failing `put` and an `exists` that answers `false` leave every row as it was;
+compaction archives first (the objects are read back and decoded), then strips long values, deletes derived,
+member and run rows with their detail rows and keeps the counts (`derivedCount`, `batchCounts`); a second run
+compacts nothing; `restore` brings the deleted rows back without the next compaction touching them (R3-9); purge
+deletes only compacted rows; `archive: 'none'` compacts with a warning; a run of 5,001 rows stores 5,000 (detail
+`createdAt` equal to the entry's in the database), pages them, groups them per product / variant and compacts
+them; a run recorded in a host transaction that rolls back leaves no row. Unit specs cover the retention rules,
+the pure compaction, the archive lines and keys, and the scheduled tasks.
+
 The collection filters run in Vendure's job queue: the specs wait for it (`settleJobs`) and then poll for the
 entries the history writes after the job (`waitFor`).
 

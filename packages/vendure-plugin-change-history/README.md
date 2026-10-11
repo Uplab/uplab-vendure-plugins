@@ -10,16 +10,18 @@ operations into batches, records the runs of external syncs (an ERP, a PIM, a pr
 changed value, and shows it all in the dashboard — in English and Ukrainian.
 
 > **Pre-release.** This version records the catalogue automatically (Vendure's events: products, variants,
-> collections and their contents, facets, facet values, assets, promotions, channel assignments) and ships the
+> collections and their contents, facets, facet values, assets, promotions, channel assignments), records
+> external runs with their detail rows, runs tiered retention with an archive, and ships the
 > `ChangeHistoryService` facade, the before-state and archive strategies, the `changeHistoryEntries` query, the
 > dashboard feed and the dashboard registration entry. The entity history blocks, the batch and run views and
-> tiered retention follow before 0.1.0; until then `compact()` / `purge()` reject.
+> their GraphQL queries follow before 0.1.0.
 
 ## Contents
 
 [Install](#install) · [Options](#options) · [What is recorded](#what-is-recorded) ·
 [Recording from your own code](#recording-from-your-own-code) ·
-[Dashboard](#dashboard) · [GraphQL API](#graphql-api) · [Database](#database) · [Changelog](#changelog)
+[Retention](#retention) · [Dashboard](#dashboard) · [GraphQL API](#graphql-api) · [Database](#database) ·
+[Changelog](#changelog)
 
 ## Install
 
@@ -65,7 +67,7 @@ variables. Invalid options throw at startup with a message naming the option.
 | `retention.archiveKeyPrefix`  | `'change-history-archive'`                       | Key prefix of archive objects.                                                                                                                      |
 | `retention.detailDays`        | `90`                                             | Days full detail is kept.                                                                                                                           |
 | `retention.summaryDays`       | `365`                                            | Days compacted entries are kept. Must be at least `detailDays` and `runLineDays`.                                                                   |
-| `retention.runLineDays`       | `detailDays`                                     | Days external-run entries are kept.                                                                                                                 |
+| `retention.runLineDays`       | `detailDays`                                     | Days external-run entries are kept (deleted at compaction once older; purge removes compacted ones).                                                |
 | `retention.compactValueBytes` | `1024`                                           | Text values longer than this are reduced to their length at compaction.                                                                             |
 | `retention.schedule`          | `{ compact: '45 4 * * *', purge: '15 5 * * *' }` | Cron expressions of the built-in retention tasks, or `false` to run `ChangeHistoryRetentionService` from your own scheduler.                        |
 | `retention.batchSize`         | `2000` / `5000`                                  | Rows per compaction / purge batch.                                                                                                                  |
@@ -170,8 +172,118 @@ await this.changeHistory.runBatch(ctx, { kind: 'bulk_edit', label: 'Bulk edit' }
 `capture()` diffs any core type: `Product`, `ProductVariant`, `Collection`, `Facet`, `FacetValue`, `Promotion`
 and `Asset`. Use `recordAction` for anything else.
 
-For `ProductVariant` and `FacetValue` detail rows the plugin resolves the parent Product / Facet itself.
+For `ProductVariant` and `FacetValue` detail rows the plugin resolves the parent Product / Facet itself, so a
+product finds the rows of its variants. A run stores its `counts`, `durationMs` and `detailCount` in `meta`,
+writes its rows in chunks of 500 and keeps at most 5,000 rows (a larger run stores the first 5,000 and counts
+the rest in `meta.detailsOmitted`). A run with no rows and only zero counts writes nothing. Called inside your
+transaction, the run commits or rolls back with it.
+
 `entityType`, `action`, `source` and batch `kind` are free strings; give yours labels in the dashboard.
+
+## Retention
+
+The history is kept in tiers (all windows are options, in days):
+
+| Tier      | What                                                                                                                                                                                 | Kept                             | Then                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- | ---------------------------------------- |
+| Detail    | long values (rich text, other values longer than `compactValueBytes`), derived rows (a variant changed by its product's save), collection-rules member rows, the detail rows of runs | `detailDays` (90)                | archived, then compacted                 |
+| Summary   | every entry: who, what, when, which fields, short values, JSON diffs (filters, conditions), references, stock, batch heads, cascaded deletions with their last state                 | `summaryDays` (365)              | deleted                                  |
+| Run lines | the `Run` entries of external syncs: counts and duration                                                                                                                             | `runLineDays` (= `detailDays`)   | deleted at compaction, after the archive |
+| Archive   | the full record of every entry and its detail rows, as it was before compaction                                                                                                      | as long as your storage keeps it | —                                        |
+
+**Compaction** (`compact`, nightly) takes the oldest entries older than the detail window that are not
+compacted yet, in batches, and for each batch:
+
+1. writes every entry and its detail rows as gzipped JSON Lines to the archive storage
+   (`<archiveKeyPrefix>/<yyyy>/<mm>/change-history_<stamp>_<maxId>_<uuid>.jsonl.gz`, one object per batch), then
+   requires `exists(key)` to confirm it — **nothing is stripped or deleted before that**;
+2. in one transaction: snapshots the counts that are about to disappear (`meta.derivedCount` on the cause,
+   `meta.batchCounts` on a batch head), deletes detail rows, derived rows (except cascaded deletions),
+   collection-rules member rows and run lines older than `runLineDays`, replaces long values by
+   `{ kind, stripped: true, fromLength, toLength }` (in `meta.lastState`: `{ stripped: true, length }`) and sets
+   `compactedAt`.
+
+`json`, `refs`, `prices`, `assets` and `stock` values are never stripped. A compacted entry is never
+compacted again. A failed upload or verification rejects the run and leaves the failing batch untouched;
+the next run retries it (an object may then be written twice — harmless on restore).
+
+**Purge** (`purge`, nightly) deletes compacted entries older than the summary window (and compacted run lines
+older than `runLineDays`). An entry that was never compacted is never purged, whatever the window, so nothing
+leaves the database before its full record reached the archive.
+
+With `retention.archive: 'none'` compaction runs without an archive copy and logs a warning every run.
+
+### Scheduling
+
+By default the plugin registers two Vendure scheduled tasks, `change-history-compact` (`45 4 * * *`) and
+`change-history-purge` (`15 5 * * *`), with a 30-minute timeout and no overlap. They need a scheduler in your
+config — `DefaultSchedulerPlugin` or another `SchedulerStrategy`; without one the plugin logs a warning at
+startup. To drive retention from your own scheduler, set `retention.schedule: false` and call the service:
+
+```ts
+const retention = injector.get(ChangeHistoryRetentionService);
+await retention.preview(ctx, { compactOlderThanDays: 90, purgeOlderThanDays: 365 }); // { compactable, purgeable }
+await retention.compact(ctx, { olderThanDays: 90, batchSize: 2000, maxBatches: 20, onProgress: (n) => log(n) });
+await retention.purge(ctx, { olderThanDays: 365, dryRun: true });
+```
+
+`compact` returns `{ scanned, archived, archiveKeys, stripped, derivedDeleted, membersDeleted, runsDeleted,
+detailsDeleted, batches, drained }`, `purge` `{ scanned, deleted, batches, drained }`; `drained: false` means
+`maxBatches` stopped a backlog. `dryRun` reports the same counts and changes nothing.
+
+### Archive storage
+
+Pass any object with `put` and `exists` (Vendure's `InjectableStrategy`; the plugin calls its `init(injector)`
+on startup and `destroy()` on shutdown, so it can inject your services):
+
+```ts
+export class BucketArchiveStorage implements ChangeHistoryArchiveStorage {
+  private bucket: BucketService;
+  init(injector: Injector) {
+    this.bucket = injector.get(BucketService);
+  }
+  /** Write the object; reject on failure. */
+  put(key: string, body: Buffer, contentType: string): Promise<void> {
+    return this.bucket.upload(key, body, contentType);
+  }
+  /** Confirm the object exists (a HEAD request): compaction strips nothing until this resolves `true`. */
+  exists(key: string): Promise<boolean> {
+    return this.bucket.has(key);
+  }
+}
+```
+
+Keys are relative paths under `retention.archiveKeyPrefix` (default `change-history-archive`); bodies are
+gzipped JSON Lines (`application/gzip`), one `{ "table": "change_history_entry" | "change_history_detail",
+"row": { … } }` per line, with the columns as stored (timestamps in the database's own text form, JSON
+columns parsed). `FileSystemArchiveStorage({ dir })` writes them as files — for development and tests.
+
+### Restoring from the archive
+
+1. Fetch the objects of the period you need from your archive storage (the key carries year and month).
+2. Load them with a script that boots your Vendure config (e.g. `bootstrapWorker`) and calls the service:
+
+```ts
+import { readFile } from 'node:fs/promises';
+import { bootstrapWorker, RequestContextService } from '@vendure/core';
+import { ChangeHistoryRetentionService, decodeChangeHistoryArchive } from '@uplab/vendure-plugin-change-history';
+
+const { app } = await bootstrapWorker(config);
+const ctx = await app.get(RequestContextService).create({ apiType: 'admin' });
+for (const file of process.argv.slice(2)) {
+  const lines = decodeChangeHistoryArchive(await readFile(file));
+  console.log(file, await app.get(ChangeHistoryRetentionService).restore(ctx, lines));
+}
+await app.close();
+```
+
+`restore` gives an entry that still exists its archived `changes` and `meta` back and **keeps its
+`compactedAt`**; rows compaction deleted (derived, member and run entries, detail rows) are inserted again
+under their archived ids, entries with `compactedAt` set. That way the next compaction leaves the restored
+rows alone instead of archiving and deleting them again; the next purge removes them with the rest once
+they are older than the summary window. Restoring the same object twice changes nothing more. For a one-off
+look without touching the live tables, read the lines with `decodeChangeHistoryArchive` (or `gunzip` the
+object) instead.
 
 ## Dashboard
 

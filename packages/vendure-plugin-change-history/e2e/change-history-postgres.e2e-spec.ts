@@ -7,6 +7,9 @@ import {
   TransactionalConnection,
   mergeConfig,
 } from '@vendure/core';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { In } from 'typeorm';
 import { createTestEnvironment, registerInitializer, testConfig } from '@vendure/testing';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -17,6 +20,7 @@ import {
   ChangeHistoryPlugin,
   ChangeHistoryService,
   CommittedRowBeforeStateStrategy,
+  FileSystemArchiveStorage,
   ResolvedActor,
 } from '../src';
 import { CollectionCapture } from '../src/capture/collection-capture';
@@ -58,6 +62,7 @@ import {
   UPDATE_VARIANTS,
 } from './graphql';
 import { decode, entriesWhere, facetFilter, pngFile, settleJobs, superadminCtx, systemCtx, waitFor } from './helpers';
+import { retentionScenarios } from './retention-scenarios';
 
 /**
  * The Postgres suite: everything that needs a real second connection — exact before → after values, no-op
@@ -84,6 +89,8 @@ const failingResolver = {
 
 describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
   const warn = vi.spyOn(Logger, 'warn');
+  const archiveDir = mkdtempSync(path.join(tmpdir(), 'change-history-pg-archive-'));
+  const archive = new FileSystemArchiveStorage({ dir: archiveDir });
   const config = mergeConfig(testConfig, {
     // Its own port: vitest runs every e2e file of the repo in parallel.
     apiOptions: { port: PORT },
@@ -104,7 +111,7 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
     plugins: [
       FanOutTestPlugin,
       ChangeHistoryPlugin.init({
-        retention: { archive: 'none' },
+        retention: { archive },
         actorResolvers: [failingResolver],
         entities: {
           Product: { includeReadonlyCustomFields: ['erpId'], fieldKinds: { 'customFields.price': 'money' } },
@@ -181,6 +188,7 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
 
   afterAll(async () => {
     await server.destroy();
+    rmSync(archiveDir, { recursive: true, force: true });
   });
 
   it('selects the committed-row before-state on Postgres', () => {
@@ -1079,4 +1087,6 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
       .find({ where: { entryId: run.id } });
     expect(details).toEqual([expect.objectContaining({ entityId: 'w1', fromValue: { qty: 1 }, toValue: { qty: 2 } })]);
   });
+
+  retentionScenarios({ app: () => server.app, adminClient, archive, archiveDir });
 });

@@ -11,7 +11,7 @@ import {
   TransactionalConnection,
 } from '@vendure/core';
 import { randomUUID } from 'node:crypto';
-import { In } from 'typeorm';
+import { Brackets, In } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { CapturePipeline } from '../capture/capture-pipeline';
 import { CollectionCapture } from '../capture/collection-capture';
@@ -22,6 +22,8 @@ import {
   CHANGE_HISTORY_PLUGIN_OPTIONS,
   DETAIL_CHUNK_SIZE,
   MAX_BATCH_KIND_LENGTH,
+  MAX_DETAIL_PAGE,
+  MAX_RUN_DETAILS,
   loggerCtx,
 } from '../constants';
 import { ChangeHistoryDetail } from '../entities/change-history-detail.entity';
@@ -149,17 +151,29 @@ export class ChangeHistoryService {
   }
 
   /**
-   * An external run: one `Run` entry plus one detail row per changed value. Writes nothing when there
-   * are no details and every count is 0.
+   * An external run: one `Run` entry (`meta`: `counts`, `durationMs`, `detailCount`) plus one detail row per
+   * changed value, written in chunks. Writes nothing when there are no details and every count is 0. The
+   * parent of `ProductVariant` / `FacetValue` rows is resolved when the caller names none, so a product finds
+   * the rows of its variants. At most 5,000 rows are stored per run (the rest are counted in
+   * `meta.detailsOmitted` and logged). Inside the caller's transaction the run is written in a savepoint and
+   * commits or rolls back with it; otherwise in its own short transaction. Never rejects.
    */
   async recordRun(ctx: RequestContext, input: ChangeHistoryRunInput): Promise<void> {
     if (!this.options.enabled) {
       return;
     }
-    const details = input.details ?? [];
+    const all = input.details ?? [];
     const counts = input.counts ?? {};
-    if (details.length === 0 && !Object.values(counts).some((count) => count !== 0)) {
+    if (all.length === 0 && !Object.values(counts).some((count) => count !== 0)) {
       return;
+    }
+    const details = all.length > MAX_RUN_DETAILS ? all.slice(0, MAX_RUN_DETAILS) : all;
+    const omitted = all.length - details.length;
+    if (omitted > 0) {
+      Logger.warn(
+        `[ChangeHistory] run "${input.source}" has ${all.length} detail rows; stored the first ${MAX_RUN_DETAILS}`,
+        loggerCtx,
+      );
     }
     const parents = new Map<string, { type: string; id: ID }>();
     await this.writer.write(
@@ -177,17 +191,26 @@ export class ChangeHistoryService {
             action: CHANGE_HISTORY_ACTIONS.run,
             source: input.source,
             summary: runSummary(counts),
-            meta: { ...input.meta, counts, durationMs: input.durationMs, detailCount: details.length },
+            meta: {
+              ...input.meta,
+              counts,
+              durationMs: input.durationMs,
+              detailCount: details.length,
+              ...(omitted > 0 ? { detailsOmitted: omitted } : {}),
+            },
           },
         ];
       },
       {
         afterInsert: async (tctx, [entry]) => {
+          // The entry's own `createdAt`, copied in SQL: a JS `Date` would drop Postgres' microseconds, and
+          // the timelines order run rows and entries on the same key.
+          const createdAt = this.entryCreatedAtSql(entry.id);
           const rows = details.map((detail) => {
             const parent = detail.parent ?? parents.get(`${detail.entityType}:${String(detail.entityId)}`);
-            return Object.assign(new ChangeHistoryDetail(), {
+            return {
               entryId: entry.id,
-              createdAt: entry.createdAt,
+              createdAt: () => createdAt,
               entityType: detail.entityType,
               entityId: String(detail.entityId),
               parentType: parent?.type ?? null,
@@ -197,7 +220,7 @@ export class ChangeHistoryService {
               scopeLabel: detail.scopeLabel ? clip(detail.scopeLabel, 128) : null,
               fromValue: detail.from ?? null,
               toValue: detail.to ?? null,
-            });
+            };
           });
           const repository = this.connection.getRepository(tctx, ChangeHistoryDetail);
           for (let i = 0; i < rows.length; i += DETAIL_CHUNK_SIZE) {
@@ -257,6 +280,106 @@ export class ChangeHistoryService {
     return { items, totalItems };
   }
 
+  /**
+   * The detail rows of one run, in the order they were recorded, paged (`take` 1–500, default 100).
+   * Unstable in 0.x — the stable read API is the GraphQL layer.
+   */
+  async runDetails(
+    ctx: RequestContext,
+    entryId: ID,
+    opts: { skip?: number; take?: number } = {},
+  ): Promise<PaginatedList<ChangeHistoryDetail>> {
+    const [items, totalItems] = await this.connection.getRepository(ctx, ChangeHistoryDetail).findAndCount({
+      where: { entryId },
+      order: { id: 'ASC' },
+      skip: Math.max(0, Math.trunc(opts.skip ?? 0)),
+      take: Math.min(MAX_DETAIL_PAGE, Math.max(1, Math.trunc(opts.take ?? 100))),
+    });
+    return { items, totalItems };
+  }
+
+  /**
+   * The runs that changed an entity, newest first, each with **only that entity's rows**: the rows recorded
+   * for it, or for its children (a product gets the rows of its variants, a facet those of its values). Paged
+   * by run (`take` 1–100, default 20). Unstable in 0.x — the stable read API is the GraphQL layer.
+   */
+  async runsForEntity(
+    ctx: RequestContext,
+    subject: { entityType: string; entityId: ID },
+    opts: { skip?: number; take?: number } = {},
+  ): Promise<PaginatedList<{ entry: ChangeHistoryEntry; details: ChangeHistoryDetail[] }>> {
+    const query = () =>
+      this.connection
+        .getRepository(ctx, ChangeHistoryDetail)
+        .createQueryBuilder('detail')
+        .where(subjectCondition(subject));
+    const counted = await query()
+      .select('COUNT(DISTINCT detail.entryId)', 'count')
+      .getRawOne<{ count: string | number }>();
+    const page = await query()
+      .select('detail.entryId', 'entryId')
+      .addSelect('detail.createdAt', 'createdAt')
+      .groupBy('detail.entryId')
+      .addGroupBy('detail.createdAt')
+      .orderBy('detail.createdAt', 'DESC')
+      .addOrderBy('detail.entryId', 'DESC')
+      .offset(Math.max(0, Math.trunc(opts.skip ?? 0)))
+      .limit(Math.min(100, Math.max(1, Math.trunc(opts.take ?? 20))))
+      .getRawMany<{ entryId: ID }>();
+    const entryIds = page.map((row) => row.entryId);
+    const entries =
+      entryIds.length > 0
+        ? await this.connection.getRepository(ctx, ChangeHistoryEntry).find({ where: { id: In(entryIds) } })
+        : [];
+    const details = await this.runDetailsForEntity(ctx, subject, entryIds);
+    const byId = new Map(entries.map((entry) => [String(entry.id), entry]));
+    return {
+      items: entryIds
+        .filter((id) => byId.has(String(id)))
+        .map((id) => ({ entry: byId.get(String(id))!, details: details.get(String(id)) ?? [] })),
+      totalItems: Number(counted?.count ?? 0),
+    };
+  }
+
+  /**
+   * One entity's rows of the given runs, grouped by run id (as a string): what a timeline shows under each
+   * run item. Matches the rows recorded for the entity and for its children, like `runsForEntity`.
+   */
+  async runDetailsForEntity(
+    ctx: RequestContext,
+    subject: { entityType: string; entityId: ID },
+    entryIds: ID[],
+  ): Promise<Map<string, ChangeHistoryDetail[]>> {
+    const grouped = new Map<string, ChangeHistoryDetail[]>();
+    for (let i = 0; i < entryIds.length; i += DETAIL_CHUNK_SIZE) {
+      const rows = await this.connection
+        .getRepository(ctx, ChangeHistoryDetail)
+        .createQueryBuilder('detail')
+        .where(subjectCondition(subject))
+        .andWhere({ entryId: In(entryIds.slice(i, i + DETAIL_CHUNK_SIZE)) })
+        .orderBy('detail.id', 'ASC')
+        .getMany();
+      for (const row of rows) {
+        const key = String(row.entryId);
+        grouped.set(key, [...(grouped.get(key) ?? []), row]);
+      }
+    }
+    return grouped;
+  }
+
+  /** `(SELECT createdAt FROM <entry table> WHERE id = <id>)`, portable across the supported drivers. */
+  private entryCreatedAtSql(id: ID): string {
+    const { driver } = this.connection.rawConnection;
+    const metadata = this.connection.rawConnection.getMetadata(ChangeHistoryEntry);
+    const column = (property: string) => driver.escape(metadata.findColumnWithPropertyName(property)!.databaseName);
+    const table = metadata.tablePath
+      .split('.')
+      .map((part) => driver.escape(part))
+      .join('.');
+    const literal = typeof id === 'number' ? String(id) : `'${String(id).replace(/'/g, "''")}'`;
+    return `(SELECT ${column('createdAt')} FROM ${table} WHERE ${column('id')} = ${literal})`;
+  }
+
   /** `{ 'ProductVariant:12' → { type: 'Product', id: 3 } }` for details that name no parent. */
   private async resolveParents(
     ctx: RequestContext,
@@ -279,6 +402,16 @@ export class ChangeHistoryService {
     }
     return parents;
   }
+}
+
+/** Rows recorded for the entity itself, or for one of its children (a product's variants). */
+function subjectCondition(subject: { entityType: string; entityId: ID }): Brackets {
+  const params = { subjectType: subject.entityType, subjectId: String(subject.entityId) };
+  return new Brackets((qb) =>
+    qb
+      .where('(detail.entityType = :subjectType AND detail.entityId = :subjectId)', params)
+      .orWhere('(detail.parentType = :subjectType AND detail.parentId = :subjectId)', params),
+  );
 }
 
 function runSummary(counts: Record<string, number>): string {

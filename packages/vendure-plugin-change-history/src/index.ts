@@ -16,11 +16,14 @@ export {
   ChangeHistoryRetentionService,
   type ChangeHistoryCompactResult,
   type ChangeHistoryPurgeResult,
+  type ChangeHistoryRestoreResult,
 } from './services/change-history-retention.service';
 export type { BeforeStateStrategy, NoBeforeState } from './before-state/before-state-strategy';
 export { CommittedRowBeforeStateStrategy } from './before-state/committed-row.strategy';
 export { NoBeforeStateStrategy } from './before-state/no-before-state.strategy';
 export type { ChangeHistoryArchiveStorage } from './retention/archive-storage';
+export { decodeChangeHistoryArchive, type ChangeHistoryArchiveLine } from './retention/jsonl';
+export { CHANGE_HISTORY_TASK_IDS } from './retention/tasks';
 export { FileSystemArchiveStorage } from './retention/file-system-archive-storage';
 export type {
   ChangeHistoryActionInput,

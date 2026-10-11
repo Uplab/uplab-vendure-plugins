@@ -90,8 +90,14 @@ export const readChangeHistory = new PermissionDefinition({
 /** `<kind>:<uuid>` must fit the `batchId` column, `varchar(64)`. */
 export const MAX_BATCH_KIND_LENGTH = 27;
 
-/** Detail rows are inserted in chunks of this size. */
+/** Detail rows are inserted in chunks of this size; `IN (…)` lists are chunked the same way. */
 export const DETAIL_CHUNK_SIZE = 500;
+
+/** Detail rows stored per run; a larger run keeps the first ones and counts the rest in `meta.detailsOmitted`. */
+export const MAX_RUN_DETAILS = 5_000;
+
+/** Largest page of `ChangeHistoryService.runDetails`. */
+export const MAX_DETAIL_PAGE = 500;
 
 export const DEFAULTS = {
   maxValueBytes: 16_384,
