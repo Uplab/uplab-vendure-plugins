@@ -498,3 +498,128 @@ describe('the Asset definition', () => {
     expect(definition.fromEntity(ctx, { id: 56, translations: [] }).label).toBe('Asset 56');
   });
 });
+
+describe('the definitions on sparse rows and host settings', () => {
+  const extractorOf = (entityType: ChangeHistoryFieldExtractor['entityType']): ChangeHistoryFieldExtractor => ({
+    entityType,
+    key: `${entityType}Extra`,
+    kind: 'json',
+    load: vi.fn(async () => new Map()),
+  });
+  const factories = {
+    Product: productDefinition,
+    ProductVariant: productVariantDefinition,
+    Collection: collectionDefinition,
+    Facet: facetDefinition,
+    FacetValue: facetValueDefinition,
+    Promotion: promotionDefinition,
+    Asset: assetDefinition,
+  };
+
+  it("takes only its own entity type's extractors, without labels when the extractor has none", async () => {
+    const types = Object.keys(factories) as Array<keyof typeof factories>;
+    const hostOptions = options({ fieldExtractors: types.map(extractorOf) });
+    for (const type of types) {
+      const definition = factories[type](hostOptions, {});
+      expect(definition.kindOf(`${type}Extra`)).toBe('json');
+      expect(definition.groupOf(`${type}Extra`)).toBe(`extractor:${type}Extra`);
+      expect(definition.fullScope).toContain(`extractor:${type}Extra`);
+      const other = types.find((t) => t !== type)!;
+      expect(definition.kindOf(`${other}Extra`)).toBe('text');
+      expect(definition.fullScope).not.toContain(`extractor:${other}Extra`);
+
+      const { manager, finds } = fakeManager(new Map());
+      const changes: ChangeHistoryFieldChanges = { [`${type}Extra`]: { kind: 'json', from: null, to: { id: '4' } } };
+      await definition.addLabels(ctx, manager, changes);
+      expect(changes[`${type}Extra`].labels).toBeUndefined();
+      expect(finds).toEqual([]);
+    }
+  });
+
+  it("applies the host's field kinds to columns, translated fields and keys of its own", () => {
+    const definition = productDefinition(
+      options({ entities: { Product: { fieldKinds: { enabled: 'text', name: 'richtext', extra: 'date' } } } }),
+      {},
+    );
+    expect(definition.kindOf('enabled')).toBe('text');
+    expect(definition.kindOf('name.uk')).toBe('richtext');
+    expect(definition.kindOf('name')).toBe('text');
+    expect(definition.kindOf('extra')).toBe('date');
+    expect(definition.kindOf('unknown')).toBe('text');
+  });
+
+  it('reads a product without translations or loaded relations as empty lists, labelled by its id', async () => {
+    const definition = productDefinition(options(), {});
+    const { manager } = fakeManager(new Map([[Product, [{ id: 3, enabled: false, featuredAssetId: null }]]]));
+    expect((await definition.load(ctx, [3], manager, definition.fullScope)).get('3')).toMatchObject({
+      label: 'Product 3',
+      values: { enabled: false, featuredAsset: null, facetValues: [], assets: [], optionGroups: [] },
+    });
+  });
+
+  it('reads a variant without loaded prices, options or facet values as empty lists', async () => {
+    const definition = productVariantDefinition(options(), {});
+    const { manager } = fakeManager(new Map([[ProductVariant, [{ id: 21, productId: 3, translations: [] }]]]));
+    expect((await definition.load(ctx, [21], manager, definition.fullScope)).get('21')?.values).toMatchObject({
+      prices: [],
+      options: [],
+      facetValues: [],
+      assets: [],
+    });
+  });
+
+  it('reads a collection filter without arguments, and no filters at all, as plain JSON', () => {
+    const definition = collectionDefinition(options(), {});
+    const fromEntity = (filters: unknown) =>
+      definition.fromEntity(ctx, { id: 5, parentId: 1, filters, translations: [] }).values.filters;
+    expect(fromEntity([{ code: 'variant-name-filter' }])).toEqual([{ code: 'variant-name-filter', args: [] }]);
+    expect(fromEntity(undefined)).toEqual([]);
+    expect(definition.fromEntity(ctx, { id: 5, translations: [] }).label).toBe('Collection 5');
+  });
+
+  it('finds no facet value ids in empty operations or operations without arguments', () => {
+    expect(
+      facetValueIdsOfOperations({
+        kind: 'json',
+        from: [null, { code: 'facet-value-filter' }],
+        to: [{ code: 'facet-value-filter', args: [null, { name: 'facetValueIds', value: '[8]' }] }],
+      }),
+    ).toEqual(['8']);
+  });
+
+  it('labels a promotion without a translation by its id', () => {
+    const definition = promotionDefinition(options(), {});
+    expect(definition.fromEntity(ctx, { id: 8, translations: [] }).label).toBe('Promotion 8');
+  });
+
+  it('reads an asset without loaded tags as no tags', async () => {
+    const definition = assetDefinition(options(), {});
+    const { manager } = fakeManager(new Map([[Asset, [{ id: 55, translations: [] }]]]));
+    expect((await definition.load(ctx, [55], manager, definition.fullScope)).get('55')?.values.tags).toEqual([]);
+  });
+
+  it('keeps a change unlabelled when none of its ids exists any more', async () => {
+    const definition = productDefinition(options(), {});
+    const { manager, finds } = fakeManager(new Map());
+    const changes: ChangeHistoryFieldChanges = { featuredAsset: { kind: 'ref', from: '55', to: null } };
+    await definition.addLabels(ctx, manager, changes);
+    expect(finds).toEqual([{ entity: Asset, relations: ['translations'] }]);
+    expect(changes.featuredAsset.labels).toBeUndefined();
+  });
+
+  it('ignores relation rows of ids the first query did not return', async () => {
+    const definition = productDefinition(options(), {});
+    const find = vi.fn(async ({ relations }: { relations: string[] }) =>
+      relations[0] === 'translations'
+        ? [{ id: 3, translations: [] }]
+        : [
+            { id: 99, facetValues: [{ id: 2 }] },
+            { id: 3, facetValues: [{ id: 1 }] },
+          ],
+    );
+    const manager = { getRepository: () => ({ find }) } as unknown as EntityManager;
+    const states = await definition.load(ctx, [3], manager, new Set([BASE_GROUP, 'facetValues']));
+    expect([...states.keys()]).toEqual(['3']);
+    expect(states.get('3')?.values.facetValues).toEqual(['1']);
+  });
+});

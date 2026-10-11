@@ -25,6 +25,9 @@ describe('retention rules', () => {
       expect(isDetailValue({ kind: 'text', from: 'short', to: long }, CAP)).toBe(true);
       expect(isDetailValue({ from: long, to: null }, CAP)).toBe(true);
       expect(isDetailValue({ kind: 'text', from: 'short', to: 'also short' }, CAP)).toBe(false);
+      expect(isDetailValue({ kind: 'text', from: null, to: 'short' }, CAP)).toBe(false);
+      expect(isDetailValue({ kind: 'text', to: 'short' }, CAP)).toBe(false);
+      expect(isDetailValue({ kind: 'text', from: 'short' }, CAP)).toBe(false);
     });
 
     it('measures bytes, not characters', () => {

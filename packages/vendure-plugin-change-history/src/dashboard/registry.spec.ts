@@ -36,6 +36,7 @@ describe('change history dashboard registry', () => {
 
     registerChangeHistoryFieldLabels('Product', { 'customFields.price': 'Price', name: 'Name' });
     registerChangeHistoryFieldLabels('Product', { name: { id: 'host.name' } });
+    registerChangeHistoryFieldLabels('Product', undefined as never);
 
     expect(Object.fromEntries(getChangeHistoryRegistry().fieldLabels.get('Product')!)).toEqual({
       'customFields.price': 'Price',
@@ -88,6 +89,19 @@ describe('change history dashboard registry', () => {
     rejects(() => pub.registerChangeHistoryAction('archived', bad({})), /needs a label/);
     rejects(() => pub.registerChangeHistoryBatchKind(bad(1), { label: 'x' }), /kind must be/);
     rejects(() => pub.registerChangeHistoryEntityType('Order', bad(undefined)), /needs a label/);
+
+    // A non-Error thrown inside a registration is reported as it is.
+    const throwing = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw 'unreadable labels';
+        },
+      },
+    );
+    error.mockClear();
+    expect(() => pub.registerChangeHistoryFieldLabels('Product', throwing)).not.toThrow();
+    expect(error).toHaveBeenCalledWith('unreadable labels');
 
     // Nothing of a rejected registration is kept, not even its valid part.
     const store = getChangeHistoryRegistry();

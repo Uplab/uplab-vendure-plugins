@@ -1,9 +1,10 @@
-import { RequestContext, TransactionalConnection } from '@vendure/core';
-import type { ObjectLiteral, SelectQueryBuilder } from 'typeorm';
+import { Collection, Product, ProductVariant, RequestContext, TransactionalConnection, Type } from '@vendure/core';
+import type { EntityManager, FindOperator, ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 import { describe, expect, it, vi } from 'vitest';
 import { Batcher } from './batcher';
 import { inChannels, readableChannelIds, scopeKey } from './channel-scope';
 import { compareKeys, decodeCursor, encodeCursor } from './cursor';
+import { currentLabels, deletedRefs } from './entity-lookups';
 import { ordersTimestampsAsText, timestampAsText, withPrimaryManager } from './sql';
 
 describe('timeline cursor', () => {
@@ -128,6 +129,8 @@ describe('channel scope', () => {
       { id: 3, permissions: ['ReadChangeHistory', 'ReadCatalog'] },
     ]);
     expect(readableChannelIds(ctx)).toEqual(['2', '3']);
+    const withoutPermissions = { session: { user: {} } } as unknown as RequestContext;
+    expect(readableChannelIds(withoutPermissions)).toEqual([]);
     expect(scopeKey(['3', '2'])).toBe('2,3');
     expect(scopeKey(undefined)).toBe('*');
   });
@@ -144,5 +147,89 @@ describe('channel scope', () => {
     const all = query();
     inChannels(all.builder, 'entry', undefined);
     expect(all.andWhere).not.toHaveBeenCalled();
+  });
+});
+
+describe('entity lookups', () => {
+  const VARIANT_UUID = '0b6f2f0e-8c1a-4d2e-9f3b-1a2b3c4d5e6f';
+  /** Product keys are integers, variant keys UUIDs, collection keys free text; each type answers `rows`. */
+  const lookupManager = (rows: Map<Type<unknown>, { found?: unknown[]; raw?: unknown[] }>) => {
+    const keyTypes = new Map<Type<unknown>, string>([
+      [Product, 'int'],
+      [ProductVariant, 'uuid'],
+      [Collection, 'varchar'],
+    ]);
+    const wheres: Array<[Type<unknown>, unknown[]]> = [];
+    const manager = {
+      connection: {
+        getMetadata: (entity: Type<unknown>) => ({
+          primaryColumns: [{ type: keyTypes.get(entity) }],
+          relations: [],
+          findRelationWithPropertyPath: () => undefined,
+          findColumnWithPropertyName: (name: string) =>
+            name === 'deletedAt' && entity !== Collection ? {} : undefined,
+        }),
+      },
+      getRepository: (entity: Type<unknown>) => ({
+        find: async () => rows.get(entity)?.found ?? [],
+        createQueryBuilder: () => {
+          const builder = {
+            select: () => builder,
+            addSelect: () => builder,
+            andWhere: () => builder,
+            where: (where: { id: FindOperator<unknown[]> }) => {
+              wheres.push([entity, where.id.value]);
+              return builder;
+            },
+            getRawMany: async () => rows.get(entity)?.raw ?? [],
+          };
+          return builder;
+        },
+      }),
+    } as unknown as EntityManager;
+    return { manager, wheres };
+  };
+
+  it('reports ids the key column cannot hold as deleted without querying them', async () => {
+    const { manager, wheres } = lookupManager(
+      new Map<Type<unknown>, { raw: unknown[] }>([
+        [Product, { raw: [{ id: 1 }] }],
+        [ProductVariant, { raw: [] }],
+        [Collection, { raw: [{ id: 'summer' }] }],
+      ]),
+    );
+    const deleted = await deletedRefs(manager, [
+      { entityType: 'Product', entityId: '1' },
+      { entityType: 'Product', entityId: 'abc' },
+      { entityType: 'ProductVariant', entityId: VARIANT_UUID },
+      { entityType: 'ProductVariant', entityId: '12' },
+      { entityType: 'Collection', entityId: 'summer' },
+      { entityType: 'Custom', entityId: 'x' },
+    ]);
+
+    expect(deleted).toEqual(new Set(['Product:abc', `ProductVariant:${VARIANT_UUID}`, 'ProductVariant:12']));
+    expect(wheres).toEqual([
+      [Product, ['1']],
+      [ProductVariant, [VARIANT_UUID]],
+      [Collection, ['summer']],
+    ]);
+  });
+
+  it("labels core entities by name and adds a variant's SKU", async () => {
+    const { manager } = lookupManager(
+      new Map<Type<unknown>, { found?: unknown[]; raw?: unknown[] }>([
+        [Product, { found: [{ id: 1, name: 'Shirt' }] }],
+        [ProductVariant, { found: [{ id: VARIANT_UUID, name: 'Shirt L' }], raw: [{ id: VARIANT_UUID, sku: 'SH-L' }] }],
+      ]),
+    );
+    const labels = await currentLabels({} as RequestContext, manager, [
+      { entityType: 'Product', entityId: '1' },
+      { entityType: 'ProductVariant', entityId: VARIANT_UUID },
+    ]);
+
+    expect(Object.fromEntries(labels)).toEqual({
+      'Product:1': { label: 'Shirt' },
+      [`ProductVariant:${VARIANT_UUID}`]: { label: 'Shirt L', sku: 'SH-L' },
+    });
   });
 });

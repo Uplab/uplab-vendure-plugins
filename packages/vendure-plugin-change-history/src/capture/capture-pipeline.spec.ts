@@ -415,6 +415,34 @@ describe('CapturePipeline', () => {
     expect(saved).toHaveLength(3);
   });
 
+  it('writes nothing for a creation or an update whose row the transaction cannot load', async () => {
+    const { pipeline, definition, ctx, saved, context } = setup({ committed: { '1': { sku: 'A' } }, current: {} });
+    await pipeline.run(ctx, definition, [1], { mode: 'created', action: 'created' });
+    await pipeline.run(ctx, definition, [1], updated);
+
+    expect(saved).toEqual([]);
+    // Nothing loaded: nothing remembered as this transaction's last state or as created in it.
+    expect(context.transactionStateOf(ctx).lastSeen.has('ProductVariant:1')).toBe(false);
+    expect(context.transactionStateOf(ctx).createdIds.has('ProductVariant:1')).toBe(false);
+  });
+
+  it('never rejects when a definition step fails before the write, and logs it', async () => {
+    const error = vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
+    const { pipeline, definition, ctx, saved, load } = setup({ current: { '1': { sku: 'B' } } });
+    definition.scopeFor = () => {
+      throw new Error('bad input');
+    };
+    await expect(pipeline.run(ctx, definition, [1], updated)).resolves.toBeUndefined();
+
+    expect(load).not.toHaveBeenCalled();
+    expect(saved).toEqual([]);
+    expect(error).toHaveBeenCalledWith(
+      '[ChangeHistory] write failed in updated ProductVariant: bad input',
+      'ChangeHistory',
+      expect.any(String),
+    );
+  });
+
   it('does nothing when disabled or without ids', async () => {
     const off = setup({ enabled: false, current: { '1': { sku: 'B' } } });
     await off.pipeline.run(off.ctx, off.definition, [1], updated);

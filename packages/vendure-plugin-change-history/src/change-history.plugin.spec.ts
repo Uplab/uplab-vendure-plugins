@@ -37,6 +37,14 @@ describe('ChangeHistoryPlugin', () => {
     expect(readChangeHistory.Permission).toBe('ReadChangeHistory');
   });
 
+  it('adds the permission to a config without custom permissions or tasks', async () => {
+    ChangeHistoryPlugin.init({ retention: { archive: 'none' } });
+    const config = { authOptions: {}, schedulerOptions: {} } as unknown as RuntimeVendureConfig;
+    const configured = (await getConfigurationFunction(ChangeHistoryPlugin)?.(config)) ?? config;
+    expect(configured.authOptions.customPermissions).toEqual([readChangeHistory]);
+    expect(configured.schedulerOptions.tasks).toHaveLength(2);
+  });
+
   it('registers the compact and purge tasks with the configured windows', async () => {
     ChangeHistoryPlugin.init({
       retention: {
