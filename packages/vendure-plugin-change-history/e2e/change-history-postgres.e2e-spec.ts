@@ -71,6 +71,7 @@ import {
 } from './graphql';
 import { decode, entriesWhere, facetFilter, pngFile, settleJobs, superadminCtx, systemCtx, waitFor } from './helpers';
 import { apiScenarios } from './api-scenarios';
+import { channelScenarios } from './channel-scenarios';
 import { retentionScenarios } from './retention-scenarios';
 
 /**
@@ -1334,4 +1335,5 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
 
   retentionScenarios({ app: () => server.app, adminClient, archive, archiveDir });
   apiScenarios({ app: () => server.app, adminClient, postgres: true });
+  channelScenarios({ adminClient, prefix: 'pg' });
 });

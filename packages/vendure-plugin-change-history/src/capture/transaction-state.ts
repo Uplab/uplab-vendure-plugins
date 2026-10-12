@@ -1,4 +1,5 @@
 import { ID } from '@vendure/core';
+import type { ChannelEventRecord } from './channel-capture';
 import type { EntryDraft } from './entry-writer.service';
 import { LoadedState } from '../entity-definitions/entity-definition';
 import { Lru } from './lru';
@@ -35,11 +36,18 @@ export class TransactionState {
   readonly collectionDeletions = new Map<string, EntryDraft>();
   /** Batch ids whose head entry this transaction wrote (or found written). */
   readonly batchHeads = new Set<string>();
+  /**
+   * Channel assignments heard in this transaction, written together when it commits: core announces a
+   * product's variants and assets before the product, so only then is it known which entry caused which.
+   */
+  readonly channelEvents: ChannelEventRecord[] = [];
   /** The tail of the chain of the package's work on this transaction's connection (see `serialize`). */
   lock: Promise<void> = Promise.resolve();
 
   /** Undo actions per savepoint depth. */
   private readonly journal = new Map<number, Array<() => void>>();
+  /** Work registered to run just before the transaction commits, by key (see `beforeCommit`). */
+  private readonly commitHooks = new Map<string, () => Promise<void>>();
 
   /** `depth`: the transaction's current savepoint depth (1 = the transaction itself). */
   constructor(
@@ -81,6 +89,40 @@ export class TransactionState {
     this.collectionDeletions.clear();
     this.journalAt(() => taken.forEach((draft, id) => this.collectionDeletions.set(id, draft)));
     return taken;
+  }
+
+  addChannelEvent(record: ChannelEventRecord): void {
+    const length = this.channelEvents.length;
+    this.channelEvents.push(record);
+    this.journalAt(() => {
+      this.channelEvents.length = length;
+    });
+  }
+
+  /** The channel events heard so far, removed from the state. */
+  takeChannelEvents(): ChannelEventRecord[] {
+    const taken = this.channelEvents.splice(0);
+    this.journalAt(() => this.channelEvents.unshift(...taken));
+    return taken;
+  }
+
+  /**
+   * Runs `hook` just before the transaction itself commits (not a savepoint), inside it; once per `key`
+   * however often it is registered. A transaction that rolls back runs nothing.
+   */
+  beforeCommit(key: string, hook: () => Promise<void>): void {
+    if (!this.commitHooks.has(key)) {
+      this.commitHooks.set(key, hook);
+    }
+  }
+
+  /** Runs the registered hooks one after another, each once (a hook may register another). */
+  async runBeforeCommit(): Promise<void> {
+    for (let next = this.commitHooks.entries().next(); !next.done; next = this.commitHooks.entries().next()) {
+      const [key, hook] = next.value;
+      this.commitHooks.delete(key);
+      await hook();
+    }
   }
 
   markHead(batchId: string): void {

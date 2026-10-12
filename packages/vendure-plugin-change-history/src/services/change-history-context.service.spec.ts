@@ -2,6 +2,7 @@ import {
   AdministratorService,
   Collection,
   CollectionModificationEvent,
+  Logger,
   ProcessContext,
   RequestContext,
   TransactionalConnection,
@@ -15,6 +16,7 @@ import { ChangeHistoryContextService } from './change-history-context.service';
 const administrator = { id: 7, firstName: 'Olena', lastName: 'Koval' };
 
 type Subscriber = {
+  beforeTransactionCommit(event: { queryRunner?: unknown }): Promise<void>;
   afterTransactionCommit(event: { queryRunner?: unknown }): void;
   afterTransactionRollback(event: { queryRunner?: unknown }): void;
 };
@@ -158,6 +160,31 @@ describe('ChangeHistoryContextService', () => {
     subscriber.afterTransactionCommit({ queryRunner: runner });
     runner.isTransactionActive = true;
     expect(context.transactionStateOf(ctxOf())).not.toBe(state);
+  });
+
+  it("runs a transaction's work before its own commit, not before a savepoint's release, and never fails it", async () => {
+    const error = vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
+    const runner = { isTransactionActive: true, isReleased: false, transactionDepth: 2 };
+    const { context, subscribers } = service([], administrator, runner);
+    context.listen();
+    const [subscriber] = subscribers;
+    const state = context.transactionStateOf(ctxOf());
+    const hook = vi.fn(async () => undefined);
+    state.beforeCommit('work', hook);
+    state.beforeCommit('work', hook);
+
+    await subscriber.beforeTransactionCommit({ queryRunner: runner });
+    await subscriber.beforeTransactionCommit({});
+    expect(hook).not.toHaveBeenCalled();
+    runner.transactionDepth = 1;
+    await subscriber.beforeTransactionCommit({ queryRunner: runner });
+    await subscriber.beforeTransactionCommit({ queryRunner: runner });
+    expect(hook).toHaveBeenCalledTimes(1);
+
+    state.beforeCommit('failing', async () => Promise.reject(new Error('boom')));
+    await expect(subscriber.beforeTransactionCommit({ queryRunner: runner })).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledWith('work before the commit failed: boom', 'ChangeHistory', expect.anything());
+    error.mockRestore();
   });
 
   it("records the session's administrator, resolved once per request", async () => {

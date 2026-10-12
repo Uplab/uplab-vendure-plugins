@@ -82,7 +82,7 @@ export class ChangeHistoryContextService {
 
   /**
    * Follows the end of every savepoint and transaction, so that a rollback undoes what the package remembered
-   * in it. Called on bootstrap; idempotent.
+   * in it, and runs a transaction's `beforeCommit` work just before it commits. Called on bootstrap; idempotent.
    */
   listen(): void {
     const subscribers = this.connection.rawConnection.subscribers;
@@ -100,8 +100,22 @@ export class ChangeHistoryContextService {
         this.transactions.delete(queryRunner);
       }
     };
+    const beforeCommit = async (queryRunner: QueryRunner | undefined) => {
+      const state = queryRunner && this.transactions.get(queryRunner);
+      // Depth 1: the transaction itself commits, not one of its savepoints.
+      if (!state || depthOf(queryRunner) !== 1) {
+        return;
+      }
+      try {
+        await state.runBeforeCommit();
+      } catch (e) {
+        // The hooks never reject; a commit must not fail because of the history.
+        Logger.error(`work before the commit failed: ${(e as Error)?.message}`, loggerCtx, (e as Error)?.stack);
+      }
+    };
     subscribers.push({
       changeHistory: true,
+      beforeTransactionCommit: (event: { queryRunner?: QueryRunner }) => beforeCommit(event.queryRunner),
       afterTransactionCommit: (event: { queryRunner?: QueryRunner }) => ended(event.queryRunner, true),
       afterTransactionRollback: (event: { queryRunner?: QueryRunner }) => ended(event.queryRunner, false),
     } as never);

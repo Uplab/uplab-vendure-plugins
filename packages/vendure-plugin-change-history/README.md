@@ -133,8 +133,14 @@ without values (`meta.noBefore = "evicted"`) rather than with a diff that would 
   last state and `meta.memberCount`. Deleting a facet records its values' deletions, derived from it. A deleted
   facet value keeps how many products and variants used it (`meta.usedByProducts` / `meta.usedByVariants`).
 - **`channel_assigned` / `channel_removed`**: a product, variant or asset assigned to or removed from a
-  channel, with the channel in `meta` (`channelId`, `channelCode`). Removing an asset from its last channel is
-  part of deleting it and is left to its `deleted` entry.
+  channel, with the channel in `meta` (`channelId`, `channelCode`). One operation is one row: core announces a
+  product's variants and images before the product, so inside a transaction these entries wait for its commit
+  and are then written together — the product, with its variants and images derived from it (an image of a
+  variant whose product is not in the operation, from that variant). When more than one entry is left at the
+  top (several products in one call, as the dashboard's bulk action sends them, or several variants assigned on
+  their own), they form one batch of kind `channel_assigned` / `channel_removed`, its head carrying the channel
+  in `meta` too — unless your own `runBatch` around the operation batches them already. Removing an asset from
+  its last channel is part of deleting it and is left to its `deleted` entry.
 - **Custom fields** are recorded by key (`customFields.<name>`, `customFields.<name>.<language>` for
   translatable ones). Fields declared `readonly` or `internal` are written by code and left out, unless you list
   them in `entities.<Type>.includeReadonlyCustomFields`. Relation fields are stored as ids with the target's

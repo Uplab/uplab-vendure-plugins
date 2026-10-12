@@ -323,6 +323,14 @@ export const ASSIGN_PRODUCTS_TO_CHANNEL: Document = gql`
   }
 `;
 
+export const REMOVE_PRODUCTS_FROM_CHANNEL: Document = gql`
+  mutation RemoveProductsFromChannel($input: RemoveProductsFromChannelInput!) {
+    removeProductsFromChannel(input: $input) {
+      id
+    }
+  }
+`;
+
 export const UNSETTLED_JOBS: Document = gql`
   query UnsettledJobs {
     jobs(options: { filter: { isSettled: { eq: false } } }) {

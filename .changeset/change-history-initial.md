@@ -6,8 +6,9 @@ Initial release of the change history plugin.
 
 - **Capture.** Records the catalogue from Vendure's events inside the transaction that makes the change:
   products, variants, collections (moves and contents included), facets, facet values, assets, promotions and
-  channel assignments, with before → after values. Cascaded deletions are derived from their cause; option
-  groups and manual stock adjustments are recorded too. Actors: administrators, API keys (under the owner's
+  channel assignments, with before → after values. Cascaded deletions are derived from their cause, and so are
+  the variants and images that go to a channel with their product: one operation is one row, several products
+  at once one batch. Option groups and manual stock adjustments are recorded too. Actors: administrators, API keys (under the owner's
   name), the collection rules and your own resolvers.
 - **Service.** `ChangeHistoryService`: `capture` after a raw write, `recordAction`, `recordRun` for external
   syncs (detail rows grouped under their product, an optional `subject`), `runBatch` (batches follow the

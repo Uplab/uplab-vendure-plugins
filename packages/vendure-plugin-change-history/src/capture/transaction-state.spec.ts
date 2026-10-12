@@ -100,4 +100,39 @@ describe('TransactionState', () => {
     end(true);
     expect([...state.batchHeads]).toEqual(['bulk_edit:a']);
   });
+
+  it('keeps the channel events of a released savepoint and drops those of a rolled-back one', () => {
+    const { state, begin, end } = stateAt();
+    const record = (id: string) => ({ draft: draft(id) }) as never;
+    state.addChannelEvent(record('1'));
+    begin();
+    state.addChannelEvent(record('2'));
+    end(true);
+    begin();
+    state.addChannelEvent(record('3'));
+    end(false);
+    expect(state.channelEvents.map((event) => event.draft.entityId)).toEqual(['1', '2']);
+
+    begin();
+    expect(state.takeChannelEvents()).toHaveLength(2);
+    end(false);
+    expect(state.channelEvents).toHaveLength(2);
+  });
+
+  it('runs each hook registered before the commit once, also one a hook registers', async () => {
+    const { state } = stateAt();
+    const order: string[] = [];
+    state.beforeCommit('a', async () => {
+      order.push('a');
+      state.beforeCommit('b', async () => {
+        order.push('b');
+      });
+    });
+    state.beforeCommit('a', async () => {
+      order.push('again');
+    });
+    await state.runBeforeCommit();
+    await state.runBeforeCommit();
+    expect(order).toEqual(['a', 'b']);
+  });
 });

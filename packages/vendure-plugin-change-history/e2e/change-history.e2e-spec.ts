@@ -66,6 +66,7 @@ import {
   waitFor,
 } from './helpers';
 import { apiScenarios } from './api-scenarios';
+import { channelScenarios } from './channel-scenarios';
 import { retentionScenarios } from './retention-scenarios';
 
 registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__sqlite-data__')));
@@ -922,11 +923,12 @@ describe('ChangeHistoryPlugin on sql.js', () => {
         entityId: decode(variantIds[0]),
         action: 'channel_assigned',
       });
-      // Core assigns the variants before it announces the product: no derived link.
+      // Core announces the variants before the product; written at the commit, they are derived from it.
       expect(variant).toMatchObject({
         parentType: 'Product',
         parentId: decode(productId),
         summary: 'assigned to channel sq-second',
+        derivedFromId: product.id,
       });
       await settleJobs(adminClient);
     });
@@ -963,4 +965,5 @@ describe('ChangeHistoryPlugin on sql.js', () => {
 
   retentionScenarios({ app: () => server.app, adminClient, archive, archiveDir });
   apiScenarios({ app: () => server.app, adminClient, postgres: false });
+  channelScenarios({ adminClient, prefix: 'sq' });
 });
