@@ -215,6 +215,11 @@ export class ChangeHistoryReader {
     (entry) => String(entry.id),
     (ctx, entries) => this.loadParentsDeleted(ctx, entries),
   );
+  /** Causes of derived entries, by id. */
+  private readonly causes = new Batcher<RequestContext, string, ChangeHistoryEntry>(
+    (id) => id,
+    (ctx, ids) => this.loadEntries(ctx, ids),
+  );
   /** Per read scope (see `scopeKey`). */
   private readonly filterOptionsCache = new Map<string, CachedFilterOptions>();
   /** A run's row ids in display order, per run, language and read scope (see `runOrder`). */
@@ -522,6 +527,17 @@ export class ChangeHistoryReader {
     return (await this.parentsDeleted.get(ctx, entry)) ?? false;
   }
 
+  /**
+   * The entry that caused this one (`derivedFromId`): `null` when there is none, when it is no longer stored,
+   * or when `ctx` may not read it (see `scopeOf`).
+   */
+  async derivedFrom(ctx: RequestContext, entry: ChangeHistoryEntry): Promise<ChangeHistoryEntry | null> {
+    if (entry.derivedFromId == null) {
+      return null;
+    }
+    return (await this.causes.get(ctx, String(entry.derivedFromId))) ?? null;
+  }
+
   private asText(path: string): string {
     return timestampAsText(this.connection.rawConnection.options.type, path);
   }
@@ -781,6 +797,26 @@ export class ChangeHistoryReader {
         for (const headId of live.get(row.batchId)!) {
           result.get(headId)!.push({ entityType: row.entityType, action: row.action, count: Number(row.count) });
         }
+      }
+    }
+    return result;
+  }
+
+  /** The entries of `ids` that `ctx` may read, by id. */
+  private async loadEntries(ctx: RequestContext, ids: string[]): Promise<Map<string, ChangeHistoryEntry>> {
+    const result = new Map<string, ChangeHistoryEntry>();
+    const scope = this.scopeOf(ctx);
+    for (const chunk of chunks(ids)) {
+      const entries = await inScope(
+        this.connection
+          .getRepository(ctx, ChangeHistoryEntry)
+          .createQueryBuilder('entry')
+          .where({ id: In(chunk) }),
+        ENTRY_COLUMNS,
+        scope,
+      ).getMany();
+      for (const found of entries) {
+        result.set(String(found.id), found);
       }
     }
     return result;

@@ -114,6 +114,11 @@ export class ChangeHistoryEntryResolver {
   }
 
   @ResolveField()
+  derivedFrom(@Ctx() ctx: RequestContext, @Parent() entry: ChangeHistoryEntry): Promise<ChangeHistoryEntry | null> {
+    return this.reader.derivedFrom(ctx, entry);
+  }
+
+  @ResolveField()
   derivedEntries(
     @Ctx() ctx: RequestContext,
     @Parent() entry: ChangeHistoryEntry,

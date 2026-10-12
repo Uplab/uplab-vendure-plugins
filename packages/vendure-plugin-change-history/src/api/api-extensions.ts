@@ -29,6 +29,8 @@ export const adminApiExtensions: Document = gql`
     channelId: ID
     "The entry, written earlier in the same transaction, that caused this one."
     derivedFromId: ID
+    "The entry derivedFromId names: null when there is none, it is no longer stored, or the user may not read it."
+    derivedFrom: ChangeHistoryEntry
     changes: JSON
     "Context of the entry: lastState of a deletion, kind and label of a batch head, counts of a run and its subject ({ label, type?, id? }), …"
     meta: JSON!

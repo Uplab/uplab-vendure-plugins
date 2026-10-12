@@ -28,6 +28,7 @@ interface FeedItem {
   id: string;
   entityType: string;
   entityId: string;
+  entityLabel: string | null;
   action: string;
   batchId: string | null;
   derivedCount: number;
@@ -151,6 +152,16 @@ export function channelScenarios(env: ChannelEnv): void {
       expect(variantTimeline.changeHistoryEntityTimeline.items[0]).toMatchObject({
         action: 'channel_assigned',
         derivedFromId: rows[0].id,
+      });
+      // It names its cause: the product's assignment.
+      const variantEntry = await adminClient.query(CHANGE_HISTORY_ENTRY, {
+        id: variantTimeline.changeHistoryEntityTimeline.items[0].id,
+      });
+      expect(variantEntry.changeHistoryEntry.derivedFrom).toEqual({
+        id: rows[0].id,
+        entityType: 'Product',
+        entityLabel: rows[0].entityLabel,
+        action: 'channel_assigned',
       });
 
       await adminClient.query(REMOVE_PRODUCTS_FROM_CHANNEL, { input: { productIds: [productId], channelId } });

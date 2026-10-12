@@ -432,6 +432,27 @@ describe('ChangeHistoryReader field values', () => {
     ).resolves.toBe(true);
   });
 
+  it('loads the causes of derived entries in one query, within the read scope', async () => {
+    const { reader, db } = setup();
+    const cause = entry({ id: 7, entityType: 'Product', action: 'channel_assigned' });
+    const causes = fakeQuery({ getMany: [cause] });
+    db.queue(causes);
+    const ctx = inChannel2();
+
+    await expect(
+      Promise.all([
+        reader.derivedFrom(ctx, entry({ id: 8, derivedFromId: 7 })),
+        reader.derivedFrom(ctx, entry({ id: 9, derivedFromId: '7' })),
+        // Gone, or of a channel or type the reader may not read: not returned by the query.
+        reader.derivedFrom(ctx, entry({ id: 10, derivedFromId: 3 })),
+      ]),
+    ).resolves.toEqual([cause, cause, null]);
+    expect(db.pending()).toBe(0);
+    expect(methods(causes)).toContain('andWhere');
+    // Not derived: no query at all.
+    await expect(reader.derivedFrom(ctx, entry({ id: 11, derivedFromId: null }))).resolves.toBeNull();
+  });
+
   it('falls back to the empty value when a load has nothing for the entry', async () => {
     const { reader } = setup();
     const loaders = reader as unknown as Record<

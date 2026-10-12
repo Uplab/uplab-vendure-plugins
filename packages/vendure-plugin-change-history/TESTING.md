@@ -71,15 +71,17 @@ without a label reads with `entityLabel: null`. Every query is refused without `
 with it alone; an administrator holding it in one channel only sees that channel's entries in the feed, one
 entry, a timeline, run details and filter options, while a SuperAdmin sees all. A reader with `ReadCatalog` but
 not `ReadPromotion`, nor the `ReadSettings` a host type of the suite asks for, gets none of those entries in
-the feed, one entry, batch members and counts, derived counts, timelines, run rows and filter options, and all
+the feed, one entry, batch members and counts, derived counts, timelines, run rows and filter options (nor a
+product entry's `derivedFrom` when its cause is a promotion's, though `derivedFromId` names it), and all
 of the product, batch, run and unlisted host-type entries. Unit specs cover the cursor, the batch loader, the
-primary-database read, the read scope and the stable sort. The feed's search finds a run by its subject's
+primary-database read, the read scope, the stable sort and the causes of derived entries loaded in one query. The feed's search finds a run by its subject's
 label (an order code) next to the entry labels, combined with the other filters; an entry derived from a batch
 member is not counted as a member in `batchCounts`.
 
 Both suites also run the channel scenarios (`e2e/channel-scenarios.ts`) through real mutations: a product with
 three variants, two images and a variant image assigned to a channel is one feed row whose six variant and image
-entries are derived from it — its timeline shows one item, the variant's its own derived assignment — and its
+entries are derived from it — its timeline shows one item, the variant's its own derived assignment, whose
+`derivedFrom` is the product's — and its
 removal one row with its three variants; three products assigned and then removed in one call are one batch row
 each (`batchCounts` three products), the expanded batch one row per product with its derived count.
 

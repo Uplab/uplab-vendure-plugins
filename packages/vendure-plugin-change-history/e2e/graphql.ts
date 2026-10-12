@@ -412,6 +412,12 @@ export const CHANGE_HISTORY_ENTRY: Document = gql`
   query ChangeHistoryEntry($id: ID!, $derived: ChangeHistoryEntryListOptions, $members: ChangeHistoryEntryListOptions) {
     changeHistoryEntry(id: $id) {
       ${ENTRY_FIELDS}
+      derivedFrom {
+        id
+        entityType
+        entityLabel
+        action
+      }
       derivedEntries(options: $derived) {
         items {
           id

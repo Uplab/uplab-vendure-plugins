@@ -799,6 +799,15 @@ export function apiScenarios(env: ApiEnv): void {
         channelId,
       });
       await insert({ entityType: 'E2eOpen', entityId: 'm7-o', entityLabel: 'm7-open', action: 'updated', channelId });
+      // A product entry caused by the promotion's: its cause is served only to a reader of promotions.
+      const caused = await insert({
+        entityType: 'Product',
+        entityId: 'm7-caused',
+        entityLabel: 'm7caused-product',
+        action: 'updated',
+        channelId,
+        derivedFromId: promotion.id,
+      });
       await history().recordRun(ctx, {
         source: 'm7_sync',
         label: 'm7-run',
@@ -847,12 +856,20 @@ export function apiScenarios(env: ApiEnv): void {
         'm7-secret',
       ]);
       expect(await runRows()).toEqual(['Product', 'Promotion']);
+      expect((await readEntry(caused.id)).derivedFrom).toEqual({
+        id: encode(promotion.id),
+        entityType: 'Promotion',
+        entityLabel: 'm7-promotion',
+        action: 'm7_promotion_action',
+      });
+      expect((await readEntry(product.id)).derivedFrom).toBeNull();
       try {
         await env.adminClient.asUserWithCredentials('m7-cataloguer@example.com', 'm7-cataloguer');
         // Promotions need ReadPromotion and the host's E2eSecret ReadSettings; batches, runs and unlisted types
         // need ReadChangeHistory only.
         expect(await labels()).toEqual(['m7-batch', 'm7-open', 'm7-product', 'm7-run']);
         expect(await readEntry(promotion.id)).toBeNull();
+        expect(await readEntry(caused.id)).toMatchObject({ derivedFromId: encode(promotion.id), derivedFrom: null });
         const readHead = await readEntry(head.id);
         expect(readHead.batchMembers).toEqual({
           items: [{ id: encode(product.id), entityLabel: 'm7-product' }],
