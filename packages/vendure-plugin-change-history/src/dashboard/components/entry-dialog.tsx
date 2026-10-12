@@ -528,6 +528,13 @@ export function CausedBy({ cause }: { cause: NonNullable<ChangeHistoryEntryData[
   );
 }
 
+/**
+ * A window opened from inside another (a cause, «show all») gets no backdrop of its own, so the one beneath
+ * steps back instead: a little smaller and dimmed, while the window on top carries a shadow.
+ */
+const NESTED =
+  'transition-[scale] data-[nested-dialog-open]:scale-[0.96] data-[nested-dialog-open]:after:absolute data-[nested-dialog-open]:after:inset-0 data-[nested-dialog-open]:after:rounded-[inherit] data-[nested-dialog-open]:after:bg-black/20 dark:data-[nested-dialog-open]:after:bg-black/50 data-[nested]:shadow-2xl';
+
 /** The entry window: opened from a feed row, a widget line or an entry link. */
 export function EntryDialog({ entryId, onClose }: { entryId: string | undefined; onClose: () => void }) {
   const { t } = useLingui();
@@ -553,7 +560,7 @@ export function EntryDialog({ entryId, onClose }: { entryId: string | undefined;
     <Dialog open={!!entryId} onOpenChange={(open) => !open && close()}>
       {/* The header stays while the body scrolls; focus lands on the header, not on the close button. */}
       <DialogContent
-        className="flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-4xl"
+        className={`flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-4xl ${NESTED}`}
         initialFocus={focusRef}
         showCloseButton={false}
       >
