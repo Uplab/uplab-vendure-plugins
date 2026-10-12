@@ -10,9 +10,17 @@ export default defineConfig({
     projects: ['packages/vendure-plugin-*'],
     coverage: {
       provider: 'v8',
-      include: ['packages/*/src/**/*.ts'],
-      // Dashboard GraphQL documents only run in the browser, parsed by the dashboard itself.
-      exclude: ['packages/dev-server/**', '**/*.spec.ts', '**/dist/**', '**/src/dashboard/graphql.ts'],
+      // Every source file, dashboard components (`.tsx`) included — measured whether or not a test loads them.
+      include: ['packages/*/src/**/*.{ts,tsx}'],
+      exclude: [
+        'packages/dev-server/**',
+        '**/*.spec.{ts,tsx}',
+        '**/dist/**',
+        // The render tests' stand-ins for @vendure/dashboard and Lingui: test code, not shipped.
+        '**/src/dashboard/testing/**',
+        // Dashboard GraphQL documents only run in the browser, parsed by the dashboard itself.
+        '**/src/dashboard/graphql.ts',
+      ],
       reporter: ['text-summary', 'lcov', 'json-summary'],
       // Enforced locally and in CI; Codecov only reports. Raise as coverage grows.
       thresholds: {

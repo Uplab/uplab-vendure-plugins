@@ -5,7 +5,7 @@ import { entry } from '../testing/fixtures';
 import { setLocale } from '../testing/i18n';
 import { registerChangeHistoryBatchKind, registerChangeHistoryValueText } from '../public';
 import { ActorName, actorOf } from './actor';
-import { EntryAction, EntryObject, EntrySummary, EntryType } from './summary';
+import { EntryAction, EntryCounts, EntryObject, EntrySummary, EntryType, RunCounts } from './summary';
 import { useLabels } from './use-labels';
 
 vi.mock('@vendure/dashboard', () => import('../testing/dashboard-mock'));
@@ -237,6 +237,231 @@ describe('a batch row', () => {
     registerChangeHistoryBatchKind('archive', { label: 'archived' });
     rerender(<EntryAction entry={mixed} />);
     expect(document.body.textContent).toBe('archived');
+  });
+});
+
+describe('EntrySummary, every kind of row', () => {
+  it("names a membership's collection in quotes, and a dash when none was recorded", () => {
+    const { container, rerender } = render(
+      <EntrySummary entry={entry({ action: 'collection_added', meta: { collectionLabel: 'Sale' } })} />,
+    );
+    expect(container.textContent).toBe('«Sale»');
+    rerender(<EntrySummary entry={entry({ action: 'collection_removed' })} />);
+    expect(container.textContent).toBe('—');
+    rerender(<EntrySummary entry={entry({ action: 'channel_removed' })} />);
+    expect(container.textContent).toBe('—');
+  });
+
+  it("counts a host action's numbers, its total last", () => {
+    const action = (counts: Record<string, number>) => entry({ action: 'products_reordered', meta: { counts } });
+    const { container, rerender } = render(<EntrySummary entry={action({ moved: 3, added: 0, total: 12 })} />);
+    expect(container.textContent).toBe('moved: 3 (total: 12)');
+    rerender(<EntrySummary entry={action({ total: 12 })} />);
+    expect(container.textContent).toBe('total: 12');
+    rerender(<EntrySummary entry={action({ moved: 3 })} />);
+    expect(container.textContent).toBe('moved: 3');
+  });
+
+  it('says that the details of an update recorded without its old values are unavailable, nothing more for a creation', () => {
+    setLocale('uk');
+    const { container, rerender } = render(<EntrySummary entry={entry({ meta: { noBefore: true } })} />);
+    expect(container.textContent).toBe('деталі недоступні');
+    rerender(<EntrySummary entry={entry({ action: 'created', meta: { noBefore: true } })} />);
+    expect(container.textContent).toBe('—');
+    rerender(<EntrySummary entry={entry({ action: 'deleted', meta: { noBefore: true } })} />);
+    expect(container.textContent).toBe('—');
+    rerender(<EntrySummary entry={entry()} />);
+    expect(container.textContent).toBe('—');
+  });
+
+  it('names the fields of a larger change, four at most', () => {
+    const text = { kind: 'text', from: 'a', to: 'b' };
+    const { container, rerender } = render(
+      <EntrySummary
+        entry={entry({ changes: { enabled: { kind: 'bool', from: true, to: false }, 'name.en': text } })}
+      />,
+    );
+    expect(container.textContent).toBe('Enabled, Name (en)');
+    rerender(
+      <EntrySummary
+        entry={entry({
+          changes: { 'name.en': text, 'slug.en': text, 'description.en': text, sku: text, 'customFields.erp': text },
+        })}
+      />,
+    );
+    expect(container.textContent).toBe('Name (en), Slug (en), Description (en), SKU, …');
+  });
+
+  it('names a single list-like or shortened field without its values', () => {
+    const { container, rerender } = render(
+      <EntrySummary
+        entry={entry({ changes: { 'description.en': { kind: 'richtext', from: '<p>a</p>', to: '<p>b</p>' } } })}
+      />,
+    );
+    expect(container.textContent).toBe('Description (en)');
+    rerender(
+      <EntrySummary
+        entry={entry({ changes: { facetValues: { kind: 'refs', stripped: true, added: ['1'], labels: {} } } })}
+      />,
+    );
+    expect(container.textContent).toBe('Facet values');
+    rerender(
+      <EntrySummary entry={entry({ changes: { 'customFields.note': { from: 'a', to: 'b', stripped: true } } })} />,
+    );
+    expect(container.textContent).toBe('Note');
+  });
+
+  it('reads a change of no recorded kind as text, a map of plain values by its changed keys', () => {
+    const { container, rerender } = render(
+      <EntrySummary entry={entry({ changes: { 'customFields.note': { from: 'draft', to: 'final' } } })} />,
+    );
+    expect(container.textContent).toBe('Note: draft → final');
+    rerender(<EntrySummary entry={entry({ changes: { 'customFields.minStock': { from: null, to: { Kyiv: 2 } } } })} />);
+    expect(container.textContent).toBe('Min stock: Kyiv: — → 2');
+  });
+
+  it('lists only what a set change added when nothing was removed', () => {
+    render(
+      <EntrySummary
+        entry={entry({ changes: { facetValues: { kind: 'refs', added: ['2'], labels: { 2: 'Color: White' } } } })}
+      />,
+    );
+    expect(document.body.textContent).toBe('Facet values: +Color: White');
+  });
+
+  it('names a created entity by a value of no recorded kind, and shows a dash when no value can name it', () => {
+    const { container, rerender } = render(
+      <EntrySummary entry={entry({ action: 'created', changes: { 'name.en': { to: 'Oversize tee' } } })} />,
+    );
+    expect(container.textContent).toBe('Name (en): Oversize tee');
+    rerender(
+      <EntrySummary
+        entry={entry({
+          action: 'created',
+          changes: {
+            facetValues: { kind: 'refs', added: ['1'], labels: { 1: 'Color: Black' } },
+            'name.en': { kind: 'text', to: null },
+            'customFields.erp': { kind: 'text', to: 'x', stripped: true },
+          },
+        })}
+      />,
+    );
+    expect(container.textContent).toBe('—');
+  });
+
+  it("counts a run's rows with its duration, and the duration alone when nothing was counted", () => {
+    const run = (meta: Record<string, unknown>) =>
+      entry({ entityType: 'Run', action: 'run', source: 'erp', actorType: 'system', meta });
+    const { container, rerender } = render(<EntrySummary entry={run({ counts: { updated: 3 }, durationMs: 4200 })} />);
+    expect(container.textContent).toBe('updated: 3 · 4 s');
+    rerender(<EntrySummary entry={run({ durationMs: 10 })} />);
+    expect(container.textContent).toBe('1 s');
+  });
+
+  it('lists every count of a run, zeros included, where the window asks for them', () => {
+    render(
+      <RunCounts
+        entry={entry({ entityType: 'Run', meta: { counts: { updated: 3, failed: 0 } } })}
+        includeZero
+        separator=" · "
+      />,
+    );
+    expect(document.body.textContent).toBe('updated: 3 · failed: 0');
+  });
+
+  it('shows nothing for a host action whose counts are all zero', () => {
+    render(<EntryCounts entry={entry({ meta: { counts: { moved: 0 } } })} />);
+    expect(document.body.textContent).toBe('');
+  });
+});
+
+describe('a run row', () => {
+  it('shows a dash for a run with neither a subject nor a label', () => {
+    render(<EntryObject entry={entry({ entityType: 'Run', entityLabel: null })} cut />);
+    expect(document.body.textContent).toBe('—');
+  });
+
+  it('cuts a long run label in a narrow cell', () => {
+    render(<EntryObject entry={entry({ entityType: 'Run', entityLabel: 'Odoo: stock' })} cut />);
+    expect(screen.getByText('Odoo: stock').getAttribute('class')).toContain('truncate');
+  });
+});
+
+describe('a batch row, by what it stands for', () => {
+  const batch = (over: Partial<ReturnType<typeof entry>>) =>
+    entry({ entityType: 'Batch', action: 'batch', entityLabel: null, batchId: null, ...over });
+
+  it("shows a collection-rules batch as its collection's: type, link, kind and added / removed", () => {
+    setLocale('uk');
+    const head = batch({
+      batchId: 'collection_rules:1',
+      source: 'collection_rules',
+      actorType: 'system',
+      parentType: 'Collection',
+      parentId: '20',
+      entityLabel: 'Sale',
+      meta: { counts: { added: 12, removed: 3 } },
+      batchCounts: [
+        { entityType: 'Product', action: 'collection_added', count: 12 },
+        { entityType: 'Product', action: 'collection_removed', count: 3 },
+      ],
+    });
+    render(
+      <>
+        <EntryType entry={head} />|<EntryObject entry={head} cut />|<EntryAction entry={head} />|
+        <EntrySummary entry={head} />
+      </>,
+    );
+    expect(document.body.textContent).toBe('Колекція|Sale15|оновлено вміст колекції|+12 / −3');
+    expect(screen.getByRole('link', { name: 'Sale' }).getAttribute('href')).toBe('/collections/20');
+  });
+
+  it("shows a batch whose collection is gone as deleted, and one without a parent id as the batch's own", () => {
+    const { container, rerender } = render(
+      <EntryObject
+        entry={batch({ parentType: 'Collection', parentId: '20', entityLabel: 'Sale', parentDeleted: true })}
+      />,
+    );
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(container.textContent).toBe('SaleDeleted');
+    rerender(<EntryObject entry={batch({ parentType: 'Collection', entityLabel: 'Sale' })} />);
+    expect(container.textContent).toBe('Sale');
+    rerender(<EntryType entry={batch({ parentType: 'Collection' })} />);
+    expect(container.textContent).toBe('Bulk operation');
+  });
+
+  it('names a batch by its own label, and leaves out a size it does not know', () => {
+    const { container, rerender } = render(
+      <EntryObject entry={batch({ batchId: 'scheduled_action:1', entityLabel: 'Scheduled action #3' })} cut />,
+    );
+    expect(container.textContent).toBe('Scheduled action #3');
+    expect(screen.getByText('Scheduled action #3').getAttribute('class')).toBe('truncate');
+    rerender(<EntryObject entry={batch({})} />);
+    expect(container.textContent).toBe('');
+  });
+
+  it('calls a batch of no recorded kind a bulk operation', () => {
+    render(<EntryAction entry={batch({})} />);
+    expect(document.body.textContent).toBe('bulk operation');
+  });
+
+  it("names the fields a bulk edit set, as fields of its members' type", () => {
+    const { container, rerender } = render(
+      <EntrySummary entry={batch({ batchId: 'bulk_edit:1', meta: { fields: ['enabled', 'name'] } })} />,
+    );
+    expect(container.textContent).toBe('Enabled, Name');
+    rerender(
+      <EntrySummary
+        entry={batch({
+          batchId: 'bulk_edit:1',
+          meta: { fields: ['sku'], counts: { added: 1 } },
+          batchCounts: [{ entityType: 'ProductVariant', action: 'updated', count: 2 }],
+        })}
+      />,
+    );
+    expect(container.textContent).toBe('SKU');
+    rerender(<EntrySummary entry={batch({ batchId: 'bulk_edit:1', meta: { fields: [] } })} />);
+    expect(container.textContent).toBe('');
   });
 });
 

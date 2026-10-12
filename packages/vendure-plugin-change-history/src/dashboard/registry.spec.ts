@@ -77,6 +77,10 @@ describe('change history dashboard registry', () => {
     rejects(() => pub.registerChangeHistoryFieldLabels('Product', { sku: 'SKU', name: bad({}) }), /needs a label/);
     rejects(() => pub.registerChangeHistoryValueRenderer('color', bad(undefined)), /React component/);
     rejects(() => pub.registerChangeHistoryDetailRenderer('stock', bad('table')), /React component/);
+    rejects(
+      () => pub.registerChangeHistoryValueText('stockThreshold', bad('{count} locations')),
+      /text of kind "stockThreshold" must be a function/,
+    );
     rejects(() => pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'loud' })), /tone must be/);
     rejects(
       () => pub.registerChangeHistorySource('erp', bad({ label: 'ERP', tone: 'system', icon: 'plug' })),
@@ -108,5 +112,6 @@ describe('change history dashboard registry', () => {
     expect(store.fieldLabels.get('Product')?.has('sku')).toBeFalsy();
     expect(store.sources.has('erp')).toBe(false);
     expect(store.valueRenderers.has('color')).toBe(false);
+    expect(store.valueTexts.has('stockThreshold')).toBe(false);
   });
 });

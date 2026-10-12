@@ -26,10 +26,10 @@ const i18n = {
   },
 };
 
+/** One `t` across renders, as Lingui keeps one per locale: a memo that depends on it is not rebuilt each render. */
+const t = (descriptor: { message: string; context?: string } | string) =>
+  typeof descriptor === 'string' ? descriptor : translateMessage(descriptor.message, descriptor.context);
+
 export function useLingui() {
-  return {
-    i18n,
-    t: (descriptor: { message: string; context?: string } | string) =>
-      typeof descriptor === 'string' ? descriptor : translateMessage(descriptor.message, descriptor.context),
-  };
+  return { i18n, t };
 }

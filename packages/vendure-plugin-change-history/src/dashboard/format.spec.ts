@@ -7,6 +7,7 @@ import {
   argumentList,
   batchTotal,
   capitalizeFirst,
+  changedEntries,
   clampPage,
   diffWindow,
   entryParam,
@@ -238,6 +239,19 @@ describe('values', () => {
     expect(flatEntries(['a'])).toBeUndefined();
     expect(flatEntries('text')).toBeUndefined();
     expect(jsonLines({ Kyiv: 3, Lviv: 0 }, undefined)).toEqual(['Kyiv: 3', 'Lviv: 0']);
+  });
+
+  it('reads a change of a map of scalars as the keys that changed, a missing side as a dash', () => {
+    expect(changedEntries({ Kyiv: 0, Lviv: 1 }, { Kyiv: 13, Lviv: 1, Odesa: 2 })).toEqual([
+      ['Kyiv', '0', '13'],
+      ['Odesa', '—', '2'],
+    ]);
+    expect(changedEntries({ Kyiv: 1, Lviv: 2 }, { Kyiv: 1 })).toEqual([['Lviv', '2', '—']]);
+    expect(changedEntries(null, { Kyiv: 2 })).toEqual([['Kyiv', '—', '2']]);
+    expect(changedEntries({ Kyiv: 2 }, undefined)).toEqual([['Kyiv', '2', '—']]);
+    expect(changedEntries(null, null)).toBeUndefined();
+    expect(changedEntries(['a'], { Kyiv: 2 })).toBeUndefined();
+    expect(changedEntries({ Kyiv: 2 }, 'text')).toBeUndefined();
   });
 
   it('marks the lines outside the common subsequence', () => {

@@ -174,6 +174,11 @@ describe('resolveOptions', () => {
     expect(() => resolveOptions(options as ChangeHistoryPluginOptions)).toThrow(message);
   });
 
+  it('keeps the actor resolvers it is given', () => {
+    const resolver = { name: 'erp', resolve: () => undefined };
+    expect(resolveOptions({ actorResolvers: [resolver], retention: { archive } }).actorResolvers).toEqual([resolver]);
+  });
+
   it('allows the same extractor key on two entities', () => {
     expect(() =>
       resolveOptions({

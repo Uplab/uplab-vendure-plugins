@@ -1,22 +1,92 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { feedFilter, periodBounds } from '../format';
 import { answerQueries, refetches } from '../testing/dashboard-mock';
-import { entry } from '../testing/fixtures';
+import { dialogData, entry } from '../testing/fixtures';
 import { setLocale } from '../testing/i18n';
 import { RecentChangesWidget } from './recent-changes-widget';
 
-vi.mock('@vendure/dashboard', () => import('../testing/dashboard-mock'));
+const query = vi.hoisted(() => ({
+  fetching: false,
+  queryFn: undefined as undefined | (() => unknown),
+  api: [] as unknown[][],
+}));
+
+vi.mock('@vendure/dashboard', async () => {
+  const base = await import('../testing/dashboard-mock');
+  return {
+    ...base,
+    api: {
+      query: (...args: unknown[]) => {
+        query.api.push(args);
+        return Promise.resolve({});
+      },
+    },
+    // The widget's own query: its request is kept so that a test can read the variables it sends.
+    useQuery: (options: { queryKey: readonly unknown[]; enabled?: boolean; queryFn: () => unknown }) => {
+      if (options.queryKey[0] === 'change-history-recent') {
+        query.queryFn = options.queryFn;
+        return { ...base.useQuery(options), isFetching: query.fetching };
+      }
+      return base.useQuery(options);
+    },
+    Link: ({ to, search, children }: { to: string; search?: Record<string, unknown>; children?: ReactNode }) => {
+      const params = Object.entries(search ?? {}).filter(([, value]) => value !== undefined);
+      return (
+        <a href={`${to}?${new URLSearchParams(params.map(([key, value]) => [key, String(value)]))}`}>{children}</a>
+      );
+    },
+    Dialog: ({
+      open,
+      onOpenChange,
+      children,
+    }: {
+      open: boolean;
+      onOpenChange: (open: boolean) => void;
+      children?: ReactNode;
+    }) =>
+      open ? (
+        <>
+          {children}
+          <button type="button" onClick={() => onOpenChange(false)}>
+            close the window
+          </button>
+        </>
+      ) : null,
+  };
+});
 vi.mock('@lingui/react/macro', () => import('../testing/lingui-mock'));
 vi.mock('@lingui/react', () => import('../testing/lingui-mock'));
 
 beforeEach(() => setLocale('uk'));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  query.fetching = false;
+  query.queryFn = undefined;
+  query.api.length = 0;
+});
 
 const recent = (answer: Parameters<typeof answerQueries>[0]) => {
   answerQueries(answer);
   render(<RecentChangesWidget />);
 };
+
+const lines = (items: Array<ReturnType<typeof entry>>) =>
+  recent((key) => {
+    if (key[0] === 'change-history-recent') {
+      return { data: { changeHistoryEntries: { items, totalItems: items.length } } };
+    }
+    return key[0] === 'change-history-entry' ? { data: dialogData(entry({ id: String(key[1]) })) } : undefined;
+  });
+
+/** The time cell of each line. */
+const times = () => screen.getAllByRole('listitem').map((item) => item.querySelector('span') as HTMLElement);
+
+/** The Insights page's period (see the dashboard mock), as whole local days. */
+const PERIOD = periodBounds(new Date('2026-10-01T00:00:00Z'), new Date('2026-10-12T00:00:00Z'));
 
 describe('RecentChangesWidget', () => {
   it('says that the request failed, with a retry, instead of «no changes»', () => {
@@ -60,5 +130,88 @@ describe('RecentChangesWidget', () => {
     recent(() => ({ isLoading: true }));
     expect(document.querySelector('[data-skeleton]')).toBeTruthy();
     expect(document.body.textContent).not.toContain('За цей період змін немає.');
+  });
+
+  it('asks for the last 10 rows of the default feed within the page’s whole days', async () => {
+    lines([]);
+    await query.queryFn?.();
+    expect(query.api).toHaveLength(1);
+    expect(query.api[0][1]).toEqual({
+      options: {
+        take: 10,
+        sort: { createdAt: 'DESC' },
+        filter: feedFilter(undefined, { collapseBatches: true, hideSystem: false, ...PERIOD }),
+      },
+    });
+  });
+
+  it('keeps the time column narrow when every line is today’s', () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 9, 12, 18, 0) });
+    lines([
+      entry({ id: '1', createdAt: new Date(2026, 9, 12, 9, 0).toISOString() }),
+      entry({ id: '2', createdAt: new Date(2026, 9, 12, 8, 0).toISOString() }),
+    ]);
+    expect(times().map((time) => time.className.split(' ')[0])).toEqual(['w-[2.75rem]', 'w-[2.75rem]']);
+  });
+
+  it('widens the time column for day and time once a line is older than today', () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 9, 12, 18, 0) });
+    lines([
+      entry({ id: '1', createdAt: new Date(2026, 9, 12, 9, 0).toISOString() }),
+      entry({ id: '2', createdAt: new Date(2026, 9, 11, 8, 0).toISOString() }),
+    ]);
+    expect(times().map((time) => time.className.split(' ')[0])).toEqual(['w-[5.5rem]', 'w-[5.5rem]']);
+  });
+
+  it('greys out system lines, not people’s', () => {
+    lines([entry({ id: '1' }), entry({ id: '2', source: 'collection_rules', actorType: 'system', actorLabel: null })]);
+    const [person, system] = screen.getAllByRole('listitem');
+    expect(person.className).not.toContain('bg-muted/20');
+    expect(system.className).toContain('bg-muted/20');
+  });
+
+  it('opens a line’s entry in the entry window, and closes it', () => {
+    lines([entry({ id: '7', entityLabel: 'Oversize tee' })]);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('listitem'));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'close the window' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('gives a cut line of what changed its whole text on hover', () => {
+    lines([entry({ id: '7' })]);
+    const changed = screen.getByRole('listitem').querySelector('.line-clamp-2') as HTMLElement;
+    fireEvent.mouseEnter(changed);
+    expect(changed.title).toBe('');
+    Object.defineProperties(changed, { scrollHeight: { value: 60 }, clientHeight: { value: 40 } });
+    fireEvent.mouseEnter(changed);
+    expect(changed.title).toBe(changed.textContent?.replace(/\s+/g, ' ').trim());
+    expect(changed.title).toContain('оновлено');
+  });
+
+  it('links «All changes» to the feed with the default switches and the page’s period', () => {
+    lines([]);
+    const link = screen.getByRole('link', { name: 'Усі зміни →' });
+    const url = new URL(link.getAttribute('href') ?? '', 'http://dashboard');
+    expect(url.pathname).toBe('/change-history');
+    // The feed's defaults (collapsed batches, system rows shown) stay out of the URL.
+    expect(Object.fromEntries(url.searchParams)).toEqual({ from: PERIOD.from, to: PERIOD.to });
+  });
+
+  it('refreshes on demand, and spins while it does', () => {
+    lines([]);
+    const refresh = screen.getByRole('button', { name: 'Оновити' }) as HTMLButtonElement;
+    expect(refresh.disabled).toBe(false);
+    expect(refresh.querySelector('svg')?.getAttribute('class')).not.toContain('animate-spin');
+    fireEvent.click(refresh);
+    expect(refetches).toEqual(['change-history-recent']);
+    cleanup();
+
+    query.fetching = true;
+    lines([]);
+    const spinning = screen.getByRole('button', { name: 'Оновити' }) as HTMLButtonElement;
+    expect(spinning.disabled).toBe(true);
+    expect(spinning.querySelector('svg')?.getAttribute('class')).toContain('animate-spin');
   });
 });
