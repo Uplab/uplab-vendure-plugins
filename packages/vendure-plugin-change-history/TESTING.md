@@ -97,7 +97,9 @@ entries the history writes after the job (`waitFor`).
 
 ## Running the Postgres suite locally
 
-The suite **resets the schema of the database in the URL** — point it at a database of its own:
+The suite **resets the schema of the database in the URL** — point it at a database of its own. The URL is
+`postgres://<user>:<password>@<host>:<port>/<database>`; take the user, password and port of the Postgres you run.
+With the one CI uses (`postgres:15`, password `postgres`), started on a free port:
 
 ```bash
 docker run -d --name change-history-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=change_history_e2e \
@@ -107,9 +109,21 @@ CHANGE_HISTORY_E2E_PG_URL=postgres://postgres:postgres@localhost:5433/change_his
   pnpm --filter @uplab/vendure-plugin-change-history test:e2e:pg
 ```
 
+With a Postgres already running on `localhost:5432` (say, user `postgres`, password `password`), create the
+database there instead:
+
+```bash
+PGPASSWORD=password createdb -h localhost -U postgres change_history_e2e
+
+CHANGE_HISTORY_E2E_PG_URL=postgres://postgres:password@localhost:5432/change_history_e2e \
+  pnpm --filter @uplab/vendure-plugin-change-history test:e2e:pg
+```
+
 `test:e2e:pg` fails when the variable is missing, so the CI job cannot pass by skipping.
 
 ## Dev server on Postgres
 
 The dev server uses SQLite, where the change history has no before → after values. To look at real diffs,
-start it with `DEV_DB=postgres` and `DEV_DB_URL` (see `packages/dev-server/.env.example`).
+start it with `DEV_DB=postgres` and `DEV_DB_URL` (see `packages/dev-server/.env.example`), a URL of the same form:
+`DEV_DB=postgres DEV_DB_URL=postgres://postgres:password@localhost:5432/vendure_dev pnpm dev` (create the database
+first; the schema is synchronized on start).
