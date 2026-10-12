@@ -1,5 +1,6 @@
 import { Args, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { Allow, Ctx, ID, ListQueryOptions, PaginatedList, RequestContext } from '@vendure/core';
+import { plainActorLabel } from '../actors/built-in-resolvers';
 import { CHANGE_HISTORY_ENTITY_TYPES, readChangeHistory } from '../constants';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
 import {
@@ -14,6 +15,17 @@ import { BatchCount } from '../retention/compact';
 type ListArgs = { options?: ListQueryOptions<ChangeHistoryEntry> };
 
 const EMPTY: PaginatedList<ChangeHistoryEntry> = { items: [], totalItems: 0 };
+
+/** A batch head written without a label: the writer stored its kind in the label column. */
+function isUnlabelledBatchHead(entry: ChangeHistoryEntry): boolean {
+  const { meta } = entry;
+  return (
+    entry.entityType === CHANGE_HISTORY_ENTITY_TYPES.Batch &&
+    meta.label == null &&
+    typeof meta.kind === 'string' &&
+    entry.entityLabel === meta.kind
+  );
+}
 
 @Resolver()
 export class ChangeHistoryAdminResolver {
@@ -60,6 +72,21 @@ export class ChangeHistoryAdminResolver {
 @Resolver('ChangeHistoryEntry')
 export class ChangeHistoryEntryResolver {
   constructor(private readonly reader: ChangeHistoryReader) {}
+
+  /**
+   * The stored label, except for a batch recorded without one: its label column holds the batch kind, which is
+   * a key, not a name — `null` tells the client to name the kind itself.
+   */
+  @ResolveField()
+  entityLabel(@Parent() entry: ChangeHistoryEntry): string | null {
+    return isUnlabelledBatchHead(entry) ? null : entry.entityLabel;
+  }
+
+  /** The actor's name (rows of pre-release versions said "Name (API key)"; `actorType` says it). */
+  @ResolveField()
+  actorLabel(@Parent() entry: ChangeHistoryEntry): string | null {
+    return plainActorLabel(entry.actorType, entry.actorLabel);
+  }
 
   @ResolveField()
   isCompacted(@Parent() entry: ChangeHistoryEntry): boolean {

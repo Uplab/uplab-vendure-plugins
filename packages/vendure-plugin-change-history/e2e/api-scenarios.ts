@@ -272,6 +272,7 @@ export function apiScenarios(env: ApiEnv): void {
         const item = (label: string) => items.find((entry) => entry.entityLabel === label);
 
         expect(item('p2f-one')).toMatchObject({ derivedCount: 1, batchCounts: null, isCompacted: false });
+        expect(item('p2f-two (P2F-SKU)')).toMatchObject({ actorType: 'api_key', actorLabel: 'Feed Admin' });
         expect(item('p2f-batch')).toMatchObject({
           derivedCount: 0,
           batchCounts: [{ entityType: 'Product', action: 'updated', count: 2 }],

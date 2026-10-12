@@ -779,7 +779,7 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
       expect(await lastOf('Product', productId)).toMatchObject({
         actorType: 'api_key',
         source: 'api_key',
-        actorLabel: 'Super Admin (API key)',
+        actorLabel: 'Super Admin',
         changes: { enabled: { kind: 'bool', from: true, to: false } },
       });
     });

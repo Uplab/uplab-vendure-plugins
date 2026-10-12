@@ -10,8 +10,8 @@ import { CHANGE_HISTORY_ACTOR_TYPES, CHANGE_HISTORY_SOURCES } from '../constants
 import { ChangeHistoryActorResolver, ResolvedActor } from '../types';
 
 /**
- * The session's administrator — or, for a request authenticated with an API key, the key's owner
- * (`api_key`, label "… (API key)").
+ * The session's administrator — or, for a request authenticated with an API key, the key's owner (`api_key`).
+ * The label is the administrator's name either way: the actor type says it was a key, and the dashboard marks it.
  */
 export function sessionAdministratorResolver(administratorService: AdministratorService): ChangeHistoryActorResolver {
   return {
@@ -26,7 +26,7 @@ export function sessionAdministratorResolver(administratorService: Administrator
         ? {
             actorType: CHANGE_HISTORY_ACTOR_TYPES.api_key,
             actorId: administrator.id,
-            actorLabel: `${name} (API key)`,
+            actorLabel: name,
             source: CHANGE_HISTORY_SOURCES.api_key,
           }
         : {
@@ -66,4 +66,14 @@ export function unknownSystemResolver(processContext: ProcessContext): ChangeHis
       meta: { apiType: ctx.apiType, processType: processContext.isWorker ? 'worker' : 'server' },
     }),
   };
+}
+
+/** The suffix pre-release versions appended to an API-key actor's label; stripped when such a row is read. */
+const LEGACY_API_KEY_SUFFIX = ' (API key)';
+
+/** The administrator's name of a stored actor label: rows of pre-release versions said "Name (API key)". */
+export function plainActorLabel(actorType: string, label: string | null): string | null {
+  return actorType === CHANGE_HISTORY_ACTOR_TYPES.api_key && label?.endsWith(LEGACY_API_KEY_SUFFIX)
+    ? label.slice(0, -LEGACY_API_KEY_SUFFIX.length)
+    : label;
 }

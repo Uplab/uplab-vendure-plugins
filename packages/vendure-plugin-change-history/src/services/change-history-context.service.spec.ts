@@ -7,6 +7,7 @@ import {
   TransactionalConnection,
 } from '@vendure/core';
 import { describe, expect, it, vi } from 'vitest';
+import { plainActorLabel } from '../actors/built-in-resolvers';
 import { ChangeHistoryActorResolver, ResolvedActor, ResolvedChangeHistoryPluginOptions } from '../types';
 import { LAST_SEEN_CAPACITY } from '../capture/transaction-state';
 import { ChangeHistoryContextService } from './change-history-context.service';
@@ -178,9 +179,16 @@ describe('ChangeHistoryContextService', () => {
     expect(await context.resolveActor(ctxOf({ authenticationStrategy: 'apikey' }))).toEqual({
       actorType: 'api_key',
       actorId: 7,
-      actorLabel: 'Olena Koval (API key)',
+      actorLabel: 'Olena Koval',
       source: 'api_key',
     });
+  });
+
+  it('reads a pre-release API-key label ("Name (API key)") as the owner\'s plain name', () => {
+    expect(plainActorLabel('api_key', 'Olena Koval (API key)')).toBe('Olena Koval');
+    expect(plainActorLabel('api_key', 'Olena Koval')).toBe('Olena Koval');
+    expect(plainActorLabel('admin', 'Team (API key)')).toBe('Team (API key)');
+    expect(plainActorLabel('api_key', null)).toBeNull();
   });
 
   it('falls back to an unknown system actor, saying where it ran', async () => {
