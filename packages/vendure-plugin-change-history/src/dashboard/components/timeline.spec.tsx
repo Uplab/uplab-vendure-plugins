@@ -95,6 +95,19 @@ describe('EntityTimeline', () => {
     expect(titleLine()).toMatch(/^Option group added·Іван Петренко·/);
   });
 
+  it("lines up a sparse map of a host's kind key by key, though nothing is registered for it", () => {
+    timeline([
+      entry({
+        changes: {
+          stockThreshold: { kind: 'stock_threshold', from: { 'Склад Львів': 5 }, to: { 'Шоурум Київ': 13 } },
+        },
+      }),
+    ]);
+    const lines = [...document.querySelectorAll('tbody td[colspan="2"] .grid > div')].map((cell) => cell.textContent);
+    expect(lines).toEqual([nb('Склад Львів:~5'), nb('Склад Львів:~—'), nb('Шоурум Київ:~—'), nb('Шоурум Київ:~13')]);
+    expect(document.querySelector('.font-mono')).toBeNull();
+  });
+
   it('leaves the field / was / became header out of every item', () => {
     timeline([entry({ changes: { enabled: { kind: 'bool', from: true, to: false } } })]);
     expect(document.querySelector('thead')).toBeNull();

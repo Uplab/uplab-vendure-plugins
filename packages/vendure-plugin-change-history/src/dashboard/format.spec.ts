@@ -20,6 +20,7 @@ import {
   refLabel,
   repeatsShown,
   richTextDiff,
+  mapRows,
   soleEntry,
   splitTrailingCode,
   withFacetValueLabels,
@@ -264,6 +265,40 @@ describe('values', () => {
     expect(soleEntry({ Kyiv: { a: 1 } }, { Kyiv: 2 })).toBeUndefined();
     expect(soleEntry(null, null)).toBeUndefined();
     expect(soleEntry(3, 4)).toBeUndefined();
+  });
+
+  it('lines up the keys of two maps of scalars, sorted by name, a missing value as null', () => {
+    expect(mapRows({ Lviv: 5, Kyiv: 3 }, { Kyiv: 7, Odesa: 2, Lviv: 5 }, 'en')).toEqual([
+      { key: 'Kyiv', from: 3, to: 7, changed: true },
+      { key: 'Lviv', from: 5, to: 5, changed: false },
+      { key: 'Odesa', from: null, to: 2, changed: true },
+    ]);
+    // Nothing, null and an empty string are one «no value»; a number and its text are one value.
+    expect(mapRows({ Kyiv: null, Lviv: '' }, { Lviv: null, Odesa: '3' }, 'en')).toEqual([
+      { key: 'Kyiv', from: null, to: null, changed: false },
+      { key: 'Lviv', from: null, to: null, changed: false },
+      { key: 'Odesa', from: null, to: '3', changed: true },
+    ]);
+    expect(mapRows({ Kyiv: 3 }, { Kyiv: '3' })?.[0].changed).toBe(false);
+    expect(mapRows(null, { Kyiv: 1 })).toEqual([{ key: 'Kyiv', from: null, to: 1, changed: true }]);
+    expect(mapRows({ Kyiv: 1 }, {})).toEqual([{ key: 'Kyiv', from: 1, to: null, changed: true }]);
+  });
+
+  it('sorts the keys of a map in a language, numbers in them by value, whatever tag it gets', () => {
+    const keys = (locale?: string) =>
+      mapRows({ 'Склад 10': 1, 'Склад 2': 1, Арсенал: 1 }, null, locale)?.map((row) => row.key);
+    expect(keys('uk')).toEqual(['Арсенал', 'Склад 2', 'Склад 10']);
+    expect(keys('uk_UA')).toEqual(['Арсенал', 'Склад 2', 'Склад 10']);
+    expect(keys('not a locale!')).toEqual(['Арсенал', 'Склад 2', 'Склад 10']);
+    expect(keys()).toEqual(['Арсенал', 'Склад 2', 'Склад 10']);
+  });
+
+  it('draws no map rows unless both sides are maps of scalars or nothing, and one holds a key', () => {
+    expect(mapRows(null, null)).toBeUndefined();
+    expect(mapRows({}, undefined)).toBeUndefined();
+    expect(mapRows('text', { Kyiv: 1 })).toBeUndefined();
+    expect(mapRows({ Kyiv: 1 }, ['Kyiv'])).toBeUndefined();
+    expect(mapRows({ Kyiv: { a: 1 } }, { Kyiv: 2 })).toBeUndefined();
   });
 
   it('marks the lines outside the common subsequence', () => {

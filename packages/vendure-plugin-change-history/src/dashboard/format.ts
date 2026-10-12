@@ -158,6 +158,61 @@ export function soleEntry(from: unknown, to: unknown): { key: string; from: unkn
   return { key, from: valueOf(from), to: valueOf(to) };
 }
 
+/** A plain value: what an object of scalars holds under each key. */
+type PlainValue = string | number | boolean | null;
+
+/** One key of a map of scalars across both sides of a change: its value on each (`null` when a side lacks it). */
+export interface MapRow {
+  key: string;
+  from: PlainValue;
+  to: PlainValue;
+  changed: boolean;
+}
+
+/** Names compared in a language (`uk_UA` read as `uk-UA`), numbers in them by value; the runtime's own for a tag it does not know. */
+function collatorOf(locale: string | undefined): Intl.Collator {
+  try {
+    return new Intl.Collator(locale?.replace('_', '-'), { numeric: true });
+  } catch {
+    return new Intl.Collator(undefined, { numeric: true });
+  }
+}
+
+/** A side of a map change: an object of scalars, or nothing (no value, an empty object). */
+function mapSide(value: unknown): Record<string, PlainValue> | undefined {
+  if (value == null || (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0)) {
+    return {};
+  }
+  return flatEntries(value) ? (value as Record<string, PlainValue>) : undefined;
+}
+
+/**
+ * The rows of a change of an object of scalars (a per-location map, stored sparsely): every key of either side
+ * once, with its value on each side, so the two columns line up key by key. Keys are sorted by name in the
+ * dashboard's language, numbers in them by value («Склад 2» before «Склад 10») — not in stored order, which
+ * differs between sides and puts a removed key last. A key is changed when its text differs, a missing value,
+ * `null` and an empty string being the same. `undefined` unless each side is such an object or nothing, and when
+ * neither side holds a key.
+ */
+export function mapRows(from: unknown, to: unknown, locale?: string): MapRow[] | undefined {
+  const before = mapSide(from);
+  const after = mapSide(to);
+  if (!before || !after) {
+    return undefined;
+  }
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort(collatorOf(locale).compare);
+  if (keys.length === 0) {
+    return undefined;
+  }
+  // No value, `null` and an empty string all read «—».
+  const valueOf = (side: Record<string, PlainValue>, key: string) => (side[key] === '' ? null : (side[key] ?? null));
+  return keys.map((key) => {
+    const was = valueOf(before, key);
+    const became = valueOf(after, key);
+    return { key, from: was, to: became, changed: String(was) !== String(became) };
+  });
+}
+
 /**
  * Whether a key names an identifier (`id`, `odooId`, `customFields.erpId`): its numbers are shown as stored,
  * without digit grouping.

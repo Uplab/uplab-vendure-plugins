@@ -2,7 +2,7 @@ import { useLingui as useLinguiContext } from '@lingui/react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { api, useChannel, useLocalFormat, useQuery, useServerConfig, VendureImage } from '@vendure/dashboard';
 import { ImageOff } from 'lucide-react';
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, Fragment, useContext, useState, type ReactNode } from 'react';
 import {
   argumentList,
   capitalizeFirst,
@@ -20,6 +20,7 @@ import {
   jsonLines,
   labelled,
   lastStateChange,
+  mapRows,
   numericDelta,
   operationLines,
   orderCreatedKeys,
@@ -31,6 +32,7 @@ import {
   withFacetValueLabels,
   type DescribedOperation,
   type DiffLine,
+  type MapRow,
   type OperationValue,
 } from '../format';
 import { humanizeKey } from '../labels';
@@ -599,20 +601,163 @@ function StrippedValue({ change }: { change: ChangeHistoryFieldChange }) {
 const spansBoth = (change: ChangeHistoryFieldChange, hasHost: boolean) =>
   change.stripped || (change.kind === 'refs' && !hasHost);
 
+type Labels = ReturnType<typeof useLabels>;
+
 /**
- * The one key of a map of scalars that the built-in value cells would show as `key: value` lines (no host
- * renderer or text for its kind), when its two sides hold that key alone: the row then names the key with the
- * field and shows plain values, «Min stock · Kyiv | — | 13», as the feed's «Min stock: Kyiv: — → 13» does.
- * A map of more keys keeps all its lines, the changed ones marked.
+ * Whether the built-in cells draw a change whose sides are objects of scalars (a per-location map) key by key: no
+ * host renderer or text for its kind, not compacted, and a kind whose built-in cell shows plain values — any kind
+ * the package does not draw itself (a host's own kind included), `stock`, and `json` when asked.
  */
-function soleKeyOf(change: ChangeHistoryFieldChange, labels: ReturnType<typeof useLabels>) {
+function drawsMaps(change: ChangeHistoryFieldChange, labels: Labels, json: boolean): boolean {
   const kind = change.kind ?? 'text';
   const builtIn = BUILT_IN[kind] ?? ScalarValue;
-  const scalar = builtIn === ScalarValue || builtIn === StockValue;
-  if (change.stripped || !scalar || labels.valueRenderer(kind) || labels.valueText(kind)) {
-    return undefined;
+  const plain = builtIn === ScalarValue || builtIn === StockValue || (json && builtIn === JsonValue);
+  return !change.stripped && plain && !labels.valueRenderer(kind) && !labels.valueText(kind);
+}
+
+/**
+ * The one key of a map of scalars the built-in cells draw, when its two sides hold that key alone: the row then
+ * names the key with the field and shows plain values, «Min stock · Kyiv | — | 13», as the feed's «Min stock:
+ * Kyiv: — → 13» does. A map of more keys (and a `json` one) is drawn key by key, `MapChange`.
+ */
+function soleKeyOf(change: ChangeHistoryFieldChange, labels: Labels) {
+  return drawsMaps(change, labels, false) ? soleEntry(change.from, change.to) : undefined;
+}
+
+/** The rows of a map change the built-in cells draw key by key (`MapChange`), else `undefined`. */
+function mapRowsOf(change: ChangeHistoryFieldChange, labels: Labels, locale: string) {
+  return drawsMaps(change, labels, true) ? mapRows(change.from, change.to, locale) : undefined;
+}
+
+/**
+ * The text of one value of a map, by the field's kind like any value (numbers grouped, money in its currency,
+ * flags as yes / no); a number under a key named like an identifier as stored.
+ */
+function useMapValueText(entityType: string, fieldKey: string) {
+  const text = useValueText();
+  return (change: ChangeHistoryFieldChange, row: MapRow, side: Side) =>
+    text(row[side], isIdKey(row.key) ? { ...change, kind: 'id' } : change, { entityType, fieldKey }, side);
+}
+
+/** Above this many keys, a map change shows its changed keys only, the unchanged ones behind a toggle. */
+const MAP_ROWS_SHOWN = 8;
+
+/** One side of a map change's row: `key: value`, the side's chip when the key changed, dimmed when it did not. */
+function MapCell({ row, side, text }: { row: MapRow; side: Side; text: string }) {
+  // The first column keeps the gap the «Was» column leaves before «Became»; every line is padded like a chip, so
+  // the keys of marked and unmarked rows start in one line.
+  const column = side === 'from' ? 'pr-3' : '';
+  if (!row.changed) {
+    return (
+      <div className={`${column} break-words text-muted-foreground`}>
+        <span className="px-1">{labelled(row.key, text)}</span>
+      </div>
+    );
   }
-  return soleEntry(change.from, change.to);
+  if (row[side] === null) {
+    return (
+      <div className={`${column} break-words`}>
+        <span className="px-1">
+          {row.key}:{NBSP}
+          <span className="text-muted-foreground">—</span>
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className={`${column} break-words`}>
+      <span className={`${SIDE_CHIP[side]} box-decoration-clone`}>{labelled(row.key, text)}</span>
+    </div>
+  );
+}
+
+/**
+ * A change of an object of scalars across both value columns, one row per key of either side (sorted by name,
+ * `mapRows`), so each key reads was → became on one line: `key: value` in the text font, «—» where a side has no
+ * value, the changed rows marked red / green like any changed value, the unchanged ones dimmed. Of more than
+ * `MAP_ROWS_SHOWN` keys only the changed ones show, the rest on demand.
+ */
+function MapChange({
+  change,
+  rows,
+  entityType,
+  fieldKey,
+}: {
+  change: ChangeHistoryFieldChange;
+  rows: MapRow[];
+  entityType: string;
+  fieldKey: string;
+}) {
+  const bounded = useContext(BoundedValues);
+  const text = useMapValueText(entityType, fieldKey);
+  const [open, setOpen] = useState(false);
+  const unchanged = rows.filter((row) => !row.changed).length;
+  // Hiding one row behind a toggle saves nothing; a change of unchanged keys alone shows them all.
+  const collapsible = rows.length > MAP_ROWS_SHOWN && unchanged > 1 && unchanged < rows.length;
+  const shown = collapsible && !open ? rows.filter((row) => row.changed) : rows;
+  return (
+    <>
+      <div className={`grid grid-cols-2 gap-y-0.5 leading-snug ${bounded ? 'max-h-80 overflow-auto' : ''}`}>
+        {shown.map((row) => (
+          <Fragment key={row.key}>
+            <MapCell row={row} side="from" text={text(change, row, 'from')} />
+            <MapCell row={row} side="to" text={text(change, row, 'to')} />
+          </Fragment>
+        ))}
+      </div>
+      {collapsible && (
+        <button type="button" className="ml-1 mt-0.5 text-primary hover:underline" onClick={() => setOpen(!open)}>
+          {open ? (
+            <Trans context="change-history">show less</Trans>
+          ) : (
+            <>
+              +{unchanged} <Trans context="change-history">unchanged</Trans>
+            </>
+          )}
+        </button>
+      )}
+    </>
+  );
+}
+
+/** The value cells of a changed field: a set change or a compacted value across both, a map key by key, else a side each. */
+function ChangeCells({
+  change,
+  rows,
+  both,
+  entityType,
+  fieldKey,
+}: {
+  change: ChangeHistoryFieldChange;
+  rows: MapRow[] | undefined;
+  both: boolean;
+  entityType: string;
+  fieldKey: string;
+}) {
+  if (rows) {
+    return (
+      <td colSpan={2} className="py-1.5">
+        <MapChange change={change} rows={rows} entityType={entityType} fieldKey={fieldKey} />
+      </td>
+    );
+  }
+  if (both) {
+    return (
+      <td colSpan={2} className="py-1.5 break-words">
+        {change.stripped ? <StrippedValue change={change} /> : <RefsChange change={change} />}
+      </td>
+    );
+  }
+  return (
+    <>
+      <td className="py-1.5 pr-3 break-words">
+        <ValueSide change={change} fieldKey={fieldKey} entityType={entityType} side="from" />
+      </td>
+      <td className="py-1.5 break-words">
+        <ValueSide change={change} fieldKey={fieldKey} entityType={entityType} side="to" />
+      </td>
+    </>
+  );
 }
 
 /**
@@ -629,6 +774,7 @@ export function FieldChangesTable({
   showHeader?: boolean;
 }) {
   const labels = useLabels();
+  const { i18n } = useLinguiContext();
   const keys = Object.keys(changes);
   if (keys.length === 0) {
     return null;
@@ -660,6 +806,7 @@ export function FieldChangesTable({
           const recorded = changes[key];
           const both = spansBoth(recorded, !!labels.valueRenderer(recorded.kind ?? 'text'));
           const sole = both ? undefined : soleKeyOf(recorded, labels);
+          const rows = both || sole ? undefined : mapRowsOf(recorded, labels, i18n.locale);
           const change = sole ? { ...recorded, from: sole.from, to: sole.to } : recorded;
           const field = labels.field(entityType, key, recorded);
           return (
@@ -667,20 +814,7 @@ export function FieldChangesTable({
               <td className="py-1.5 pr-3 text-muted-foreground break-words">
                 {sole ? `${field}${NBSP}· ${sole.key}` : field}
               </td>
-              {both ? (
-                <td colSpan={2} className="py-1.5 break-words">
-                  {change.stripped ? <StrippedValue change={change} /> : <RefsChange change={change} />}
-                </td>
-              ) : (
-                <>
-                  <td className="py-1.5 pr-3 break-words">
-                    <ValueSide change={change} fieldKey={key} entityType={entityType} side="from" />
-                  </td>
-                  <td className="py-1.5 break-words">
-                    <ValueSide change={change} fieldKey={key} entityType={entityType} side="to" />
-                  </td>
-                </>
-              )}
+              <ChangeCells change={change} rows={rows} both={both} entityType={entityType} fieldKey={key} />
             </tr>
           );
         })}
@@ -825,6 +959,8 @@ export function LastStateValue({
 }) {
   const labels = useLabels();
   const text = useValueText();
+  const mapText = useMapValueText(entityType, fieldKey);
+  const { i18n } = useLinguiContext();
   const change: ChangeHistoryFieldChange = given
     ? { ...given, from: undefined, to: value }
     : lastStateChange(fieldKey, value, fields);
@@ -832,6 +968,16 @@ export function LastStateValue({
   const Host = labels.valueRenderer(kind);
   if (Host) {
     return <Host change={change} fieldKey={fieldKey} entityType={entityType} side="to" />;
+  }
+  // An object of scalars reads as its `key: value` lines, sorted and formatted as in a change of it.
+  const rows = drawsMaps(change, labels, true) && flatEntries(value) ? mapRows(null, value, i18n.locale) : undefined;
+  if (rows) {
+    return (
+      <ValueLines
+        lines={rows.map((row) => ({ text: labelled(row.key, mapText(change, row, 'to')), changed: false }))}
+        mono={false}
+      />
+    );
   }
   if (kind === 'json') {
     if (isOperationList(value)) {
@@ -849,14 +995,6 @@ export function LastStateValue({
   }
   if (kind === 'assets') {
     return <AssetsValue change={{ ...change, added: [], removed: [] }} side="to" />;
-  }
-  if (flatEntries(value) && !labels.valueText(kind)) {
-    return (
-      <ValueLines
-        lines={jsonLines(value, change.labels).map((line) => ({ text: line, changed: false }))}
-        mono={false}
-      />
-    );
   }
   return <span>{clipText(text(value, change, { entityType, fieldKey }), 300).text}</span>;
 }

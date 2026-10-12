@@ -108,6 +108,13 @@ function table(changes: Record<string, ChangeHistoryFieldChange>, entityType = '
 const cells = (index = 0) => [...document.querySelectorAll('tbody tr')[index].querySelectorAll('td')];
 const cellTexts = (index = 0) => cells(index).map((cell) => cell.textContent);
 
+/** The lines of a map drawn key by key across both value columns in the n-th body row, «was | became» each. */
+function mapLines(index = 0): string[] {
+  const grid = cells(index)[1].querySelector('.grid');
+  const sides = [...(grid?.children ?? [])].map((cell) => cell.textContent);
+  return sides.filter((_, at) => at % 2 === 0).map((from, at) => `${from} | ${sides[at * 2 + 1]}`);
+}
+
 const previews = (...assets: Array<{ id: string; name: string }>) => ({
   data: { assets: { items: assets.map((asset) => ({ ...asset, preview: `/assets/${asset.id}.jpg` })) } },
 });
@@ -540,16 +547,22 @@ describe('FieldChangesTable: JSON', () => {
     expect((cells()[1].firstElementChild as HTMLElement).className).not.toContain('max-h-80');
   });
 
-  it('reads an object of plain values as key: value lines of text, a missing side as a dash', () => {
+  it('reads an object of plain values key by key in the text font, a missing side as a dash', () => {
     table({ focalPoint: { kind: 'json', from: { x: 0.5, y: 0.5 }, to: { x: 0.3, y: 0.5 } } });
-    const [, was, became] = cells();
-    expect(was.firstElementChild?.className).not.toContain('font-mono');
-    expect(within(was).getByText('x: 0.5').className).toContain('bg-red-50');
-    expect(within(became).getByText('x: 0.3').className).toContain('bg-green-50');
-    expect(within(became).getByText('y: 0.5').className).not.toContain('bg-green-50');
+    expect(cells()).toHaveLength(2);
+    expect(cells()[1].innerHTML).not.toContain('font-mono');
+    expect(mapLines()).toEqual([nb('x:~0.5 | x:~0.3'), nb('y:~0.5 | y:~0.5')]);
+    expect(screen.getByText('x: 0.5').className).toContain('bg-red-50');
+    expect(screen.getByText('x: 0.3').className).toContain('bg-green-50');
+    expect(screen.getAllByText('y: 0.5').map((line) => line.closest('div')?.className)).toEqual([
+      expect.stringContaining('text-muted-foreground'),
+      expect.stringContaining('text-muted-foreground'),
+    ]);
     cleanup();
+    // A `json` value of one key keeps it on its lines: only the kinds of plain values name it with the field.
     table({ focalPoint: { kind: 'json', from: null, to: { x: 1 } } });
-    expect(cellTexts()).toEqual(['Фокусна точка', '—', nb('x:~1')]);
+    expect(cellTexts()[0]).toBe('Фокусна точка');
+    expect(mapLines()).toEqual([nb('x:~— | x:~1')]);
     cleanup();
     table({ focalPoint: { kind: 'json', from: null, to: null } });
     expect(cellTexts()).toEqual(['Фокусна точка', '—', '—']);
@@ -565,45 +578,151 @@ describe('FieldChangesTable: an object of plain values of a kind nothing renders
     'Основний склад': 3,
   };
 
-  it('shows every key: value line unclipped, the changed key marked though it comes past 80 characters', () => {
+  it('lines up every key of either side across both columns, sorted by name, unclipped', () => {
     table({
       'customFields.minStock': { kind: 'stockThreshold', from: locations, to: { ...locations, 'Основний склад': 5 } },
     });
-    const [, was, became] = cells();
-    const lines = (cell: HTMLElement) => [...cell.querySelectorAll('div > div')].map((line) => line.textContent);
-    expect(lines(was)).toEqual([
-      nb('Шоурум Дніпро:~0'),
-      nb('Шоурум Київ:~0'),
-      nb('Шоурум Львів:~0'),
-      nb('Шоурум Одеса:~0'),
-      nb('Основний склад:~3'),
+    expect(cells()).toHaveLength(2);
+    expect(cells()[1].colSpan).toBe(2);
+    expect(mapLines()).toEqual([
+      nb('Основний склад:~3 | Основний склад:~5'),
+      nb('Шоурум Дніпро:~0 | Шоурум Дніпро:~0'),
+      nb('Шоурум Київ:~0 | Шоурум Київ:~0'),
+      nb('Шоурум Львів:~0 | Шоурум Львів:~0'),
+      nb('Шоурум Одеса:~0 | Шоурум Одеса:~0'),
     ]);
-    expect(lines(became).at(-1)).toBe(nb('Основний склад:~5'));
-    expect(within(was).getByText('Основний склад: 3').className).toContain('bg-red-50');
-    expect(within(became).getByText('Основний склад: 5').className).toContain('bg-green-50');
-    expect(within(became).getByText('Шоурум Київ: 0').className).not.toContain('bg-green-50');
-    expect(was.textContent).not.toContain('…');
+    expect(screen.getByText('Основний склад: 3').className).toContain('bg-red-50');
+    expect(screen.getByText('Основний склад: 5').className).toContain('bg-green-50');
+    // The unchanged keys are dimmed, without a chip.
+    const kyiv = screen.getAllByText('Шоурум Київ: 0');
+    expect(kyiv.map((line) => line.className)).toEqual(['px-1', 'px-1']);
+    expect(kyiv[0].closest('div')?.className).toContain('text-muted-foreground');
+    expect(cells()[1].textContent).not.toContain('…');
   });
 
-  it("keeps a host's text of the kind, and marks every line of a value that was not there before", () => {
+  it('shows a key one side lacks on both, as a dash where it has no value, the side that has it marked', () => {
+    // A sparse map of a host's kind that registers nothing for it: `stock_threshold` without a renderer or a text.
+    table({
+      stockThreshold: {
+        kind: 'stock_threshold',
+        from: { 'Шоурум Київ': 3, 'Склад Львів': 5, 'Шоурум Одеса': 2 },
+        to: { 'Шоурум Київ': 7, 'Шоурум Одеса': 2, 'Склад Дніпро': 1 },
+      },
+    });
+    expect(mapLines()).toEqual([
+      nb('Склад Дніпро:~— | Склад Дніпро:~1'),
+      nb('Склад Львів:~5 | Склад Львів:~—'),
+      nb('Шоурум Київ:~3 | Шоурум Київ:~7'),
+      nb('Шоурум Одеса:~2 | Шоурум Одеса:~2'),
+    ]);
+    expect(screen.getByText('Склад Дніпро: 1').className).toContain('bg-green-50');
+    expect(screen.getByText('Склад Львів: 5').className).toContain('bg-red-50');
+    expect(screen.getByText('Шоурум Київ: 3').className).toContain('bg-red-50');
+    expect(screen.getByText('Шоурум Київ: 7').className).toContain('bg-green-50');
+    // The side without the key: the key in the text colour, its dash muted, no chip.
+    const missing = [...cells()[1].querySelectorAll('.grid > div')][3];
+    expect(missing.textContent).toBe(nb('Склад Львів:~—'));
+    expect(missing.className).not.toContain('text-muted-foreground');
+    expect(missing.querySelector('[class*="bg-"]')).toBeNull();
+    expect(within(missing as HTMLElement).getByText('—').className).toBe('text-muted-foreground');
+    cleanup();
+    // A change recorded without a kind, and one from nothing, read the same.
+    table({ 'customFields.minStock': { from: { Kyiv: 1, Lviv: 2 }, to: { Kyiv: 2, Lviv: 2 } } });
+    expect(screen.getByText('Kyiv: 2').className).toContain('bg-green-50');
+    cleanup();
+    table({ 'customFields.minStock': { kind: 'stock_threshold', from: {}, to: { Kyiv: 1, Lviv: 2 } } });
+    expect(mapLines()).toEqual([nb('Kyiv:~— | Kyiv:~1'), nb('Lviv:~— | Lviv:~2')]);
+    expect(screen.getByText('Lviv: 2').className).toContain('bg-green-50');
+  });
+
+  it('sorts the keys in the dashboard language, numbers in them by value', () => {
+    table({
+      stockThreshold: {
+        kind: 'stock_threshold',
+        from: { 'Склад 10': 1, 'Склад 2': 1 },
+        to: { 'Склад 10': 2, Арсенал: 4 },
+      },
+    });
+    expect(mapLines().map((line) => line.split(':')[0])).toEqual(['Арсенал', 'Склад 2', 'Склад 10']);
+  });
+
+  it('formats the values like any value: digits grouped, an id as stored, money, yes / no', () => {
+    table({
+      stockThreshold: {
+        kind: 'stock_threshold',
+        from: { Kyiv: 1500, odooId: 5950013 },
+        to: { Kyiv: 2000, odooId: 5950014 },
+      },
+      'customFields.limits': { kind: 'money', from: { min: 1250, max: 5000 }, to: { min: 1300, max: 5000 } },
+      'customFields.flags': { from: { web: true, app: false }, to: { web: false, app: false } },
+    });
+    expect(mapLines(0)).toEqual([nb('Kyiv:~1,500 | Kyiv:~2,000'), nb('odooId:~5950013 | odooId:~5950014')]);
+    expect(mapLines(1)).toEqual([nb('max:~50.00 UAH | max:~50.00 UAH'), nb('min:~12.50 UAH | min:~13.00 UAH')]);
+    expect(mapLines(2)).toEqual([nb('app:~Ні | app:~Ні'), nb('web:~Так | web:~Ні')]);
+  });
+
+  it('shows only the changed keys of more than eight, the unchanged ones on demand', () => {
+    const many = Object.fromEntries(Array.from({ length: 10 }, (_, at) => [`Склад ${at + 1}`, at]));
+    table({ stockThreshold: { kind: 'stock_threshold', from: many, to: { ...many, 'Склад 4': 30 } } });
+    expect(mapLines()).toEqual([nb('Склад 4:~3 | Склад 4:~30')]);
+    fireEvent.click(screen.getByRole('button', { name: '+9 без змін' }));
+    expect(mapLines()).toHaveLength(10);
+    expect(mapLines()[3]).toBe(nb('Склад 4:~3 | Склад 4:~30'));
+    fireEvent.click(screen.getByRole('button', { name: 'згорнути' }));
+    expect(mapLines()).toHaveLength(1);
+    cleanup();
+    setLocale('en');
+    table({ stockThreshold: { kind: 'stock_threshold', from: many, to: { ...many, 'Склад 4': 30 } } });
+    expect(screen.getByRole('button').textContent).toBe('+9 unchanged');
+    cleanup();
+    // Nine keys of which one is unchanged all show: hiding one line saves nothing.
+    const nine = Object.fromEntries(Object.entries(many).slice(0, 9));
+    table({
+      stockThreshold: {
+        kind: 'stock_threshold',
+        from: nine,
+        to: Object.fromEntries(Object.entries(nine).map(([key, count], at) => [key, at === 0 ? count : count + 1])),
+      },
+    });
+    expect(mapLines()).toHaveLength(9);
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('keeps a long map in a box of its own height in the timeline, not in the entry window', () => {
+    const change: ChangeHistoryFieldChange = { kind: 'stock_threshold', from: { Kyiv: 1, Lviv: 2 }, to: { Kyiv: 2 } };
+    table({ stockThreshold: change });
+    expect(cells()[1].querySelector('.grid')?.className).toContain('max-h-80');
+    cleanup();
+    render(
+      <UnboundedValues>
+        <FieldChangesTable entityType="ProductVariant" changes={{ stockThreshold: change }} />
+      </UnboundedValues>,
+    );
+    expect(cells()[1].querySelector('.grid')?.className).not.toContain('max-h-80');
+  });
+
+  it("keeps a host's text or renderer of the kind, and a value that is a map on one side only", () => {
     registerChangeHistoryValueText('stockThreshold', (value) =>
       value && typeof value === 'object' ? `${Object.keys(value).length} locations` : undefined,
     );
     table({ 'customFields.minStock': { kind: 'stockThreshold', from: { Kyiv: 1 }, to: { Kyiv: 1, Lviv: 2 } } });
     expect(cellTexts()).toEqual(['Min stock', '1 locations', '2 locations']);
     cleanup();
-    delete (globalThis as unknown as Record<symbol, unknown>)[
-      Symbol.for('@uplab/vendure-plugin-change-history/registry')
-    ];
-    table({ 'customFields.minStock': { kind: 'stockThreshold', from: null, to: { Kyiv: 1, Lviv: 2 } } });
-    const [, was, became] = cells();
-    expect(was.textContent).toBe('—');
-    expect(within(became).getByText('Kyiv: 1').className).toContain('bg-green-50');
-    expect(within(became).getByText('Lviv: 2').className).toContain('bg-green-50');
+    registerChangeHistoryValueRenderer('stock_threshold', ({ side }) => <i>{side}</i>);
+    table({ stockThreshold: { kind: 'stock_threshold', from: { Kyiv: 1, Lviv: 2 }, to: { Kyiv: 2 } } });
+    expect(
+      cells()
+        .map((cell) => cell.textContent)
+        .slice(1),
+    ).toEqual(['from', 'to']);
     cleanup();
-    // A change recorded without a kind reads the same.
-    table({ 'customFields.minStock': { from: { Kyiv: 1, Lviv: 2 }, to: { Kyiv: 2, Lviv: 2 } } });
-    expect(within(cells()[2]).getByText('Kyiv: 2').className).toContain('bg-green-50');
+    // A value that was text and became a map keeps its own lines on each side.
+    table({ 'customFields.minStock': { from: 'none', to: { Kyiv: 1, Lviv: 2 } } });
+    expect(cellTexts().slice(1)).toEqual(['none', nb('Kyiv:~1Lviv:~2')]);
+    cleanup();
+    // A compacted map says only that it changed.
+    table({ stockThreshold: { kind: 'stock_threshold', stripped: true, fromLength: 300, toLength: 320 } });
+    expect(cells()[1].querySelector('.grid')).toBeNull();
   });
 
   it('names the key with the field when the two sides hold one key between them, as the feed line does', () => {
@@ -958,12 +1077,18 @@ describe('LastStateValue', () => {
   const last = (fieldKey: string, value: unknown, fields?: unknown, entityType = 'Product') =>
     render(<LastStateValue entityType={entityType} fieldKey={fieldKey} value={value} fields={fields} />).container;
 
-  it('shows an object of plain values of a kind nothing renders as all its key: value lines', () => {
-    const value = { 'Шоурум Дніпро': 0, 'Шоурум Київ': 0, 'Шоурум Львів': 0, 'Шоурум Одеса': 0, 'Основний склад': 3 };
+  it('shows an object of plain values of a kind nothing renders as all its key: value lines, sorted and formatted', () => {
+    const value = { 'Шоурум Дніпро': 0, 'Шоурум Київ': 1500, 'Основний склад': 3, odooId: 5950013 };
     const container = last('customFields.minStock', value, { 'customFields.minStock': { kind: 'stockThreshold' } });
-    expect([...(container.firstElementChild?.children ?? [])].map((line) => line.textContent)).toEqual(
-      Object.entries(value).map(([key, count]) => nb(`${key}:~${count}`)),
-    );
+    const lines = () => [...(container.firstElementChild?.children ?? [])].map((line) => line.textContent);
+    // Sorted as Ukrainian sorts: Cyrillic names first.
+    expect(lines()).toEqual([
+      nb('Основний склад:~3'),
+      nb('Шоурум Дніпро:~0'),
+      nb('Шоурум Київ:~1,500'),
+      nb('odooId:~5950013'),
+    ]);
+    expect(container.firstElementChild?.className).not.toContain('font-mono');
     expect(container.querySelector('.bg-green-50')).toBeNull();
   });
 

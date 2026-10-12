@@ -390,10 +390,28 @@ did), `richtext` (plain text, the words around each change marked, «show in ful
 changed lines highlighted, facet value ids shown by name; collection filters and promotion conditions and
 actions read as their descriptions with `argument: value` lines, money formatted), `stock` (with the delta),
 and a compacted value as «changed (3,412 → 3,587 characters)». An object of plain values (stock thresholds
-per location, a focal point) reads as `key: value` lines, the changed ones marked, whatever its kind when nothing
-renders it. When both sides of such a change (not of kind `json`) hold a single key between them, the row names
-the key with the field and shows plain values instead: «Min. stock · Kyiv | — | 13». In a one-line summary (the feed, the widget, a
-batch's member rows) a change of one names only the keys that changed: «Min. stock: Kyiv: 0 → 13». A number
+per location, a focal point; each side such an object, empty or no value) is drawn key by key across both value
+columns, in the entry window and the timeline alike: every key of either side on its own row, so a key that only one
+side holds (a sparse map) reads «Kyiv: — | Kyiv: 13», «—» where a side has no value (no key, `null` or `''`). The
+keys are sorted by name in the dashboard's language, numbers in names by value («Store 2» before «Store 10»), not
+in stored order, which differs between the two sides. The rows that changed carry the red / green marks of any
+changed value, the unchanged ones are dimmed; of more than eight keys only the changed show, the rest behind
+«+N unchanged». Values are formatted by the field's kind like any value: digits grouped, `money` in its currency,
+yes / no, a number under a key named `id` or ending in `Id` as stored. When both sides of such a change (not of kind
+`json`) hold a single key between them, the row names the key with the field and shows plain values instead:
+«Min. stock · Kyiv | — | 13». A deleted entity's last state lists the keys the same way, sorted and formatted.
+In a one-line summary (the feed, the widget, a batch's member rows) a change of one names only the keys that changed:
+«Min. stock: Kyiv: 0 → 13».
+
+This applies to every kind but `bool`, `assets`, `richtext` and `refs` — your own kind (a field extractor's
+`stock_threshold`) and a change recorded without a kind included — as long as you register **neither** a value
+renderer **nor** a value text for the kind: an object of plain values of an unregistered kind is never shown as raw
+JSON. To rely on it instead of a renderer of your own, record the value (in your field extractor, or through
+`fieldKinds`) as a flat object, `{ "<key>": <string | number | boolean | null>, … }`, keyed by what the reader
+should see (a location's name, not its id), and register nothing for its kind; at most a field label
+(`registerChangeHistoryFieldLabels`) is all it needs. A value text of your own for the kind replaces all of it,
+the one-key form and the summary's changed keys included; a value renderer replaces the entry window's and the
+timeline's cells, one side at a time. A number
 of kind `id`, or under a key named `id` or ending in `Id`, is shown as stored, without digit grouping. A host action with `meta.counts` shows them with
 the count labels, the `total` last: «moved: 3 (total: 48)». Action, batch kind and count labels read best in
 lowercase, like the built-in ones: the dashboard capitalizes them where they start a title or a badge. The feed's navigation `order` is `CHANGE_HISTORY_NAV_ORDER`; give an

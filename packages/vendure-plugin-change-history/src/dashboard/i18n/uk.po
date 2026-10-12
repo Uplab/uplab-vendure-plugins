@@ -757,6 +757,11 @@ msgctxt "change-history"
 msgid "Type"
 msgstr "Тип"
 
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "unchanged"
+msgstr "без змін"
+
 #: src/dashboard/components/details.tsx
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
