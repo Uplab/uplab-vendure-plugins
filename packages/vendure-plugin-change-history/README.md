@@ -18,7 +18,7 @@ changed value, and shows it all in the dashboard — in English and Ukrainian.
 > external runs with their detail rows, runs tiered retention with an archive, and ships the
 > `ChangeHistoryService` facade, the before-state and archive strategies, the Admin API read queries (feed,
 > entry, entity timeline, run details, filter options) and the dashboard: the change history feed, the entry
-> window, a history block on five detail pages, an Insights widget and the registration entry for your labels
+> window, a history block on seven detail pages, an Insights widget and the registration entry for your labels
 > and renderers.
 
 ## Contents
@@ -349,23 +349,33 @@ Everything needs the **ReadChangeHistory** permission, and each page shows only 
   the derived entries (variant prices a product save rewrote), a batch's members and a run's rows, each paged;
   for a deleted entity its last state, rendered like a change (rich text as text, money formatted, references
   by name), and **Full history**, the entity's timeline in the same window.
-- **History block** — at the bottom of the product, variant, collection, facet and promotion pages: the
-  entity's history newest first, 20 at a time with **Show more**, the changes of its children (variants, facet
+- **History block** — at the bottom of the product, variant, collection, facet, facet value, asset and
+  promotion pages: the entity's history newest first, each item reading what happened, then who and when
+  («Updated · Jane Doe · 4 hours ago»), 20 at a time with **Show more**, the changes of its children (variants, facet
   values, child collections) marked with their name, derived entries folded under their cause, collection
-  rules batches with their counts and members, and each external run as one collapsed item with its count
+  rules batches with their counts and members (the first 50 inline, **show all** for the rest), and each external run as one collapsed item with its count
   line («Variants: 3 · Rows: 4») that unfolds into this entity's rows — the first 50, with **show all (240)**
   opening the whole run in the entry window. On a page whose entity a run touched alone (a variant), the rows
   show directly.
 - **Insights widget «Recent changes»** — the last 10 rows of the feed's default view in the Insights date
-  range, with **All changes →** opening the feed for the same period.
+  range (who, the object's type and name, what changed), with **All changes →** opening the feed for the
+  same period.
 
-Values are drawn by their `kind`: `text`, `enum`, `bool`, `date`, `money` (the channel's currency), `prices`,
-`ref` / `refs` (labels, removed on the left and added on the right), `assets` (thumbnails, added and removed
-outlined, «order changed»), `richtext` (plain text, collapsed, «show in full»), `json` (side by side, changed
-lines highlighted, facet value ids shown by name), `stock` (with the delta), and a compacted value as
-«changed (3,412 → 3,587 characters)». An object of plain values (stock thresholds per location) reads as
-`key: value` lines. A host action with `meta.counts` shows them with the count labels, the `total` last:
-«moved 3 (total 48)». The feed's navigation `order` is `CHANGE_HISTORY_NAV_ORDER`; give an
+A request that fails shows a translated message with **Retry** in the feed, the entry window, the history
+block and the widget — never the «no changes» text. Changes made with an API key show the owner's name with
+an «API key» marker in the dashboard's language. A batch without a label of its own is titled by its kind's
+registered label (`registerChangeHistoryBatchKind`), else «Bulk operation» — never by the raw kind.
+
+Values are drawn by their `kind`: `text`, `enum` (core enums and custom field options by their labels),
+`bool`, `date`, `money` (the channel's currency), `prices`, `ref` / `refs` (labels; a set change lists what
+was removed «−» and added «+»), `assets` (thumbnails, added and removed outlined, «order changed» when it
+did), `richtext` (plain text, the words around each change marked, «show in full»), `json` (side by side,
+changed lines highlighted, facet value ids shown by name; collection filters and promotion conditions and
+actions read as their descriptions with `argument: value` lines, money formatted), `stock` (with the delta),
+and a compacted value as «changed (3,412 → 3,587 characters)». An object of plain values (stock thresholds
+per location, a focal point) reads as `key: value` lines. A host action with `meta.counts` shows them with
+the count labels, the `total` last: «moved: 3 (total: 48)». Action, batch kind and count labels read best in
+lowercase, like the built-in ones: the dashboard capitalizes them where they start a title or a badge. The feed's navigation `order` is `CHANGE_HISTORY_NAV_ORDER`; give an
 item of your own `order: CHANGE_HISTORY_NAV_ORDER + 1` to place it right after.
 
 ### Your labels, sources and renderers
