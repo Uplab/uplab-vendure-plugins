@@ -13,6 +13,8 @@ export const adminApiExtensions: Document = gql`
     entityId: String!
     "The entity's name when the change was recorded (a variant's with its SKU). Null for a batch recorded without a label: name it by meta.kind."
     entityLabel: String
+    "A run's subject (meta.subject.label, e.g. an order code), searchable like entityLabel; null for other entries."
+    subjectLabel: String
     parentType: String
     parentId: String
     action: String!
@@ -37,7 +39,7 @@ export const adminApiExtensions: Document = gql`
     isCompacted: Boolean!
     "Entries derived from this one (the count kept by compaction once they are deleted)."
     derivedCount: Int!
-    "Members of a batch head by type and action (the counts kept by compaction); null for other entries."
+    "Members of a batch head by type and action — the entries batchMembers lists; a derived entry counts on its cause's derivedCount (the counts kept by compaction). Null for other entries."
     batchCounts: [ChangeHistoryBatchCount!]
     "The recorded catalogue entity no longer exists or is soft-deleted. Always false for batches, runs and host types."
     entityDeleted: Boolean!

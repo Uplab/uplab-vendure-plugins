@@ -37,6 +37,7 @@ import {
   parseFeedSearch,
   parseListSearch,
   periodBounds,
+  searchFilter,
   titleWhenCut,
   type FeedSearch,
 } from '../format';
@@ -378,7 +379,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                 ...variables,
                 options: { ...variables.options, filter: feedFilter(variables.options?.filter, state) },
               })}
-              onSearchTermChange={(term) => (term ? { entityLabel: { contains: term } } : {})}
+              onSearchTermChange={searchFilter}
               facetedFilters={facetedFilters}
               defaultVisibility={{
                 createdAt: true,

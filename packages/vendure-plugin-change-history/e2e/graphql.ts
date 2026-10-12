@@ -358,6 +358,7 @@ const ENTRY_FIELDS = `
   entityType
   entityId
   entityLabel
+  subjectLabel
   parentType
   parentId
   action

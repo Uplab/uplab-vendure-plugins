@@ -37,6 +37,13 @@ export class ChangeHistoryEntry extends VendureEntity {
   @Column({ type: 'varchar', length: 255 })
   entityLabel: string;
 
+  /**
+   * What a run was about (`recordRun`'s `subject.label`, e.g. an order code): searchable like `entityLabel`.
+   * `null` for every other entry.
+   */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  subjectLabel: string | null;
+
   @Column({ type: 'varchar', length: 32, nullable: true })
   parentType: string | null;
 

@@ -192,6 +192,7 @@ export class ChangeHistoryService {
             entityType: CHANGE_HISTORY_ENTITY_TYPES.Run,
             entityId: input.entityId ?? input.source,
             entityLabel: input.label,
+            subjectLabel: input.subject?.label || null,
             action: CHANGE_HISTORY_ACTIONS.run,
             source: input.source,
             summary: runSummary(counts),

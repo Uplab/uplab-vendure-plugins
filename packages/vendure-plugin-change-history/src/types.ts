@@ -156,8 +156,9 @@ export interface ChangeHistoryRunInput {
   entityId?: string;
   /**
    * What the run was about, when it was about one thing: the order whose stock a run refreshed, the file an
-   * import read. Stored as `meta.subject`; the dashboard shows its label as the run's object (a link when `type`
-   * is an entity type it can open).
+   * import read. Stored as `meta.subject`, its label also in the entry's `subjectLabel`, which the feed's search
+   * matches; the dashboard shows the label as the run's object (a link when `type` is an entity type it can
+   * open).
    */
   subject?: ChangeHistoryRunSubject;
   /** E.g. `{ updated: 37, failed: 0 }`. */

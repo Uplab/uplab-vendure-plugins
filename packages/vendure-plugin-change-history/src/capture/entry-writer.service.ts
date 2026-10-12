@@ -15,6 +15,8 @@ export interface EntryDraft {
   entityLabel: string;
   action: string;
   summary: string;
+  /** A run's subject label (searchable). */
+  subjectLabel?: string | null;
   parentType?: string | null;
   parentId?: string | null;
   changes?: ChangeHistoryFieldChanges | null;
@@ -90,6 +92,7 @@ export class ChangeHistoryWriter {
                 ...draft,
                 entityLabel: clip(draft.entityLabel || draft.entityId, 255),
                 summary: clip(draft.summary, 512),
+                subjectLabel: draft.subjectLabel ? clip(draft.subjectLabel, 255) : null,
                 parentType: draft.parentType ?? null,
                 parentId: draft.parentId ?? null,
                 changes: draft.changes ?? null,

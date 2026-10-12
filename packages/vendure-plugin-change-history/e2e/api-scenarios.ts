@@ -162,7 +162,44 @@ export function apiScenarios(env: ApiEnv): void {
           action: 'updated',
           ...bulk,
         });
+        // A cascade of a member: in the batch, but counted on its cause, not as a member.
+        await insert({
+          entityType: 'ProductVariant',
+          entityId: 'p2f-m1v',
+          entityLabel: 'p2f-member-1 variant',
+          action: 'updated',
+          derivedFromId: seeded.m1.id,
+          ...bulk,
+        });
         await entries().update({ id: seeded.one.id }, { createdAt: new Date(Date.now() - 2 * DAY_MS) });
+      });
+
+      it("finds a run by its subject, as the feed's search asks: the label or the subject", async () => {
+        await history().recordRun(await superadminCtx(env.app()), {
+          source: 'p2f_refresh',
+          label: 'Stock refresh after an order',
+          subject: { type: 'Order', id: 1042, label: 'SO-P2F-1042' },
+          counts: { updated: 1 },
+          details: [],
+        });
+        const search = (term: string) => ({
+          _or: [{ entityLabel: { contains: term } }, { subjectLabel: { contains: term } }],
+        });
+        const found = (await feed(search('so-p2f-1042'))).items;
+        expect(found).toEqual([
+          expect.objectContaining({
+            entityType: 'Run',
+            entityLabel: 'Stock refresh after an order',
+            subjectLabel: 'SO-P2F-1042',
+            meta: expect.objectContaining({
+              subject: expect.objectContaining({ type: 'Order', label: 'SO-P2F-1042' }),
+            }),
+          }),
+        ]);
+        // Still found by its own label; the search combines with the other filters.
+        expect((await feed({ ...search('refresh after'), source: { eq: 'p2f_refresh' } })).totalItems).toBe(1);
+        expect((await feed({ ...search('so-p2f-1042'), entityType: { eq: 'Product' } })).totalItems).toBe(0);
+        await entries().delete({ source: 'p2f_refresh' });
       });
 
       it('lists newest first and leaves derived entries out unless asked for', async () => {

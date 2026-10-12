@@ -455,6 +455,8 @@ export class ChangeHistoryRetentionService {
           .addSelect('COUNT(*)', 'count')
           .where({ batchId: In(chunk) })
           .andWhere('entry.entityType != :batch', { batch: CHANGE_HISTORY_ENTITY_TYPES.Batch })
+          // The members `batchMembers` lists: a derived entry is counted on its cause (`derivedCount`).
+          .andWhere('entry.derivedFromId IS NULL')
           .groupBy('entry.batchId')
           .addGroupBy('entry.entityType')
           .addGroupBy('entry.action')

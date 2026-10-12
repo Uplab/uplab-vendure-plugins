@@ -200,7 +200,7 @@ await this.changeHistory.recordRun(ctx, {
   source: 'erp_stock_sync',
   label: 'ERP stock sync',
   counts: { updated: 37, failed: 0 },
-  // Optional: what the run was about, shown as its object in the dashboard.
+  // Optional: what the run was about, shown as its object in the dashboard and found by the feed's search.
   subject: { type: 'Order', id: order.id, label: order.code },
   details: [{ entityType: 'ProductVariant', entityId: 12, kind: 'stock', scope: '1', from: 10, to: 14 }],
 });
@@ -219,8 +219,9 @@ product finds the rows of its variants. A run stores its `counts`, `durationMs` 
 writes its rows in chunks of 500 and keeps at most 5,000 rows (a larger run stores the first 5,000 and counts
 the rest in `meta.detailsOmitted`). A run with no rows and only zero counts writes nothing. Called inside your
 transaction, the run commits or rolls back with it. A run's `subject` is kept in `meta.subject`
-(`{ label, type?, id? }`, the id as a string); the dashboard shows it as the run's object, linked when its type
-has a page (`Order`, `Customer`, a core catalogue type, or a type you registered with a `route`).
+(`{ label, type?, id? }`, the id as a string) and its label in the entry's `subjectLabel`, which the feed's
+search matches next to `entityLabel` (search `SO-1042`, find the run); the dashboard shows it as the run's
+object, linked when its type has a page (`Order`, `Customer`, a core catalogue type, or a type you registered with a `route`).
 
 `runBatch` groups what is written inside its callback, following the callback's async context rather than the
 `RequestContext`: two batches started at once on one context (`Promise.all`) stay two batches, and work on the same
@@ -348,7 +349,8 @@ Everything needs the **ReadChangeHistory** permission, and each page shows only 
 (see [Permissions and channels](#permissions-and-channels)). The dashboard is in English and Ukrainian.
 
 - **Feed** — **System → Change history** (`/change-history`). One row per change: time, who, type, object
-  (a link to it, «deleted» when it is gone; for a run, its subject or label), action and what changed. Search by name or SKU, filter by type,
+  (a link to it, «deleted» when it is gone; for a run, its subject or label), action and what changed. Search by
+  name, SKU or a run's subject (an order code), filter by type,
   action, source and who, pick a period, and two switches: **Collapse bulk operations** (on: a batch is one
   row) and **Hide system changes** (off: collection rules and external runs are listed too). Filters, switches,
   period and the open entry are in the URL, so a view is a link you can send. Clicking a row opens the entry.
@@ -493,10 +495,11 @@ type ChangeHistoryEntry implements Node {
   changes: JSON
   meta: JSON!
   summary: String! # an English machine summary, not display text
+  subjectLabel: String # a run's subject (meta.subject.label), searchable; null otherwise
   compactedAt: DateTime
   isCompacted: Boolean!
   derivedCount: Int!
-  batchCounts: [ChangeHistoryBatchCount!] # batch heads only
+  batchCounts: [ChangeHistoryBatchCount!] # batch heads only: the members batchMembers lists
   entityDeleted: Boolean!
   parentDeleted: Boolean! # the parent (a rules batch's or membership row's collection) is gone
   details: [ChangeHistoryDetail!] # run items of a timeline only: the first 50 rows
@@ -572,7 +575,7 @@ extend type Query {
   | hide system          | `actorType: { in: ["admin", "api_key"] }`                               |
   | period               | `createdAt: { between: { start, end } }`                                |
   | type, action, source | `entityType` / `action` / `source`: `{ in: [...] }`                     |
-  | search               | `entityLabel: { contains }` (a variant's label holds its SKU)           |
+  | search               | `_or: [{ entityLabel: { contains } }, { subjectLabel: { contains } }]`  |
   | one batch            | `batchId: { eq }`                                                       |
   | collapse batches     | `_or: [{ batchId: { isNull: true } }, { entityType: { eq: "Batch" } }]` |
 
@@ -603,8 +606,10 @@ extend type Query {
 - **`summary`** is a short English description for logs and exports («3 fields: name, slug, enabled»), not
   display text: a client renders an entry from `changes` and `meta`.
 - `derivedCount` counts every derived entry, the ones compaction deleted included (their count is kept on the
-  cause); `derivedEntries` lists those still stored, such as cascaded deletions. After compaction `batchCounts`
-  come from the counts the compaction kept.
+  cause); `derivedEntries` lists those still stored, such as cascaded deletions. `batchCounts` counts the members
+  `batchMembers` lists — an entry derived from a member counts on that member's `derivedCount`, not as a member
+  of its own (an archived product's variant). After compaction `batchCounts` come from the counts the compaction
+  kept.
 
 ### Permissions and channels
 

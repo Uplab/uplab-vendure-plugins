@@ -158,6 +158,8 @@ describe('ChangeHistoryService.recordRun', () => {
       { label: 'import.csv' },
       undefined,
     ]);
+    // Searchable (the writer clips it to its column).
+    expect(drafts.map((draft) => draft.subjectLabel)).toEqual(['S'.repeat(300), 'import.csv', null]);
   });
 
   it('records the detail rows of a run without counts, its parents resolved and a long scope label clipped', async () => {

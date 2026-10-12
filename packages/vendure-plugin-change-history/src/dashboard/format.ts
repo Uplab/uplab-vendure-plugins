@@ -479,6 +479,11 @@ export function feedFilter(tableFilter: Filter | undefined, switches: FeedSwitch
   return Object.keys(filter).length > 0 ? filter : undefined;
 }
 
+/** The feed's search: an entry's name (a variant's with its SKU) or what a run was about (an order code). */
+export function searchFilter(term: string): Filter {
+  return term ? { _or: [{ entityLabel: { contains: term } }, { subjectLabel: { contains: term } }] } : {};
+}
+
 /** The URL state of the feed: `?collapse=false&hideSystem=true&from=…&to=…&entry=…`. */
 export interface FeedSearch extends FeedSwitches {
   entry?: string;

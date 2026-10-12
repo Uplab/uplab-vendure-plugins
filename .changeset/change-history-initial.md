@@ -8,10 +8,10 @@ Initial release of the change history plugin.
   products, variants, collections (moves and contents included), facets, facet values, assets, promotions and
   channel assignments, with before → after values. Cascaded deletions are derived from their cause, and so are
   the variants and images that go to a channel with their product: one operation is one row, several products
-  at once one batch. Option groups and manual stock adjustments are recorded too. Actors: administrators, API keys (under the owner's
-  name), the collection rules and your own resolvers.
+  at once one batch. Option groups and manual stock adjustments are recorded too. Actors: administrators, API
+  keys (under the owner's name), the collection rules and your own resolvers.
 - **Service.** `ChangeHistoryService`: `capture` after a raw write, `recordAction`, `recordRun` for external
-  syncs (detail rows grouped under their product, an optional `subject`), `runBatch` (batches follow the
+  syncs (detail rows grouped under their product, an optional searchable `subject`), `runBatch` (batches follow the
   callback's async context) and `reseedCollectionMembership`, plus unstable read helpers.
 - **Kill switch.** `enabled: false` records nothing; the next boot with capture on brings the collection
   contents up to date by itself.

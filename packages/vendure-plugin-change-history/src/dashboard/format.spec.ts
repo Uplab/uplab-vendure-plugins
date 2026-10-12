@@ -32,6 +32,7 @@ import {
   durationSeconds,
   encodeActor,
   feedFilter,
+  searchFilter,
   feedSearchParams,
   flatEntries,
   formatDelta,
@@ -361,6 +362,23 @@ describe('the feed filter', () => {
 
   it('is empty without filters, and ignores half a period', () => {
     expect(feedFilter(undefined, { collapseBatches: false, hideSystem: false, from: '2026-10-01' })).toBeUndefined();
+  });
+
+  it("searches an entry's name and a run's subject; an empty term adds nothing", () => {
+    expect(searchFilter('SO-1042')).toEqual({
+      _or: [{ entityLabel: { contains: 'SO-1042' } }, { subjectLabel: { contains: 'SO-1042' } }],
+    });
+    expect(searchFilter('')).toEqual({});
+    // Next to the table's own clauses.
+    expect(
+      feedFilter(
+        { ...searchFilter('tee'), _and: [{ entityType: { in: ['Run'] } }] },
+        { collapseBatches: false, hideSystem: false },
+      ),
+    ).toEqual({
+      _or: [{ entityLabel: { contains: 'tee' } }, { subjectLabel: { contains: 'tee' } }],
+      _and: [{ entityType: { in: ['Run'] } }],
+    });
   });
 });
 
