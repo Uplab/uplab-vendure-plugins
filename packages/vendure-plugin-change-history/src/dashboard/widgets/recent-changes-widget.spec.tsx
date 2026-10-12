@@ -221,6 +221,18 @@ describe('RecentChangesWidget', () => {
     expect(changed.title).toContain('оновлено');
   });
 
+  it('caps a long name and type at a share of the line, each whole on hover', () => {
+    lines([entry({ id: '7', actorLabel: 'Олександра Костянтинопольська' })]);
+    const row = screen.getByRole('listitem');
+    const name = row.querySelector('[title="Олександра Костянтинопольська"]') as HTMLElement;
+    expect(name.className).toContain('max-w-[50%]');
+    const type = row.querySelector('.max-w-\\[30\\%\\]') as HTMLElement;
+    expect(type.className).toContain('truncate');
+    Object.defineProperties(type, { scrollWidth: { value: 120 }, clientWidth: { value: 60 } });
+    fireEvent.mouseEnter(type);
+    expect(type.title).toBe(type.textContent);
+  });
+
   it('links «All changes» to the feed with the default switches and the page’s period', () => {
     lines([]);
     const link = screen.getByRole('link', { name: 'Усі зміни →' });

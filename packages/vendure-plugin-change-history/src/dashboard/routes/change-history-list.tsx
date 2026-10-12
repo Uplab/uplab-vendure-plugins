@@ -8,7 +8,6 @@ import {
   Label,
   Page,
   PageActionBar,
-  PageActionBarLeft,
   PageActionBarRight,
   PageLayout,
   PageTitle,
@@ -330,28 +329,35 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
       <PageTitle>
         <Trans context="change-history">Change history</Trans>
       </PageTitle>
+      {/* Left for the items a host registers for this page; the feed's own controls are above the table. */}
       <PageActionBar>
-        <PageActionBarLeft>
-          <div className="flex items-center gap-1">
-            <DateRangePicker
-              dateRange={period ?? emptyRange}
-              onDateRangeChange={(range) => setFilters(periodBounds(range.from, range.to))}
-            />
-            {period && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t({ message: 'Clear the period', context: 'change-history' })}
-                title={t({ message: 'Clear the period', context: 'change-history' })}
-                onClick={() => setFilters({ from: undefined, to: undefined })}
-              >
-                <X />
-              </Button>
-            )}
-          </div>
-        </PageActionBarLeft>
-        <PageActionBarRight>
-          <div className="flex flex-wrap items-center gap-4">
+        <PageActionBarRight />
+      </PageActionBar>
+      <PageLayout>
+        <FullWidthPageBlock blockId="list-table">
+          {/*
+            The period and the switches sit above the table, not in the page's action bar: that bar neither
+            wraps nor shrinks, so on a narrow page it pushed over the title, and a phone-sized dashboard drops
+            its plain items altogether. Here they wrap under one another, the period first.
+          */}
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex items-center gap-1">
+              <DateRangePicker
+                dateRange={period ?? emptyRange}
+                onDateRangeChange={(range) => setFilters(periodBounds(range.from, range.to))}
+              />
+              {period && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t({ message: 'Clear the period', context: 'change-history' })}
+                  title={t({ message: 'Clear the period', context: 'change-history' })}
+                  onClick={() => setFilters({ from: undefined, to: undefined })}
+                >
+                  <X />
+                </Button>
+              )}
+            </div>
             <Label className="flex items-center gap-2 font-normal">
               <Switch
                 checked={state.collapseBatches}
@@ -367,10 +373,6 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
               <Trans context="change-history">Hide system changes</Trans>
             </Label>
           </div>
-        </PageActionBarRight>
-      </PageActionBar>
-      <PageLayout>
-        <FullWidthPageBlock blockId="list-table">
           {!!feedQuery.error && (
             <QueryError
               className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 p-2"

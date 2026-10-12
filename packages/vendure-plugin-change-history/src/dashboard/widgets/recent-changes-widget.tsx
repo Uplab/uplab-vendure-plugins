@@ -104,11 +104,18 @@ export function RecentChangesWidget() {
                     )}
                   </button>
                   <div className="min-w-0 flex-1">
+                    {/* A long name or type is cut with an ellipsis (the whole one in the tooltip) at a share of
+                        the line, the object taking the rest: nothing runs past the widget's edge. */}
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <ActorName actor={actor} className="font-medium" />
+                      <span className="flex min-w-0 max-w-[50%] shrink-0" title={actor.name}>
+                        <ActorName actor={actor} className="min-w-0 max-w-full font-medium" />
+                      </span>
                       <span className="text-muted-foreground">·</span>
                       {/* «Collection Sale», not just «Sale»: the type tells a collection from a promotion. */}
-                      <span className="shrink-0 text-muted-foreground">
+                      <span
+                        className="min-w-0 max-w-[30%] shrink-0 truncate text-muted-foreground"
+                        onMouseEnter={(event) => titleWhenCut(event.currentTarget)}
+                      >
                         <EntryType entry={entry} />
                       </span>
                       <span className="flex min-w-0">
