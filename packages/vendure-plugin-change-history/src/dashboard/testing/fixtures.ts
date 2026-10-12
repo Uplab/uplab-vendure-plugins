@@ -33,7 +33,7 @@ export function entry(over: Partial<ChangeHistoryEntryData> = {}): ChangeHistory
 
 /**
  * A text with its no-break spaces written as `~`, so that a test reads where a line may not break:
- * `nb('Odoo id:~5950013~→~941185322')`.
+ * `nb('Odoo id:~5950013 →~941185322')`.
  */
 export const nb = (text: string): string => text.replaceAll('~', NBSP);
 

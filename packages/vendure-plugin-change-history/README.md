@@ -398,8 +398,9 @@ in stored order, which differs between the two sides. The rows that changed carr
 changed value, the unchanged ones are dimmed; of more than eight keys only the changed show, the rest behind
 «+N unchanged». Values are formatted by the field's kind like any value: digits grouped, `money` in its currency,
 yes / no, a number under a key named `id` or ending in `Id` as stored. When both sides of such a change (not of kind
-`json`) hold a single key between them, the row names the key with the field and shows plain values instead:
-«Min. stock · Kyiv | — | 13». A deleted entity's last state lists the keys the same way, sorted and formatted.
+`json`) hold a single key between them — a side may be an empty object or no value, `{} → { Kyiv: 13 }` — the row
+names the key with the field and shows plain values instead: «Min. stock · Kyiv | — | 13», the key kept whole on one
+line, a number under a key named `id` or ending in `Id` as stored. A deleted entity's last state lists the keys the same way, sorted and formatted.
 In a one-line summary (the feed, the widget, a batch's member rows) a change of one names only the keys that changed:
 «Min. stock: Kyiv: 0 → 13».
 

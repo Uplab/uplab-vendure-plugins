@@ -38,6 +38,7 @@ import {
   parseListSearch,
   periodBounds,
   searchFilter,
+  splitDateTime,
   titleWhenCut,
   type FeedSearch,
 } from '../format';
@@ -393,7 +394,11 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
           {/*
             The column widths follow this box (a container query), not the viewport: a host's sidebar and padding
             decide how wide the feed is. Short labels stay on one line where there is room; long ones (a host's
-            types, actions and sources) wrap, so the table never gets wider than its box.
+            types, actions and sources) wrap. Every column but the date has a cap per box width («What changed»
+            its minimum), and the caps, the date (the header's width below 900 px, where the time goes under the
+            date) and the cells' padding add up to no more than the box, so from a 760 px box on the table never
+            gets wider than it: 757 px below 900, 883 from 900, 931 from 940, 995 from 1000, 1075 from 1100, then
+            1131, 1163, 1211 and 1243 from 1150, 1200, 1250 and 1300. A step changes one of them: keep the sum.
           */}
           <div
             onClick={openRow}
@@ -450,17 +455,29 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                 createdAt: {
                   enableColumnFilter: false,
                   meta: { dependencies: ['id'] },
-                  cell: ({ row }) => (
-                    <Cell id={row.original.id}>
-                      <button
-                        type="button"
-                        className="whitespace-nowrap text-muted-foreground hover:underline"
-                        onClick={() => openEntry(row.original.id)}
-                      >
-                        {formatDate(row.original.createdAt, { dateStyle: 'short', timeStyle: 'short' })}
-                      </button>
-                    </Cell>
-                  ),
+                  // Below a 900 px table the time goes under the date: each stays whole, the line breaks between them.
+                  cell: ({ row }) => {
+                    const at = formatDate(row.original.createdAt, { dateStyle: 'short', timeStyle: 'short' });
+                    const parts = splitDateTime(at, formatDate(row.original.createdAt, { timeStyle: 'short' }));
+                    return (
+                      <Cell id={row.original.id}>
+                        <button
+                          type="button"
+                          className="whitespace-normal text-left text-muted-foreground hover:underline @min-[900px]:whitespace-nowrap"
+                          onClick={() => openEntry(row.original.id)}
+                        >
+                          {parts ? (
+                            <>
+                              <span className="whitespace-nowrap">{parts[0]}</span>{' '}
+                              <span className="whitespace-nowrap">{parts[1]}</span>
+                            </>
+                          ) : (
+                            at
+                          )}
+                        </button>
+                      </Cell>
+                    );
+                  },
                 },
                 actorLabel: {
                   header: () => <Trans context="change-history">Who</Trans>,
@@ -472,7 +489,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                     return (
                       <Cell
                         id={row.original.id}
-                        className="min-w-[6rem] max-w-[9rem] whitespace-normal @min-[1100px]:min-w-[8rem] @min-[1100px]:max-w-[12rem]"
+                        className="min-w-[6rem] max-w-[7rem] whitespace-normal @min-[900px]:max-w-[8rem] @min-[1000px]:max-w-[9rem] @min-[1100px]:min-w-[8rem] @min-[1100px]:max-w-[12rem]"
                         title={actor.name}
                       >
                         <ActorName actor={actor} className="max-w-full" wrap />
@@ -487,7 +504,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="min-w-[5rem] max-w-[7.5rem] whitespace-normal break-words @min-[1150px]:max-w-[11rem]"
+                      className="min-w-[5rem] max-w-[6.5rem] whitespace-normal break-words @min-[900px]:max-w-[7rem] @min-[1000px]:max-w-[7.5rem] @min-[1150px]:max-w-[11rem]"
                     >
                       <EntryType entry={row.original} />
                     </Cell>
@@ -498,11 +515,11 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   enableColumnFilter: false,
                   meta: { dependencies: [...ROW_FIELDS] },
                   // Long names are cut — a variant's name, not its SKU — the whole name in the tooltip. From a
-                  // 900 px table on, a normal SKU stays whole beside a «Deleted» badge, in English or Ukrainian.
+                  // 940 px table on, a normal SKU stays whole beside a «Deleted» badge, in English or Ukrainian.
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="flex min-w-0 max-w-[11rem] @min-[900px]:max-w-[14rem] @min-[1300px]:max-w-[16rem]"
+                      className="flex min-w-0 max-w-[8rem] @min-[900px]:max-w-[11rem] @min-[940px]:max-w-[14rem] @min-[1300px]:max-w-[16rem]"
                       title={row.original.entityLabel ?? undefined}
                     >
                       <EntryObject entry={row.original} cut />
@@ -516,7 +533,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="min-w-[6rem] max-w-[8rem] whitespace-normal break-words @min-[1100px]:max-w-[10rem] @min-[1250px]:max-w-[13rem]"
+                      className="min-w-[6rem] max-w-[6.5rem] whitespace-normal break-words @min-[900px]:max-w-[7.5rem] @min-[1000px]:max-w-[8rem] @min-[1100px]:max-w-[10rem] @min-[1250px]:max-w-[13rem]"
                     >
                       <EntryAction entry={row.original} />
                     </Cell>
@@ -528,11 +545,14 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   enableSorting: false,
                   meta: { dependencies: [...ROW_FIELDS] },
                   // The table cells do not wrap: this column alone does, takes the width the compact columns
-                  // leave and shows up to three lines, the whole text in the tooltip when it is longer.
+                  // leave and shows up to three lines, the whole text in the tooltip when it is longer. A run of
+                  // text held together by no-break spaces («Price: 1,299.00 → 1,399.00») breaks inside only when
+                  // it is wider than the column, and so does a badge («Derived changes: 5»): neither sets the
+                  // table's width.
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="line-clamp-3 min-w-[8rem] whitespace-normal break-words @min-[1000px]:min-w-[10rem] @min-[1200px]:min-w-[12rem]"
+                      className="line-clamp-3 min-w-[7rem] whitespace-normal wrap-anywhere [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:whitespace-normal @min-[900px]:min-w-[8rem] @min-[1000px]:min-w-[10rem] @min-[1200px]:min-w-[12rem]"
                     >
                       <EntrySummary entry={row.original} />
                     </Cell>

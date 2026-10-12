@@ -48,16 +48,32 @@ export function stripHtml(html: string): string {
 }
 
 /**
- * A no-break space: «Odoo id: 5950013 → 941185322» breaks before a label or between words of a value, never
- * right after a colon or an arrow, which would leave the value alone on the next line.
+ * A no-break space: «Odoo id: 5950013 → 941185322» breaks before a label, between words of a value or before
+ * the arrow, never right after a colon or an arrow, which would leave the value alone on the next line.
  */
 export const NBSP = '\u00A0';
 
 /** «label: value», the value kept on the label's line. */
 export const labelled = (label: string, value: string | number): string => `${label}:${NBSP}${value}`;
 
-/** «from → to», the arrow kept with both sides. */
-export const fromTo = (from: string, to: string): string => `${from}${NBSP}→${NBSP}${to}`;
+/**
+ * «from → to», the arrow kept with the new value: a narrow column (the feed's «What changed») breaks the line
+ * before the arrow, «Odoo id: 5950013» / «→ 941185322», rather than inside a number.
+ */
+export const fromTo = (from: string, to: string): string => `${from} →${NBSP}${to}`;
+
+/**
+ * A short date and time («12.10.26, 18:33», «10/12/26, 6:33 PM») split before its time, given the time alone
+ * as the same locale writes it: `['12.10.26,', '18:33']`, the locale's own separator kept on the date. Each
+ * part then stays whole and a narrow column breaks the line between them only. `undefined` when the time is not
+ * at the end.
+ */
+export function splitDateTime(dateTime: string, time: string): [string, string] | undefined {
+  if (!time || !dateTime.endsWith(time) || dateTime.length === time.length) {
+    return undefined;
+  }
+  return [dateTime.slice(0, -time.length).trimEnd(), time];
+}
 
 /** The first `max` characters (on a word boundary when one is near), with an ellipsis when cut. */
 export function clipText(text: string, max: number): { text: string; clipped: boolean } {
@@ -123,39 +139,21 @@ export function flatEntries(value: unknown): Array<[string, string]> | undefined
 
 /**
  * The keys of two objects of scalars whose values differ, as `[key, from, to]` text (`—` for a missing or null
- * value), in the order of `to` then `from`; `undefined` unless each side is such an object (or empty). A per-
- * location map then reads as what changed: `Kyiv: 0 → 13`, not both whole maps.
+ * value), in the order of `to` then `from`; `undefined` unless each side is such an object, an empty one or
+ * nothing, and when both are nothing. A per-location map then reads as what changed: `Kyiv: 0 → 13`, not both
+ * whole maps.
  */
 export function changedEntries(from: unknown, to: unknown): Array<[string, string, string]> | undefined {
-  const side = (value: unknown) => (value == null ? new Map<string, string>() : new Map(flatEntries(value) ?? []));
-  const before = side(from);
-  const after = side(to);
-  if ((from != null && !flatEntries(from)) || (to != null && !flatEntries(to)) || (from == null && to == null)) {
+  const before = mapSide(from);
+  const after = mapSide(to);
+  if (!before || !after || (from == null && to == null)) {
     return undefined;
   }
-  const keys = [...new Set([...after.keys(), ...before.keys()])];
+  const text = (side: Record<string, PlainValue>, key: string) => (side[key] == null ? '—' : String(side[key]));
+  const keys = [...new Set([...Object.keys(after), ...Object.keys(before)])];
   return keys
-    .filter((key) => before.get(key) !== after.get(key))
-    .map((key) => [key, before.get(key) ?? '—', after.get(key) ?? '—']);
-}
-
-/**
- * The one key of a change of an object of scalars whose two sides hold that key alone between them, with its
- * value on each side (`null` when a side lacks it); `undefined` for anything else. A sparse per-location map,
- * `{ Kyiv: null } → { Kyiv: 13 }`, then reads as a field «Min stock · Kyiv» changing from `—` to `13`.
- */
-export function soleEntry(from: unknown, to: unknown): { key: string; from: unknown; to: unknown } | undefined {
-  if (!changedEntries(from, to)) {
-    return undefined;
-  }
-  const keysOf = (value: unknown) => (value == null ? [] : Object.keys(value));
-  const keys = new Set([...keysOf(from), ...keysOf(to)]);
-  if (keys.size !== 1) {
-    return undefined;
-  }
-  const [key] = keys;
-  const valueOf = (value: unknown) => (value == null ? null : ((value as Record<string, unknown>)[key] ?? null));
-  return { key, from: valueOf(from), to: valueOf(to) };
+    .filter((key) => text(before, key) !== text(after, key))
+    .map((key) => [key, text(before, key), text(after, key)]);
 }
 
 /** A plain value: what an object of scalars holds under each key. */
@@ -211,6 +209,17 @@ export function mapRows(from: unknown, to: unknown, locale?: string): MapRow[] |
     const became = valueOf(after, key);
     return { key, from: was, to: became, changed: String(was) !== String(became) };
   });
+}
+
+/**
+ * The one row of a change of an object of scalars whose two sides hold that key alone between them (`mapRows`: a
+ * side may be nothing or an empty object, a missing value, `null` and `''` read as `null`); `undefined` for anything
+ * else. A sparse per-location map, `{} → { Kyiv: 13 }`, then reads as a field «Min stock · Kyiv» changing from `—`
+ * to `13`.
+ */
+export function soleEntry(from: unknown, to: unknown): MapRow | undefined {
+  const rows = mapRows(from, to);
+  return rows?.length === 1 ? rows[0] : undefined;
 }
 
 /**

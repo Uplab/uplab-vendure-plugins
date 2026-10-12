@@ -40,7 +40,7 @@ describe('EntrySummary', () => {
         })}
       />,
     );
-    expect(document.body.textContent).toBe(nb('Min stock:~Шоурум Київ:~0~→~13, Основний:~—~→~3'));
+    expect(document.body.textContent).toBe(nb('Min stock:~Шоурум Київ:~0 →~13, Основний:~— →~3'));
   });
 
   it("lets a host's text of a kind say what changed, and falls back where it does not", () => {
@@ -54,24 +54,24 @@ describe('EntrySummary', () => {
         })}
       />,
     );
-    expect(document.body.textContent).toBe(nb('Min stock:~4~→~2 locations'));
+    expect(document.body.textContent).toBe(nb('Min stock:~4 →~2 locations'));
   });
 
   it('shows an identifier as stored, a quantity grouped', () => {
     render(
       <EntrySummary entry={entry({ changes: { 'customFields.odooId': { kind: 'text', from: 5950013, to: null } } })} />,
     );
-    expect(document.body.textContent).toBe(nb('Odoo id:~5950013~→~—'));
+    expect(document.body.textContent).toBe(nb('Odoo id:~5950013 →~—'));
     cleanup();
     render(
       <EntrySummary entry={entry({ changes: { 'customFields.erp': { kind: 'id', from: 9342, to: 941185322 } } })} />,
     );
-    expect(document.body.textContent).toBe(nb('Erp:~9342~→~941185322'));
+    expect(document.body.textContent).toBe(nb('Erp:~9342 →~941185322'));
     cleanup();
     render(
       <EntrySummary entry={entry({ changes: { 'customFields.paid': { kind: 'text', from: 1000, to: 25000 } } })} />,
     );
-    expect(document.body.textContent).toBe(nb('Paid:~1,000~→~25,000'));
+    expect(document.body.textContent).toBe(nb('Paid:~1,000 →~25,000'));
   });
 
   it("names a channel assignment's channel with the changes it caused", () => {
@@ -86,7 +86,7 @@ describe('EntrySummary', () => {
 
   it('shows one short field as «field: was → became»', () => {
     render(<EntrySummary entry={entry({ changes: { enabled: { kind: 'bool', from: true, to: false } } })} />);
-    expect(document.body.textContent).toBe(nb('Enabled:~Yes~→~No'));
+    expect(document.body.textContent).toBe(nb('Enabled:~Yes →~No'));
   });
 
   it('lists what a set change added and removed', () => {
@@ -134,7 +134,7 @@ describe('EntrySummary', () => {
       />,
     );
     expect(document.body.textContent).toBe(
-      nb('Відстеження запасів:~Успадкувати з глобальних налаштувань~→~Відстежувати'),
+      nb('Відстеження запасів:~Успадкувати з глобальних налаштувань →~Відстежувати'),
     );
   });
 
@@ -147,7 +147,7 @@ describe('EntrySummary', () => {
         })}
       />,
     );
-    expect(document.body.textContent).toBe(nb('Stock (Main):~10~→~42~(+32)'));
+    expect(document.body.textContent).toBe(nb('Stock (Main):~10 →~42~(+32)'));
   });
 
   it("counts a run's rows as «label: number»", () => {
@@ -317,9 +317,9 @@ describe('EntrySummary, every kind of row', () => {
     const { container, rerender } = render(
       <EntrySummary entry={entry({ changes: { 'customFields.note': { from: 'draft', to: 'final' } } })} />,
     );
-    expect(container.textContent).toBe(nb('Note:~draft~→~final'));
+    expect(container.textContent).toBe(nb('Note:~draft →~final'));
     rerender(<EntrySummary entry={entry({ changes: { 'customFields.minStock': { from: null, to: { Kyiv: 2 } } } })} />);
-    expect(container.textContent).toBe(nb('Min stock:~Kyiv:~—~→~2'));
+    expect(container.textContent).toBe(nb('Min stock:~Kyiv:~— →~2'));
   });
 
   it('lists only what a set change added when nothing was removed', () => {

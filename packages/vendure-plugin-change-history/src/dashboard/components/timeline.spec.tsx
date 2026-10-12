@@ -406,7 +406,7 @@ describe('EntityTimeline, a batch', () => {
     });
     const members = [...document.querySelectorAll('ul li')].map((item) => item.textContent);
     expect(members).toEqual([
-      nb('Худі · оновлено · Увімкнено:~Так~→~Ні'),
+      nb('Худі · оновлено · Увімкнено:~Так →~Ні'),
       'Кепка · додано до каналуНаслідки зміни: 3',
       'Шапка · додано до каналу',
     ]);

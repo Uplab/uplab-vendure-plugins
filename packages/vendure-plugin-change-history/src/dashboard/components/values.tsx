@@ -616,9 +616,9 @@ function drawsMaps(change: ChangeHistoryFieldChange, labels: Labels, json: boole
 }
 
 /**
- * The one key of a map of scalars the built-in cells draw, when its two sides hold that key alone: the row then
- * names the key with the field and shows plain values, «Min stock · Kyiv | — | 13», as the feed's «Min stock:
- * Kyiv: — → 13» does. A map of more keys (and a `json` one) is drawn key by key, `MapChange`.
+ * The one key of a map of scalars the built-in cells draw, when its two sides hold that key alone (a side may be an
+ * empty object or nothing): the row then names the key with the field and shows plain values, «Min stock · Kyiv |
+ * — | 13», as the feed's «Min stock: Kyiv: — → 13» does. A map of more keys (and a `json` one) is drawn key by key, `MapChange`.
  */
 function soleKeyOf(change: ChangeHistoryFieldChange, labels: Labels) {
   return drawsMaps(change, labels, false) ? soleEntry(change.from, change.to) : undefined;
@@ -807,12 +807,22 @@ export function FieldChangesTable({
           const both = spansBoth(recorded, !!labels.valueRenderer(recorded.kind ?? 'text'));
           const sole = both ? undefined : soleKeyOf(recorded, labels);
           const rows = both || sole ? undefined : mapRowsOf(recorded, labels, i18n.locale);
-          const change = sole ? { ...recorded, from: sole.from, to: sole.to } : recorded;
+          // A number under a key named like an identifier (`odooId`) reads as stored, as in a map's rows.
+          const change = sole
+            ? { ...recorded, from: sole.from, to: sole.to, ...(isIdKey(sole.key) && { kind: 'id' }) }
+            : recorded;
           const field = labels.field(entityType, key, recorded);
           return (
             <tr key={key} className="border-b border-border/50 align-top last:border-0">
               <td className="py-1.5 pr-3 text-muted-foreground break-words">
-                {sole ? `${field}${NBSP}· ${sole.key}` : field}
+                {field}
+                {sole && (
+                  // The key stays whole on one line («Шоурум Київ»), the line breaks after the «·» instead; a key
+                  // wider than the column still wraps inside its own box.
+                  <>
+                    {NBSP}· <span className="inline-block">{sole.key}</span>
+                  </>
+                )}
               </td>
               <ChangeCells change={change} rows={rows} both={both} entityType={entityType} fieldKey={key} />
             </tr>

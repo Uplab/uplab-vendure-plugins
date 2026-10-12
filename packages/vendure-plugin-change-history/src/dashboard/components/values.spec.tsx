@@ -735,6 +735,16 @@ describe('FieldChangesTable: an object of plain values of a kind nothing renders
     expect(cells(0)[2].querySelector('.bg-green-50')?.textContent).toBe('13');
     expect(cellTexts(1)).toEqual([nb('Max stock~· Шоурум Київ'), '—', '1,500']);
     expect(cellTexts(2)).toEqual([nb('Reorder~· Kyiv'), '4', '—']);
+    // The key is one unbreakable box: a narrow column breaks the line after the «·», never inside «Шоурум Київ».
+    expect(cells(0)[0].querySelector('span.inline-block')?.textContent).toBe('Шоурум Київ');
+    cleanup();
+    // An empty object is a side without the key; a number under a key named like an identifier reads as stored.
+    table({
+      'customFields.minStock': { kind: 'stockThreshold', from: {}, to: { Kyiv: 1500 } },
+      'customFields.erp': { kind: 'stock', from: { odooId: 5950013 }, to: { odooId: 941185322 } },
+    });
+    expect(cellTexts(0)).toEqual([nb('Min stock~· Kyiv'), '—', '1,500']);
+    expect(cellTexts(1)).toEqual([nb('Erp~· odooId'), '5950013', '941185322']);
     cleanup();
     // A stock map keeps the stock's delta; a host's text or renderer of the kind keeps the whole value.
     table({ stock: { kind: 'stock', from: { Kyiv: 5 }, to: { Kyiv: 13 } } });

@@ -22,6 +22,7 @@ import {
   richTextDiff,
   mapRows,
   soleEntry,
+  splitDateTime,
   splitTrailingCode,
   withFacetValueLabels,
   wordDiff,
@@ -254,16 +255,33 @@ describe('values', () => {
     expect(changedEntries(null, null)).toBeUndefined();
     expect(changedEntries(['a'], { Kyiv: 2 })).toBeUndefined();
     expect(changedEntries({ Kyiv: 2 }, 'text')).toBeUndefined();
+    // An empty object is a side of no keys, like no value.
+    expect(changedEntries({}, { Kyiv: 13 })).toEqual([['Kyiv', '—', '13']]);
+    expect(changedEntries({ Kyiv: null }, {})).toEqual([]);
+  });
+
+  it('splits a short date and time before the time, the date keeping its separator', () => {
+    expect(splitDateTime('12.10.26, 18:33', '18:33')).toEqual(['12.10.26,', '18:33']);
+    expect(splitDateTime('10/12/26, 6:33\u202FPM', '6:33\u202FPM')).toEqual(['10/12/26,', '6:33\u202FPM']);
+    expect(splitDateTime('2026/10/12 18:33', '18:33')).toEqual(['2026/10/12', '18:33']);
+    expect(splitDateTime('18:33 12.10.26', '18:33')).toBeUndefined();
+    expect(splitDateTime('18:33', '18:33')).toBeUndefined();
+    expect(splitDateTime('12.10.26', '')).toBeUndefined();
   });
 
   it('finds the one key two sides of a map of scalars hold between them, a missing value as null', () => {
-    expect(soleEntry({ Kyiv: null }, { Kyiv: 13 })).toEqual({ key: 'Kyiv', from: null, to: 13 });
-    expect(soleEntry(null, { Kyiv: 13 })).toEqual({ key: 'Kyiv', from: null, to: 13 });
-    expect(soleEntry({ Kyiv: 'a' }, undefined)).toEqual({ key: 'Kyiv', from: 'a', to: null });
+    const row = (key: string, from: unknown, to: unknown) => ({ key, from, to, changed: String(from) !== String(to) });
+    expect(soleEntry({ Kyiv: null }, { Kyiv: 13 })).toEqual(row('Kyiv', null, 13));
+    expect(soleEntry(null, { Kyiv: 13 })).toEqual(row('Kyiv', null, 13));
+    expect(soleEntry({ Kyiv: 'a' }, undefined)).toEqual(row('Kyiv', 'a', null));
+    // An empty object is a side without the key, like no value; an empty string is no value.
+    expect(soleEntry({}, { Kyiv: 13 })).toEqual(row('Kyiv', null, 13));
+    expect(soleEntry({ Kyiv: '' }, {})).toEqual(row('Kyiv', null, null));
     expect(soleEntry({ Kyiv: 1 }, { Lviv: 1 })).toBeUndefined();
     expect(soleEntry({ Kyiv: 1, Lviv: 2 }, { Kyiv: 3, Lviv: 2 })).toBeUndefined();
     expect(soleEntry({ Kyiv: { a: 1 } }, { Kyiv: 2 })).toBeUndefined();
     expect(soleEntry(null, null)).toBeUndefined();
+    expect(soleEntry({}, {})).toBeUndefined();
     expect(soleEntry(3, 4)).toBeUndefined();
   });
 
