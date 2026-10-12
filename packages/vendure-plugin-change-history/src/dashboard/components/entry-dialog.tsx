@@ -526,13 +526,14 @@ export function EntryDialog({ entryId, onClose }: { entryId: string | undefined;
             entryId={entryId}
             focusRef={focusRef}
             onFullHistory={() => {
+              // Only a deleted entity offers its full history (never a batch or a run); its entry may still
+              // be loading when the window has just switched to it.
               if (!entry) {
                 return;
               }
-              const subject = batchSubject(entry) ?? entry;
               setHistory({
-                entityType: subject.entityType,
-                entityId: subject.entityId,
+                entityType: entry.entityType,
+                entityId: entry.entityId,
                 label: titleOf(entry, labels).text,
               });
             }}

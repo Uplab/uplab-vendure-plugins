@@ -668,9 +668,10 @@ function deletedDerivedCounts(plan: CompactionPlan): Map<string, number> {
 }
 
 /** The `derivedCount` an entry's `meta` already holds (0 without one). */
-function snapshotCount(meta: Record<string, unknown> | null | undefined): number {
-  const value = meta?.derivedCount;
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+function snapshotCount(meta: Record<string, unknown>): number {
+  // JSON holds no NaN or Infinity: a number is a count.
+  const value = meta.derivedCount;
+  return typeof value === 'number' ? value : 0;
 }
 
 function facts(row: RawRow) {

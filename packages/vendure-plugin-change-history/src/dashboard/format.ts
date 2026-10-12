@@ -891,8 +891,8 @@ export function argumentList(value: unknown): unknown[] | undefined {
   }
   if (typeof value === 'string' && value.startsWith('[')) {
     try {
-      const parsed: unknown = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : undefined;
+      // JSON that starts with `[` and parses is a list.
+      return JSON.parse(value) as unknown[];
     } catch {
       return undefined;
     }

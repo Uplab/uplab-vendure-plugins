@@ -730,7 +730,8 @@ export class ChangeHistoryReader {
         .getRawMany<{ derivedFromId: unknown; count: string | number }>();
       for (const row of rows) {
         const id = String(row.derivedFromId);
-        result.set(id, (compactedAway.get(id) ?? 0) + Number(row.count));
+        // Every cause of the chunk has its snapshot count (0 when it holds none).
+        result.set(id, compactedAway.get(id)! + Number(row.count));
       }
     }
     return result;
@@ -776,7 +777,8 @@ export class ChangeHistoryReader {
         .addOrderBy('entry.action', 'ASC')
         .getRawMany<{ batchId: string; entityType: string; action: string; count: string | number }>();
       for (const row of rows) {
-        for (const headId of live.get(row.batchId) ?? []) {
+        // A row only for a batch of the chunk, whose heads are listed.
+        for (const headId of live.get(row.batchId)!) {
           result.get(headId)!.push({ entityType: row.entityType, action: row.action, count: Number(row.count) });
         }
       }

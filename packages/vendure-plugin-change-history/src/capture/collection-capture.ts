@@ -161,7 +161,7 @@ export class CollectionCapture {
             }
             return [];
           }
-          const current = (await productIdsOf(manager, [id])).get(id) ?? [];
+          const current = (await productIdsOf(manager, [id])).get(id)!;
           if (!snapshot) {
             // Unknown until now (created while capture was off): stored without entries.
             await insertOrIgnore(manager, [{ collectionId: id, productIds: current }]);
@@ -265,7 +265,7 @@ export class CollectionCapture {
       const members = await productIdsOf(manager, chunk);
       await insertOrIgnore(
         manager,
-        chunk.map((collectionId) => ({ collectionId, productIds: members.get(collectionId) ?? [] })),
+        chunk.map((collectionId) => ({ collectionId, productIds: members.get(collectionId)! })),
       );
     }
     if (missing.length > 0) {
@@ -388,7 +388,7 @@ async function overwriteAll(manager: EntityManager): Promise<{ collections: numb
     await manager.delete(ChangeHistoryCollectionMembers, { collectionId: In(chunk) });
     await insertOrIgnore(
       manager,
-      chunk.map((collectionId) => ({ collectionId, productIds: members.get(collectionId) ?? [] })),
+      chunk.map((collectionId) => ({ collectionId, productIds: members.get(collectionId)! })),
     );
   }
   return { collections: ids.length };
@@ -403,14 +403,11 @@ async function allCollectionIds(manager: EntityManager): Promise<string[]> {
 }
 
 /**
- * The products of each collection: a product is in a collection when one of its variants is. Deleted products
- * and variants are left out. Sorted string ids.
+ * The products of each collection, an entry for every id given (a non-empty chunk): a product is in a collection
+ * when one of its variants is. Deleted products and variants are left out. Sorted string ids.
  */
 async function productIdsOf(manager: EntityManager, collectionIds: string[]): Promise<Map<string, string[]>> {
   const members = new Map<string, string[]>(collectionIds.map((id) => [id, []]));
-  if (collectionIds.length === 0) {
-    return members;
-  }
   const rows = await manager
     .createQueryBuilder(ProductVariant, 'variant')
     .innerJoin('variant.collections', 'collection')
@@ -446,14 +443,14 @@ async function liveProducts(manager: EntityManager, productIds: string[]): Promi
   return productIds.filter((id) => live.has(id));
 }
 
-/** Portable "insert unless present" (`ON CONFLICT DO NOTHING` / `INSERT OR IGNORE` / `INSERT IGNORE`). */
+/**
+ * Portable "insert unless present" (`ON CONFLICT DO NOTHING` / `INSERT OR IGNORE` / `INSERT IGNORE`) of a
+ * non-empty chunk of rows.
+ */
 async function insertOrIgnore(
   manager: EntityManager,
   rows: Array<{ collectionId: string; productIds: string[] }>,
 ): Promise<void> {
-  if (rows.length === 0) {
-    return;
-  }
   await manager
     .createQueryBuilder()
     .insert()
