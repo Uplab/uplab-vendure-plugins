@@ -2,17 +2,25 @@ import { ID } from '@vendure/core';
 import type { ChannelEventRecord } from './channel-capture';
 import type { EntryDraft } from './entry-writer.service';
 import { LoadedState } from '../entity-definitions/entity-definition';
+import { ChangeHistoryFieldChanges } from '../types';
 import { Lru } from './lru';
 
 /** Caps of the per-transaction maps: a long bulk operation must not grow them without bound. */
 export const LAST_SEEN_CAPACITY = 500;
 const ENTRIES_CAPACITY = 10_000;
 
+/** A `created` entry this transaction wrote, as stored: what a later update of the entity is folded into. */
+export interface CreatedEntry {
+  id: ID;
+  changes: ChangeHistoryFieldChanges | null;
+  meta: Record<string, unknown>;
+}
+
 /**
  * What one database transaction has recorded so far: the derived rule (`entriesByEntity`), the entities
  * created in it (a variant's initial stock is not an adjustment), the last state of every entity it saved
- * (`lastSeen`: the "before" of a second save of the same entity in the same transaction), and the batches
- * whose head it wrote.
+ * (`lastSeen`: the "before" of a second save of the same entity in the same transaction), the `created` entries
+ * a later update of their entity is folded into (`createdEntries`), and the batches whose head it wrote.
  *
  * The maps are read directly but **changed only through the methods**: each change is journaled at the
  * savepoint depth it was made in, so that a rolled-back savepoint takes its changes with it (no before-state
@@ -23,6 +31,11 @@ export class TransactionState {
   readonly entriesByEntity = new Lru<string, ID>(ENTRIES_CAPACITY);
   readonly createdIds = new Lru<string, true>(ENTRIES_CAPACITY);
   readonly lastSeen: Lru<string, LoadedState>;
+  /**
+   * The `created` entry of each entity created in this transaction, as last written: an update of the entity
+   * later in the transaction changes this entry instead of writing one of its own (capped like `lastSeen`).
+   */
+  readonly createdEntries: Lru<string, CreatedEntry>;
   /**
    * Keys whose `lastSeen` was evicted by the cap: the committed row is no before-state for them any more (it
    * would repeat this transaction's earlier changes), so a later save of a group `lastSeen` does not cover is
@@ -55,6 +68,7 @@ export class TransactionState {
     lastSeenCapacity = LAST_SEEN_CAPACITY,
   ) {
     this.lastSeen = new Lru(lastSeenCapacity, (key) => this.evicted.add(key));
+    this.createdEntries = new Lru(lastSeenCapacity);
   }
 
   /** The latest entry written for `key` (`'Type:id'`). */
@@ -66,6 +80,12 @@ export class TransactionState {
   markCreated(key: string): void {
     this.track(this.createdIds, key);
     this.createdIds.set(key, true);
+  }
+
+  /** The `created` entry of `key` as it now stands in the database (written, or folded into). */
+  recordCreated(key: string, entry: CreatedEntry): void {
+    this.track(this.createdEntries, key);
+    this.createdEntries.set(key, entry);
   }
 
   see(key: string, state: LoadedState): void {

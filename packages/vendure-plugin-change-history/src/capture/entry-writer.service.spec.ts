@@ -20,8 +20,9 @@ function setup(actor: ResolvedActor = ACTOR) {
     return entries;
   });
   const withTransaction = vi.fn((ctx: RequestContext, work: (tctx: RequestContext) => Promise<unknown>) => work(ctx));
+  const update = vi.fn(async () => undefined);
   const connection = {
-    getRepository: () => ({ save, count: vi.fn(async () => 0) }),
+    getRepository: () => ({ save, update, count: vi.fn(async () => 0) }),
     withTransaction,
   } as unknown as TransactionalConnection;
   const state: ChangeHistoryState = { correlationId: 'corr-1' };
@@ -35,7 +36,7 @@ function setup(actor: ResolvedActor = ACTOR) {
   } as unknown as ChangeHistoryContextService;
   const writer = new ChangeHistoryWriter(connection, context);
   const ctx = { channel: { id: 2 } } as unknown as RequestContext;
-  return { writer, ctx, saved, transaction, withTransaction };
+  return { writer, ctx, saved, transaction, withTransaction, update, context };
 }
 
 const draft = (overrides: Partial<EntryDraft> = {}): EntryDraft => ({
@@ -75,6 +76,44 @@ describe('ChangeHistoryWriter', () => {
       ['5', 41],
       ['6', null],
     ]);
+  });
+
+  it('remembers a created entry as written, and folds a later draft into it instead of inserting one', async () => {
+    const { writer, ctx, saved, transaction, update, context } = setup();
+    const changes = { sku: { kind: 'text' as const, from: null, to: 'A' } };
+    await writer.write(ctx, 'test', async () => [draft({ action: 'created', changes, foldable: true })]);
+    expect(saved[0]).not.toHaveProperty('foldable');
+    expect(transaction.createdEntries.peek('Product:5')).toEqual({
+      id: 1,
+      changes,
+      meta: { correlationId: 'corr-1' },
+    });
+
+    const resolveActor = vi.spyOn(context, 'resolveActor');
+    const listener = vi.fn();
+    writer.onSaved(listener);
+    const folded = { sku: { kind: 'text' as const, from: null, to: 'B' } };
+    const entries = await writer.write(ctx, 'test', async () => [
+      draft({ entityLabel: 'Shirt B', changes: folded, meta: { foldedActions: ['updated'] }, foldInto: 1 }),
+    ]);
+
+    expect(entries).toEqual([]);
+    expect(saved).toHaveLength(1);
+    expect(update).toHaveBeenCalledWith(1, {
+      entityLabel: 'Shirt B',
+      parentType: null,
+      parentId: null,
+      changes: folded,
+      meta: { foldedActions: ['updated'] },
+    });
+    expect(transaction.createdEntries.peek('Product:5')).toEqual({
+      id: 1,
+      changes: folded,
+      meta: { foldedActions: ['updated'] },
+    });
+    // Nothing new: no actor to resolve, nothing for the listeners.
+    expect(resolveActor).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it('keeps notifying the other listeners when one throws, and logs it', async () => {

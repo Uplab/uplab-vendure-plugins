@@ -83,6 +83,19 @@ describe('TransactionState', () => {
     expect([...state.collectionDeletions.keys()]).toEqual(['7', '8']);
   });
 
+  it('puts back the created entry a rolled-back savepoint folded into, and forgets one it wrote', () => {
+    const { state, begin, end } = stateAt();
+    state.recordCreated('Product:1', { id: 10, changes: { sku: { kind: 'text', from: null, to: 'A' } }, meta: {} });
+
+    begin();
+    state.recordCreated('Product:1', { id: 10, changes: { sku: { kind: 'text', from: null, to: 'B' } }, meta: {} });
+    state.recordCreated('Product:2', { id: 11, changes: null, meta: {} });
+    end(false);
+
+    expect(state.createdEntries.peek('Product:1')?.changes?.sku.to).toBe('A');
+    expect(state.createdEntries.has('Product:2')).toBe(false);
+  });
+
   it('marks a key whose last state the cap evicted', () => {
     const { state } = stateAt(1, 2);
     state.see('Product:1', loaded('1'));

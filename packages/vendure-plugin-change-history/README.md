@@ -99,6 +99,21 @@ roll back takes it along, so a later save never diffs against a state that was r
 remembers the last state of up to 500 entities; an entity saved again after its state was dropped is recorded
 without values (`meta.noBefore = "evicted"`) rather than with a diff that would repeat the earlier change.
 
+**One entry per creation.** An update of an entity whose `created` entry was written earlier in the same
+transaction writes no entry of its own: it is folded into the `created` entry. A handler of yours that gives a
+new variant its price, an option group added to a product created in the same request, a `capture()` after
+your own write to an entity you just created — the history shows one creation with the values the entity ended
+up with, not a creation followed by «updated: price 0 → 3 200». The `created` entry's `changes`, label and
+parent are rewritten with the final values (one `UPDATE` of that row per folded update); its actor, batch,
+derived link, action, summary and time stay. `meta.foldedActions` lists the actions folded into it
+(`['updated']`, `['option_group_added']`), and the update's own `meta` adds the keys the entry does not have.
+Savepoints are followed here too: a savepoint you roll back takes its folds with it (the entry is as it was
+before them), and one that created the entity takes the entry. An update in a later transaction, and a save
+outside a transaction, is recorded as an entry of its own as before. A **deletion** in the same transaction is
+not folded: it stays an entry of its own, derived from the creation, so the history still shows that the
+entity existed and what it held. Folding needs the transaction's last state of the entity, so beyond the 500
+entities above an update is recorded on its own, derived from the creation.
+
 | Entity         | Actions                                                                                                                              | Fields                                                                                                                                                                                                                                 |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Product        | `created`, `updated`, `deleted`, `option_group_added`, `option_group_removed`, `collection_added`, `collection_removed`, `channel_*` | `enabled`, `name` / `slug` / `description` per language, `featuredAsset`, `assets` (order kept), `facetValues`, `optionGroups`, custom fields                                                                                          |
@@ -111,7 +126,8 @@ without values (`meta.noBefore = "evicted"`) rather than with a diff that would 
 
 - **`updated`** lists only the fields that changed, with the value from before the save and after it. A save
   that changes nothing writes nothing.
-- **`created`** lists every value the entity was created with; **`deleted`** keeps the last state in
+- **`created`** lists every value the entity was created with — as it stood at the end of the transaction that
+  created it (see «One entry per creation»); **`deleted`** keeps the last state in
   `meta.lastState`, and in `meta.lastStateFields` the kind of each non-text value with the labels of the ids
   in it (`{ facetValues: { kind: 'refs', labels: { '3': 'Color: Red' } } }`), so the dashboard renders it like a
   change. Deleting a product records its variants' deletions too.
@@ -159,7 +175,8 @@ under the owner's name: `actorType` says it was a key, and the dashboard marks i
 filters job, else `unknown_system` (its `meta` says which API and process). An entry's `source` is the actor's.
 
 **Derived changes.** An entry gets `derivedFromId` when, in the same transaction, its parent already has an
-entry (a variant after its product) or the entity itself was created earlier in it. A plugin that rewrites the
+entry (a variant after its product) or the entity itself was created earlier in it (its deletion; an update is
+folded into the creation instead, see «One entry per creation»). A plugin that rewrites the
 variants from a product handler (a price fan-out) therefore shows as one product change with derived variant
 changes. That needs the history handler to run first: declare `after: CHANGE_HISTORY_HANDLER_IDS.Product` on
 your own handler, or use the `handlerOrder` option for a handler you cannot edit. `handlerOrder` takes every

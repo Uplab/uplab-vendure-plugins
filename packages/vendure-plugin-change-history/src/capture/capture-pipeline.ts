@@ -5,12 +5,18 @@ import { NoBeforeState } from '../before-state/before-state-strategy';
 import { CHANGE_HISTORY_ACTIONS, CHANGE_HISTORY_PLUGIN_OPTIONS, loggerCtx } from '../constants';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
 import { ChangeHistoryEntityDefinition, LoadedState } from '../entity-definitions/entity-definition';
-import { changesSummary, diffStates } from '../diff/diff';
+import { changesSummary, diffStates, stableStringify } from '../diff/diff';
 import { capState } from '../diff/truncate';
 import { ChangeHistoryContextService } from '../services/change-history-context.service';
 import { ChangeHistoryStrategies } from '../services/change-history-strategies.service';
-import { ChangeHistoryFieldChanges, ChangeHistoryLastStateField, ResolvedChangeHistoryPluginOptions } from '../types';
+import {
+  ChangeHistoryFieldChange,
+  ChangeHistoryFieldChanges,
+  ChangeHistoryLastStateField,
+  ResolvedChangeHistoryPluginOptions,
+} from '../types';
 import { ChangeHistoryWriter, EntryDraft, logFailure } from './entry-writer.service';
+import { CreatedEntry } from './transaction-state';
 
 /**
  * `created`: the before-state is empty, nothing committed is read. `updated`: before = what this
@@ -141,9 +147,11 @@ export class CapturePipeline {
         loaded.after = after;
         const read = await committed;
         const drafts: EntryDraft[] = [];
+        // The changes of each draft whose labels are still to be loaded (a fold reuses the labels it has).
+        const unlabelled = new Map<EntryDraft, ChangeHistoryFieldChanges>();
         for (const id of ids) {
           const entity = request.entities?.get(id);
-          const draft = this.draft(def, id, request, {
+          const sides = {
             seen: seen.get(id),
             read: read instanceof Map ? read.get(id) : undefined,
             noBefore:
@@ -154,14 +162,32 @@ export class CapturePipeline {
                   : read.noBefore,
             after: after.get(id),
             fallback: entity && def.fromEntity ? def.fromEntity(tctx, entity) : undefined,
-          });
-          if (draft) {
-            drafts.push(draft);
+          } as const;
+          const draft = this.draft(def, id, request, sides);
+          if (!draft) {
+            continue;
+          }
+          // Read here, inside the lock: an earlier write of this transaction may have folded into it. Folded only
+          // while the transaction knows the entity's whole state (never dropped from `lastSeen`).
+          const created = request.mode === 'updated' ? transaction.createdEntries.get(key(id)) : undefined;
+          if (created && sides.seen && sides.after && !transaction.evicted.has(key(id))) {
+            const fold = this.fold(def, draft, created, merge(def, merge(def, sides.read, sides.seen), sides.after));
+            drafts.push(fold.draft);
+            unlabelled.set(fold.draft, fold.unlabelled);
+            continue;
+          }
+          if (request.mode === 'created') {
+            draft.foldable = true;
+          }
+          drafts.push(draft);
+          if (draft.changes) {
+            unlabelled.set(draft, draft.changes);
           }
         }
         for (const draft of drafts) {
-          if (draft.changes) {
-            await def.addLabels(tctx, manager, draft.changes);
+          const changes = unlabelled.get(draft);
+          if (changes) {
+            await def.addLabels(tctx, manager, changes);
           }
           const lastState = draft.meta?.lastState as Record<string, unknown> | undefined;
           if (request.mode === 'deleted' && lastState) {
@@ -316,6 +342,51 @@ export class CapturePipeline {
   }
 
   /**
+   * An update of an entity created earlier in this transaction, folded into its `created` entry: that entry's
+   * changes become every value of the entity's state now (`final`), so the history shows one creation with the
+   * values it ended up with rather than a creation followed by an update. A value the entry already holds keeps
+   * its labels; the others are left to label. The update's action is listed in `meta.foldedActions`, and its
+   * own `meta` adds the keys the entry does not have.
+   */
+  private fold(
+    def: ChangeHistoryEntityDefinition,
+    draft: EntryDraft,
+    created: CreatedEntry,
+    final: LoadedState,
+  ): { draft: EntryDraft; unlabelled: ChangeHistoryFieldChanges } {
+    const changes = diffStates({}, final.values, {
+      kindOf: (k: string) => def.kindOf(k),
+      maxValueBytes: this.options.maxValueBytes,
+      include: (k: string) => final.groups.has(def.groupOf(k)),
+    });
+    const unlabelled: ChangeHistoryFieldChanges = {};
+    for (const [key, change] of Object.entries(changes)) {
+      const earlier = created.changes?.[key];
+      if (earlier && sameValue(earlier, change)) {
+        if (earlier.labels) {
+          change.labels = earlier.labels;
+        }
+      } else {
+        unlabelled[key] = change;
+      }
+    }
+    const folded = (created.meta.foldedActions as string[] | undefined) ?? [];
+    return {
+      draft: {
+        ...draft,
+        changes,
+        meta: {
+          ...draft.meta,
+          ...created.meta,
+          foldedActions: folded.includes(draft.action) ? folded : [...folded, draft.action],
+        },
+        foldInto: created.id,
+      },
+      unlabelled,
+    };
+  }
+
+  /**
    * Without a before-state the package cannot see that a row was already soft-deleted; an earlier
    * `deleted` entry says so instead.
    */
@@ -362,6 +433,11 @@ async function lastStateFields(
   return Object.fromEntries(
     Object.entries(fields).map(([key, { kind, labels }]) => [key, { kind: kind!, ...(labels ? { labels } : {}) }]),
   );
+}
+
+/** Whether two changes record the same value (their labels aside). */
+function sameValue(a: ChangeHistoryFieldChange, b: ChangeHistoryFieldChange): boolean {
+  return stableStringify({ ...a, labels: undefined }) === stableStringify({ ...b, labels: undefined });
 }
 
 /** `next` completed by the values of `previous` for the groups `next` did not load. */

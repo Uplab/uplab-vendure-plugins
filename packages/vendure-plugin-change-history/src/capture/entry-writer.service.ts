@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ID, Logger, RequestContext, TransactionalConnection, VendureEvent } from '@vendure/core';
+import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { clip } from '../common/utils';
 import { CHANGE_HISTORY_ACTIONS, CHANGE_HISTORY_ENTITY_TYPES, DETAIL_CHUNK_SIZE, loggerCtx } from '../constants';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
@@ -25,6 +26,17 @@ export interface EntryDraft {
   meta?: Record<string, unknown>;
   /** Overrides the derived rule (a cascade names its cause itself). */
   derivedFromId?: ID | null;
+  /**
+   * A `created` entry: remembered for the rest of the transaction, so that a later update of the entity is
+   * folded into it (see `foldInto`).
+   */
+  foldable?: boolean;
+  /**
+   * The id of the entity's `created` entry written earlier in this transaction: instead of inserting this draft,
+   * that entry's `changes`, `entityLabel`, parent and `meta` become the draft's. Its actor, batch, derived link,
+   * action and summary stay.
+   */
+  foldInto?: ID;
 }
 
 /** Listens to the entries a write saved (the read side's caches). */
@@ -77,16 +89,38 @@ export class ChangeHistoryWriter {
     try {
       return await this.context.serialize(ctx, async () => {
         const transaction = this.context.transactionStateOf(ctx);
+        const folded: EntryDraft[] = [];
+        let inserted: EntryDraft[] = [];
         const saved = await this.connection.withTransaction(ctx, async (tctx) => {
           const drafts = await produce(tctx);
           if (drafts.length === 0) {
             return [];
           }
-          const actor = await this.context.resolveActor(tctx, options.event);
           const repository = this.connection.getRepository(tctx, ChangeHistoryEntry);
           const clipped = new Set<string>();
           drafts.forEach((draft) => fitColumns(draft, ENTRY_COLUMN_LENGTHS, clipped));
-          const build = (draft: EntryDraft, derivedFromId: ID | null) =>
+          for (const draft of drafts) {
+            if (draft.foldInto !== undefined) {
+              await repository.update(draft.foldInto, {
+                entityLabel: clip(draft.entityLabel || draft.entityId, 255),
+                parentType: draft.parentType ?? null,
+                parentId: draft.parentId ?? null,
+                changes: draft.changes ?? null,
+                meta: draft.meta ?? {},
+              } as QueryDeepPartialEntity<ChangeHistoryEntry>);
+              folded.push(draft);
+            }
+          }
+          inserted = drafts.filter((draft) => draft.foldInto === undefined);
+          if (inserted.length === 0) {
+            warnClipped(operation, clipped);
+            return [];
+          }
+          const actor = await this.context.resolveActor(tctx, options.event);
+          const build = (
+            { foldable: _foldable, foldInto: _foldInto, ...draft }: EntryDraft,
+            derivedFromId: ID | null,
+          ) =>
             fitColumns(
               Object.assign(new ChangeHistoryEntry(), {
                 ...draft,
@@ -130,7 +164,7 @@ export class ChangeHistoryWriter {
             );
           }
           const entries = await repository.save(
-            drafts.map((draft) =>
+            inserted.map((draft) =>
               build(draft, draft.derivedFromId !== undefined ? draft.derivedFromId : derivedFrom(transaction, draft)),
             ),
             { chunk: DETAIL_CHUNK_SIZE },
@@ -139,15 +173,26 @@ export class ChangeHistoryWriter {
           await options.afterInsert?.(tctx, entries);
           return entries;
         });
+        // Only now, at the caller's depth: a rolled-back savepoint took the rows with it, and a later rollback
+        // of the caller's own savepoint undoes these through the journal.
+        for (const draft of folded) {
+          transaction.recordCreated(`${draft.entityType}:${draft.entityId}`, {
+            id: draft.foldInto!,
+            changes: draft.changes ?? null,
+            meta: draft.meta ?? {},
+          });
+        }
         if (saved.length > 0) {
-          // Only now, at the caller's depth: a rolled-back savepoint took the rows with it, and a later
-          // rollback of the caller's own savepoint undoes these through the journal.
           if (batch) {
             transaction.markHead(batch.id);
           }
-          for (const entry of saved) {
-            transaction.remember(`${entry.entityType}:${entry.entityId}`, entry.id);
-          }
+          saved.forEach((entry, i) => {
+            const key = `${entry.entityType}:${entry.entityId}`;
+            transaction.remember(key, entry.id);
+            if (inserted[i]?.foldable) {
+              transaction.recordCreated(key, { id: entry.id, changes: entry.changes, meta: entry.meta });
+            }
+          });
           this.notify(saved);
         }
         return saved;

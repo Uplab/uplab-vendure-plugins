@@ -5,6 +5,7 @@ import {
   Logger,
   Product,
   ProductService,
+  ProductVariantService,
   RequestContext,
   TaxCategory,
   TransactionalConnection,
@@ -519,24 +520,193 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
       }
     });
 
-    it("records a new variant with the admin's price, then the host's rewrite as derived", async () => {
+    it("records a new variant once, with the price the host's handler rewrote in the same transaction", async () => {
       const productId = await createProduct({
         translations: [{ languageCode: 'en', name: 'Cap', slug: 'cap', description: '' }],
         customFields: { price: 900 },
       });
       const [variantId] = await createVariants(productId, [{ sku: 'CAP-1', price: 700 }]);
 
-      const [created, rewritten] = await entriesOf('ProductVariant', variantId);
-      expect(created).toMatchObject({ action: 'created', derivedFromId: null });
-      expect((created.changes?.prices as { to: unknown }).to).toEqual([
-        { channelId: defaultChannelId, currencyCode: 'USD', price: 700 },
-      ]);
-      expect(rewritten).toMatchObject({ action: 'updated', derivedFromId: created.id });
-      expect(rewritten.changes).toEqual({
-        prices: expect.objectContaining({
-          from: [{ channelId: defaultChannelId, currencyCode: 'USD', price: 700 }],
-          to: [{ channelId: defaultChannelId, currencyCode: 'USD', price: 900 }],
+      const entries = await entriesOf('ProductVariant', variantId);
+      expect(entries).toEqual([
+        expect.objectContaining({
+          action: 'created',
+          summary: 'created',
+          derivedFromId: null,
+          meta: expect.objectContaining({ foldedActions: ['updated'] }),
         }),
+      ]);
+      expect(entries[0].changes).toMatchObject({
+        sku: { kind: 'text', from: null, to: 'CAP-1' },
+        prices: {
+          kind: 'prices',
+          from: null,
+          to: [{ channelId: defaultChannelId, currencyCode: 'USD', price: 900 }],
+          labels: { [defaultChannelId]: '__default_channel__' },
+        },
+      });
+    });
+  });
+
+  describe('an update folded into the created entry of its transaction', () => {
+    const rollBack = new Error('the savepoint rolls back');
+    const variantInput = (productId: string, sku: string, price: number, optionIds: string[] = []) => ({
+      productId: Number(decode(productId)),
+      sku,
+      price,
+      optionIds: optionIds.map((id) => Number(decode(id))),
+      translations: [{ languageCode: LanguageCode.en, name: sku }],
+    });
+    const pricesOf = (entry: ChangeHistoryEntry | undefined) =>
+      ((entry?.changes?.prices as { to?: Array<{ price: number }> } | undefined)?.to ?? []).map((p) => p.price);
+
+    it('keeps an update in a later transaction as an entry of its own', async () => {
+      const productId = await createProduct({
+        translations: [{ languageCode: 'en', name: 'Fold later', slug: 'fold-later', description: '' }],
+      });
+      const [variantId] = await createVariants(productId, [{ sku: 'FOLD-LATER', price: 100 }]);
+      await updateVariants([{ id: variantId, price: 120 }]);
+
+      const entries = await entriesOf('ProductVariant', variantId);
+      expect(entries.map((entry) => entry.action)).toEqual(['created', 'updated']);
+      expect(entries[0].meta).not.toHaveProperty('foldedActions');
+      expect(pricesOf(entries[0])).toEqual([100]);
+      expect(entries[1].changes?.prices).toMatchObject({
+        from: [expect.objectContaining({ price: 100 })],
+        to: [expect.objectContaining({ price: 120 })],
+      });
+    });
+
+    it('leaves the created entry as it was when the savepoint of the update rolls back', async () => {
+      const productId = await createProduct({
+        translations: [{ languageCode: 'en', name: 'Fold rollback', slug: 'fold-rollback', description: '' }],
+      });
+      const [small, medium] = await sizesOf(productId, 'fold-size', ['S', 'M']);
+      const variants = server.app.get(ProductVariantService);
+      const ctx = await superadminCtx(server.app);
+
+      const ids = await connection().withTransaction(ctx, async (tctx) => {
+        const [a, b] = await variants.create(tctx, [
+          variantInput(productId, 'FOLD-A', 100, [small]),
+          variantInput(productId, 'FOLD-B', 100, [medium]),
+        ]);
+        await expect(
+          connection().withTransaction(tctx, async (inner) => {
+            await variants.update(inner, [
+              { id: a.id, price: 200 },
+              { id: b.id, price: 200 },
+            ]);
+            throw rollBack;
+          }),
+        ).rejects.toBe(rollBack);
+        // After the rollback the next update folds against the state before it: the price stays 100.
+        await variants.update(tctx, [{ id: b.id, sku: 'FOLD-B-2' }]);
+        return [String(a.id), String(b.id)];
+      });
+
+      const [a, ...aRest] = await entriesOf('ProductVariant', ids[0]);
+      const [b, ...bRest] = await entriesOf('ProductVariant', ids[1]);
+      expect([...aRest, ...bRest]).toEqual([]);
+      expect(a.action).toBe('created');
+      expect(a.meta).not.toHaveProperty('foldedActions');
+      expect(pricesOf(a)).toEqual([100]);
+      expect(b).toMatchObject({ action: 'created', meta: expect.objectContaining({ foldedActions: ['updated'] }) });
+      expect(b.changes?.sku).toMatchObject({ from: null, to: 'FOLD-B-2' });
+      expect(pricesOf(b)).toEqual([100]);
+    });
+
+    it('folds an update made in a savepoint that is released', async () => {
+      const productId = await createProduct({
+        translations: [{ languageCode: 'en', name: 'Fold released', slug: 'fold-released', description: '' }],
+      });
+      const variants = server.app.get(ProductVariantService);
+      const ctx = await superadminCtx(server.app);
+
+      const variantId = await connection().withTransaction(ctx, async (tctx) => {
+        const [variant] = await variants.create(tctx, [variantInput(productId, 'FOLD-REL', 100)]);
+        await connection().withTransaction(tctx, (inner) => variants.update(inner, [{ id: variant.id, price: 150 }]));
+        return String(variant.id);
+      });
+
+      const entries = await entriesOf('ProductVariant', variantId);
+      expect(entries.map((entry) => entry.action)).toEqual(['created']);
+      expect(pricesOf(entries[0])).toEqual([150]);
+    });
+
+    it('leaves nothing when the savepoint that created the entity rolls back', async () => {
+      const productId = await createProduct({
+        translations: [{ languageCode: 'en', name: 'Fold gone', slug: 'fold-gone', description: '' }],
+      });
+      const variants = server.app.get(ProductVariantService);
+      const ctx = await superadminCtx(server.app);
+      let variantId = '';
+
+      await connection().withTransaction(ctx, async (tctx) => {
+        await expect(
+          connection().withTransaction(tctx, async (inner) => {
+            const [variant] = await variants.create(inner, [variantInput(productId, 'FOLD-GONE', 100)]);
+            variantId = String(variant.id);
+            await variants.update(inner, [{ id: variant.id, price: 300 }]);
+            throw rollBack;
+          }),
+        ).rejects.toBe(rollBack);
+      });
+
+      expect(variantId).not.toBe('');
+      expect(await entriesOf('ProductVariant', variantId)).toEqual([]);
+    });
+
+    it('keeps a deletion after the creation as an entry of its own, derived from the creation', async () => {
+      const productId = await createProduct({
+        translations: [{ languageCode: 'en', name: 'Fold deleted', slug: 'fold-deleted', description: '' }],
+      });
+      const variants = server.app.get(ProductVariantService);
+      const ctx = await superadminCtx(server.app);
+
+      const variantId = await connection().withTransaction(ctx, async (tctx) => {
+        const [variant] = await variants.create(tctx, [variantInput(productId, 'FOLD-DEL', 100)]);
+        await variants.update(tctx, [{ id: variant.id, price: 110 }]);
+        await variants.softDelete(tctx, variant.id);
+        return String(variant.id);
+      });
+
+      const [created, deleted, ...rest] = await entriesOf('ProductVariant', variantId);
+      expect(rest).toEqual([]);
+      expect(created).toMatchObject({
+        action: 'created',
+        meta: expect.objectContaining({ foldedActions: ['updated'] }),
+      });
+      expect(pricesOf(created)).toEqual([110]);
+      expect(deleted).toMatchObject({ action: 'deleted', derivedFromId: created.id });
+    });
+
+    it("folds a host's capture() after a raw write into the created entry, with the host's meta", async () => {
+      const ctx = await superadminCtx(server.app);
+      const products = server.app.get(ProductService);
+
+      const productId = await connection().withTransaction(ctx, async (tctx) => {
+        const product = await products.create(tctx, {
+          translations: [
+            { languageCode: LanguageCode.en, name: 'Fold capture', slug: 'fold-capture', description: '' },
+          ],
+        });
+        await connection()
+          .getRepository(tctx, Product)
+          .update(product.id, { customFields: { subtitle: 'Archived' } } as never);
+        await history().capture(tctx, 'Product', [product.id], { action: 'archived', meta: { reason: 'fold' } });
+        return String(product.id);
+      });
+
+      const entries = await entriesOf('Product', productId);
+      expect(entries).toEqual([
+        expect.objectContaining({
+          action: 'created',
+          meta: expect.objectContaining({ foldedActions: ['archived'], reason: 'fold' }),
+        }),
+      ]);
+      expect(entries[0].changes).toMatchObject({
+        'name.en': { from: null, to: 'Fold capture' },
+        'customFields.subtitle': { from: null, to: 'Archived' },
       });
     });
   });

@@ -92,7 +92,8 @@ export class ChangeHistoryService {
    * repository save), in the caller's transaction. Call it **after** the write, with the caller's `ctx`:
    * the before-state is what the transaction saw last for the entity, else its last committed row.
    * `created: true` means the rows are new (the before-state is empty). An entity whose diff is empty gets
-   * no entry. Captures the core catalogue types (`Product`, `ProductVariant`, `Collection`, `Facet`,
+   * no entry; one whose `created` entry this transaction wrote gets none either — the capture is folded into
+   * that entry (its action listed in `meta.foldedActions`). Captures the core catalogue types (`Product`, `ProductVariant`, `Collection`, `Facet`,
    * `FacetValue`, `Promotion`, `Asset`); any other type resolves without recording (logged once).
    *
    * @example

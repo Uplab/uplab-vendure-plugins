@@ -405,7 +405,7 @@ describe('ChangeHistoryPlugin on sql.js', () => {
       });
     });
 
-    it('diffs against what the same transaction saved before', async () => {
+    it('folds an update into the created entry of the same transaction', async () => {
       const { productId } = await createProduct(adminClient, 'sqlite-fan-out', []);
       const ctx = await superadminCtx(server.app);
       const variants = server.app.get(ProductVariantService);
@@ -424,14 +424,44 @@ describe('ChangeHistoryPlugin on sql.js', () => {
         return String(variant.id);
       });
 
-      const [created, updated] = await entriesWhere(server.app, { entityType: 'ProductVariant', entityId: variantId });
-      expect(created).toMatchObject({ action: 'created', parentType: 'Product', parentId: decode(productId) });
-      expect(updated).toMatchObject({ action: 'updated', derivedFromId: created.id });
-      expect(updated.changes).toEqual({
+      const entries = await entriesWhere(server.app, { entityType: 'ProductVariant', entityId: variantId });
+      expect(entries).toEqual([
+        expect.objectContaining({
+          action: 'created',
+          summary: 'created',
+          parentType: 'Product',
+          parentId: decode(productId),
+          meta: expect.objectContaining({ foldedActions: ['updated'] }),
+        }),
+      ]);
+      expect(entries[0].changes).toMatchObject({
+        sku: { kind: 'text', from: null, to: 'FAN-1' },
+        prices: { kind: 'prices', from: null, to: [expect.objectContaining({ price: 250 })] },
+      });
+    });
+
+    it('diffs a second update in one transaction against the first', async () => {
+      const { variantIds } = await createProduct(adminClient, 'sqlite-twice', ['TWICE-1']);
+      const ctx = await superadminCtx(server.app);
+      const variants = server.app.get(ProductVariantService);
+      const id = Number(decode(variantIds[0]));
+
+      await server.app.get(TransactionalConnection).withTransaction(ctx, async (tctx) => {
+        await variants.update(tctx, [{ id, price: 300 }]);
+        await variants.update(tctx, [{ id, price: 350 }]);
+      });
+
+      const [first, second] = await entriesWhere(server.app, {
+        entityType: 'ProductVariant',
+        entityId: String(id),
+        action: 'updated',
+      });
+      expect(first).toMatchObject({ changes: null, meta: expect.objectContaining({ noBefore: 'unsupported' }) });
+      expect(second.changes).toEqual({
         prices: expect.objectContaining({
           kind: 'prices',
-          from: [expect.objectContaining({ price: 100 })],
-          to: [expect.objectContaining({ price: 250 })],
+          from: [expect.objectContaining({ price: 300 })],
+          to: [expect.objectContaining({ price: 350 })],
         }),
       });
     });

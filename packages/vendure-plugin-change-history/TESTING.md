@@ -9,7 +9,8 @@ Two e2e suites, both in `e2e/`:
 
 The sql.js suite pins the behaviour without a before-state: every update is recorded with
 `meta.noBefore = "unsupported"`, created and deleted entities with their values, stock adjustments, cascades and
-the diff against an earlier save in the same transaction. It also covers everything that needs no before-state:
+an update folded into the created entry of its transaction, and the diff of a second update against the first in
+one transaction. It also covers everything that needs no before-state:
 collection contents through the filters job (one `collection_rules` batch per collection and run, nothing for a
 run that changed nothing), the snapshot recorded at startup and the first change after it, re-recording on
 request and at the first boot with capture on after a boot with it off (the marker set and removed once), a
@@ -25,7 +26,12 @@ of the suite that rejects an entry labelled `[fail]`), a host rollback that take
 inner savepoint that leaves no phantom before-state and no derived link to its entries, a batch whose first
 transaction rolled back getting its head again, over-long host values clipped to their columns, handler order
 against a fan-out plugin (`e2e/fixtures/fan-out-plugin.ts`) with derived entries, the API-key actor and
-batches. For the other catalogue entities: a collection's changed fields with its filters labelled, a move
+batches. Updates folded into the created entry of their transaction: a new variant's price rewritten by the
+fan-out plugin is one `created` entry with the final price; an update in a later transaction stays an entry of
+its own; an update in a savepoint that rolls back leaves the created entry as it was (and a later update folds
+against the state before it), one in a released savepoint is folded, and a rolled-back savepoint that created the
+entity leaves nothing; a deletion after the creation stays its own entry, derived from it; a host `capture()`
+after a raw write is folded with its action and meta. For the other catalogue entities: a collection's changed fields with its filters labelled, a move
 (parent and position only), contents changed through a facet-value filter including the first change after the
 startup snapshot, a deleted collection and its descendant from their committed rows, a facet update and a value
 rename recorded once on the value, a force-deleted facet with its values' usage, an asset's name / tags / focal

@@ -51,8 +51,12 @@ function setup(
     async ({ where }: { where: Partial<ChangeHistoryEntry> }) =>
       saved.filter((entry) => entry.batchId === where.batchId && entry.entityType === where.entityType).length,
   );
+  // Applied to the saved entries, like the database would.
+  const update = vi.fn(async (id: ID, fields: Partial<ChangeHistoryEntry>) => {
+    Object.assign(saved.find((entry) => entry.id === id) ?? {}, fields);
+  });
   const connection = {
-    getRepository: () => ({ manager: transactionManager, save, count }),
+    getRepository: () => ({ manager: transactionManager, save, count, update }),
     withTransaction: (ctx: RequestContext, work: (tctx: RequestContext) => Promise<unknown>) => work(ctx),
   } as unknown as TransactionalConnection;
 
@@ -120,7 +124,7 @@ function setup(
     new ChangeHistoryWriter(connection, context),
   );
   const ctx = { apiType: 'admin', channel: { id: 1 } } as unknown as RequestContext;
-  return { pipeline, definition, ctx, saved, load, withCommittedReader, context, save, connection };
+  return { pipeline, definition, ctx, saved, load, withCommittedReader, context, save, update, connection, options };
 }
 
 const updated = { mode: 'updated' as const, action: 'updated', input: { id: 1 } };
@@ -415,6 +419,88 @@ describe('CapturePipeline', () => {
     );
     expect(saved.at(-1)).toMatchObject({ entityType: 'Product', batchId: 'bulk_edit:outer' });
     expect(saved).toHaveLength(3);
+  });
+
+  describe('an update of an entity created in the same transaction', () => {
+    const created = { mode: 'created' as const, action: 'created' };
+
+    it('is folded into the created entry: one entry with the final values, its labels reused', async () => {
+      const { pipeline, definition, ctx, saved, update, options } = setup({
+        current: { '1': { sku: 'A', name: 'Shirt', facetValues: ['7'], parentId: '3' } },
+      });
+      await pipeline.run(ctx, definition, [1], { ...created, meta: { origin: 'import' } });
+      const addLabels = vi.mocked(definition.addLabels);
+      expect(Object.keys(addLabels.mock.calls[0][2])).toEqual(['facetValues', 'name', 'sku']);
+
+      options.current = { '1': { sku: 'B', name: 'Shirt', facetValues: ['7'], parentId: '3' } };
+      await pipeline.run(ctx, definition, [1], { ...updated, meta: { origin: 'price', reason: 'fan-out' } });
+
+      expect(saved).toHaveLength(1);
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(saved[0]).toMatchObject({
+        action: 'created',
+        summary: 'created',
+        entityLabel: 'Item 1',
+        parentId: '3',
+        derivedFromId: null,
+        changes: {
+          facetValues: { kind: 'refs', added: ['7'], removed: [], labels: { x: 'label' } },
+          name: { kind: 'text', from: null, to: 'Shirt', labels: { x: 'label' } },
+          sku: { kind: 'text', from: null, to: 'B', labels: { x: 'label' } },
+        },
+        // The created entry's own meta wins; the update adds what it lacks and its action.
+        meta: expect.objectContaining({ origin: 'import', reason: 'fan-out', foldedActions: ['updated'] }),
+      });
+      // Labels are loaded again only for the value that changed.
+      expect(Object.keys(addLabels.mock.calls[1][2])).toEqual(['sku']);
+    });
+
+    it('folds every later update, listing each action once', async () => {
+      const { pipeline, definition, ctx, saved, options } = setup({ current: { '1': { sku: 'A' } } });
+      await pipeline.run(ctx, definition, [1], created);
+      options.current = { '1': { sku: 'B' } };
+      await pipeline.run(ctx, definition, [1], updated);
+      options.current = { '1': { sku: 'C', facetValues: ['8'] } };
+      await pipeline.run(ctx, definition, [1], { ...updated, action: 'archived', input: { facetValueIds: ['8'] } });
+      options.current = { '1': { sku: 'D', facetValues: ['8'] } };
+      await pipeline.run(ctx, definition, [1], updated);
+
+      expect(saved).toHaveLength(1);
+      expect(saved[0].changes).toMatchObject({
+        sku: { from: null, to: 'D' },
+        facetValues: { added: ['8'], removed: [] },
+      });
+      expect(saved[0].meta.foldedActions).toEqual(['updated', 'archived']);
+    });
+
+    it('is a separate entry once the transaction no longer knows the whole state, or outside a transaction', async () => {
+      const evicted = setup({ committed: {}, current: { '1': { sku: 'A' } } });
+      await evicted.pipeline.run(evicted.ctx, evicted.definition, [1], created);
+      evicted.context.transactionStateOf(evicted.ctx).evicted.add('ProductVariant:1');
+      evicted.options.current = { '1': { sku: 'B' } };
+      await evicted.pipeline.run(evicted.ctx, evicted.definition, [1], updated);
+      expect(evicted.saved.map((entry) => entry.action)).toEqual(['created', 'updated']);
+      expect(evicted.update).not.toHaveBeenCalled();
+
+      vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+      const outside = setup({ inTransaction: false, current: { '1': { sku: 'A' } } });
+      await outside.pipeline.run(outside.ctx, outside.definition, [1], created);
+      outside.options.current = { '1': { sku: 'B' } };
+      await outside.pipeline.run(outside.ctx, outside.definition, [1], updated);
+      expect(outside.saved.map((entry) => entry.action)).toEqual(['created', 'updated']);
+    });
+
+    it('keeps a deletion as an entry of its own, derived from the created entry', async () => {
+      const { pipeline, definition, ctx, saved, options } = setup({ committed: {}, current: { '1': { sku: 'A' } } });
+      await pipeline.run(ctx, definition, [1], created);
+      options.current = { '1': { sku: 'A', deleted: true } };
+      await pipeline.run(ctx, definition, [1], { mode: 'deleted', action: 'deleted' });
+
+      expect(saved.map((entry) => [entry.action, entry.derivedFromId])).toEqual([
+        ['created', null],
+        ['deleted', saved[0].id],
+      ]);
+    });
   });
 
   it('writes nothing for a creation or an update whose row the transaction cannot load', async () => {
