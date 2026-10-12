@@ -313,9 +313,10 @@ describe('CapturePipeline', () => {
       committed: { '1': { sku: 'A' }, '2': { sku: 'A' } },
       current: { '1': { sku: 'B' }, '2': { sku: 'B' } },
     });
-    context.stateOf(ctx).batch = { kind: 'bulk_edit', id: 'bulk_edit:abc' };
-    await pipeline.run(ctx, definition, [1], updated);
-    await pipeline.run(ctx, definition, [2], updated);
+    await context.inBatch({ kind: 'bulk_edit', id: 'bulk_edit:abc' }, async () => {
+      await pipeline.run(ctx, definition, [1], updated);
+      await pipeline.run(ctx, definition, [2], updated);
+    });
 
     expect(saved.map((e) => [e.entityType, e.batchId])).toEqual([
       ['Batch', 'bulk_edit:abc'],
@@ -408,9 +409,10 @@ describe('CapturePipeline', () => {
       ['Product', 's', null, null, 77],
     ]);
 
-    context.stateOf(ctx).batch = { kind: 'bulk_edit', id: 'bulk_edit:outer' };
     context.transactionStateOf(ctx).markHead('bulk_edit:outer');
-    await writer.write(ctx, 'test', async () => [draft], { batch: own() });
+    await context.inBatch({ kind: 'bulk_edit', id: 'bulk_edit:outer' }, () =>
+      writer.write(ctx, 'test', async () => [draft], { batch: own() }),
+    );
     expect(saved.at(-1)).toMatchObject({ entityType: 'Product', batchId: 'bulk_edit:outer' });
     expect(saved).toHaveLength(3);
   });

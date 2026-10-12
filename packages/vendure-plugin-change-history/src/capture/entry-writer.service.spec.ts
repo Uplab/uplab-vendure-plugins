@@ -28,6 +28,7 @@ function setup(actor: ResolvedActor = ACTOR) {
   const transaction = new TransactionState();
   const context = {
     stateOf: () => state,
+    activeBatch: () => undefined,
     transactionStateOf: () => transaction,
     serialize: (_ctx: RequestContext, fn: () => Promise<unknown>) => fn(),
     resolveActor: async () => actor,

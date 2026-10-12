@@ -249,7 +249,9 @@ export class ChangeHistoryService {
   /**
    * Groups every entry written inside `fn` under one batch, optionally under another actor. The batch's
    * head entry is written with its first member, so a batch that changed nothing leaves no row. Nested
-   * inside another batch it is a plain call (the outer batch wins). `fn`'s own errors are rethrown.
+   * inside another batch it is a plain call (the outer batch wins). The batch follows `fn`'s async context, not
+   * the RequestContext: concurrent `runBatch` calls on one context are separate batches, and other work on the
+   * context outside `fn` is not batched. `fn`'s own errors are rethrown.
    */
   async runBatch<T>(
     ctx: RequestContext,
@@ -265,16 +267,10 @@ export class ChangeHistoryService {
         `ChangeHistoryService.runBatch: kind "${batch?.kind}" must be 1–${MAX_BATCH_KIND_LENGTH} letters, digits, "_", "-" or "."`,
       );
     }
-    const state = this.context.stateOf(ctx);
-    if (state.batch || !this.options.enabled) {
+    if (this.context.activeBatch() || !this.options.enabled) {
       return fn(ctx);
     }
-    state.batch = { ...batch, id: `${batch.kind}:${randomUUID()}` };
-    try {
-      return await fn(ctx);
-    } finally {
-      state.batch = undefined;
-    }
+    return this.context.inBatch({ ...batch, id: `${batch.kind}:${randomUUID()}` }, () => fn(ctx));
   }
 
   /**

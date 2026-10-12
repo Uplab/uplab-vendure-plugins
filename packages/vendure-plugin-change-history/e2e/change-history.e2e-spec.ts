@@ -1,7 +1,14 @@
 import path from 'path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { LanguageCode, Logger, ProductVariantService, TransactionalConnection, mergeConfig } from '@vendure/core';
+import {
+  LanguageCode,
+  Logger,
+  ProductVariantService,
+  RequestContext,
+  TransactionalConnection,
+  mergeConfig,
+} from '@vendure/core';
 import { In } from 'typeorm';
 import { createTestEnvironment, registerInitializer, SqljsInitializer, testConfig } from '@vendure/testing';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -197,6 +204,36 @@ describe('ChangeHistoryPlugin on sql.js', () => {
       ['2', head.batchId],
     ]);
     expect(await entriesWhere(server.app, { entityType: 'Batch', entityLabel: 'empty' })).toEqual([]);
+  });
+
+  it('keeps two batches running at once on one context apart, and work beside them out of both', async () => {
+    const record = (rctx: RequestContext, entityLabel: string) =>
+      history().recordAction(rctx, { entityType: 'Product', entityId: entityLabel, entityLabel, action: 'concurrent' });
+    const batch = (ctx: RequestContext, kind: string) =>
+      history().runBatch(ctx, { kind, label: kind }, async (bctx) => {
+        await record(bctx, `${kind}-1`);
+        // Let the other batch and the plain write run in between.
+        await new Promise((resolve) => setImmediate(resolve));
+        await record(bctx, `${kind}-2`);
+      });
+
+    // One transaction (sql.js has one connection): the package queues its writes on it.
+    await server.app
+      .get(TransactionalConnection)
+      .withTransaction(await superadminCtx(server.app), (ctx) =>
+        Promise.all([batch(ctx, 'concurrent_a'), batch(ctx, 'concurrent_b'), record(ctx, 'concurrent-plain')]),
+      );
+
+    const written = await entriesWhere(server.app, { action: 'concurrent' });
+    const batchOf = (label: string) => written.find((entry) => entry.entityLabel === label)?.batchId;
+    expect(batchOf('concurrent_a-1')).toMatch(/^concurrent_a:/);
+    expect(batchOf('concurrent_a-2')).toBe(batchOf('concurrent_a-1'));
+    expect(batchOf('concurrent_b-1')).toMatch(/^concurrent_b:/);
+    expect(batchOf('concurrent_b-2')).toBe(batchOf('concurrent_b-1'));
+    expect(batchOf('concurrent-plain')).toBeNull();
+    for (const kind of ['concurrent_a', 'concurrent_b']) {
+      expect(await entriesWhere(server.app, { entityType: 'Batch', entityLabel: kind })).toHaveLength(1);
+    }
   });
 
   it('rejects a batch kind that does not fit the batch id', async () => {

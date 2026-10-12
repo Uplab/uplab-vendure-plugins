@@ -70,7 +70,8 @@ export class ChangeHistoryWriter {
     } = {},
   ): Promise<ChangeHistoryEntry[] | undefined> {
     const state = this.context.stateOf(ctx);
-    const batch = state.batch ?? options.batch;
+    const active = this.context.activeBatch();
+    const batch = active ?? options.batch;
     try {
       return await this.context.serialize(ctx, async () => {
         const transaction = this.context.transactionStateOf(ctx);
@@ -106,7 +107,7 @@ export class ChangeHistoryWriter {
               clipped,
             );
           // A batch of this write only has no head yet; a `runBatch` one may have it from an earlier write.
-          if (batch && (batch !== state.batch || !(await this.headExists(tctx, transaction, batch)))) {
+          if (batch && (batch !== active || !(await this.headExists(tctx, transaction, batch)))) {
             const label = batch.label ?? batch.kind;
             await repository.save(
               build(

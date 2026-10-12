@@ -30,6 +30,9 @@ const CHANGE_HISTORY_STATE = Symbol('changeHistoryState');
 /** The transactions whose connection the package's work holds in the current async context. */
 const held = new AsyncLocalStorage<ReadonlySet<QueryRunner>>();
 
+/** The `runBatch` the current async context runs in. */
+const activeBatch = new AsyncLocalStorage<BatchState>();
+
 export interface BatchState extends ChangeHistoryBatchInput {
   /** `<kind>:<uuid>`. */
   id: string;
@@ -44,7 +47,6 @@ export interface ChangeHistoryState {
   correlationId: string;
   /** The host's or the session's actor; `null` once neither matched (the fallback then depends on the event). */
   actor?: ResolvedActor | null;
-  batch?: BatchState;
 }
 
 /** The savepoint depth of a query runner (TypeORM keeps it protected); 1 when the driver does not say. */
@@ -115,6 +117,20 @@ export class ChangeHistoryContextService {
     return state;
   }
 
+  /**
+   * The batch of the `runBatch` call the current code runs in, if any. Kept in the async context rather than on
+   * the RequestContext: two batches running at once on one context (`Promise.all`) stay apart, and work outside
+   * the callback never joins a batch.
+   */
+  activeBatch(): BatchState | undefined {
+    return activeBatch.getStore();
+  }
+
+  /** Runs `fn` inside `batch` (see `activeBatch`). */
+  inBatch<T>(batch: BatchState, fn: () => Promise<T>): Promise<T> {
+    return activeBatch.run(batch, fn);
+  }
+
   /** The open transaction of `ctx`, if any. */
   transactionOf(ctx: RequestContext): QueryRunner | undefined {
     const queryRunner = this.connection.getRepository(ctx, ChangeHistoryEntry).manager.queryRunner;
@@ -171,10 +187,11 @@ export class ChangeHistoryContextService {
    * depend on the event and are decided per write.
    */
   async resolveActor(ctx: RequestContext, event?: VendureEvent): Promise<ResolvedActor> {
-    const state = this.stateOf(ctx);
-    if (state.batch?.actor) {
-      return state.batch.actor;
+    const batchActor = this.activeBatch()?.actor;
+    if (batchActor) {
+      return batchActor;
     }
+    const state = this.stateOf(ctx);
     if (state.actor === undefined) {
       state.actor = (await this.resolveUncached(ctx, event)) ?? null;
     }

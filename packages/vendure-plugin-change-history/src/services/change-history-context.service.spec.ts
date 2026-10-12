@@ -241,9 +241,9 @@ describe('ChangeHistoryContextService', () => {
     const { context } = service();
     const ctx = ctxOf();
     const override: ResolvedActor = { actorType: 'admin', actorId: 3, source: 'scheduled_action' };
-    context.stateOf(ctx).batch = { kind: 'scheduled', id: 'scheduled:1', actor: override };
-    expect(await context.resolveActor(ctx)).toBe(override);
-    context.stateOf(ctx).batch = undefined;
+    await context.inBatch({ kind: 'scheduled', id: 'scheduled:1', actor: override }, async () => {
+      expect(await context.resolveActor(ctx)).toBe(override);
+    });
     expect((await context.resolveActor(ctx)).source).toBe('admin');
   });
 });
