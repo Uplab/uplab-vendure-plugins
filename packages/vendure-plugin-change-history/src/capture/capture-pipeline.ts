@@ -128,6 +128,7 @@ export class CapturePipeline {
       }
     }
     const committed = this.readCommitted(ctx, def, toRead, missing);
+    const reading = new Set(toRead);
 
     // 2. After, diff, insert — in a savepoint.
     const loaded: { after?: Map<string, LoadedState> } = {};
@@ -148,7 +149,7 @@ export class CapturePipeline {
             noBefore:
               request.mode === 'updated' && stale.has(id)
                 ? 'evicted'
-                : read instanceof Map || !toRead.includes(id)
+                : read instanceof Map || !reading.has(id)
                   ? undefined
                   : read.noBefore,
             after: after.get(id),

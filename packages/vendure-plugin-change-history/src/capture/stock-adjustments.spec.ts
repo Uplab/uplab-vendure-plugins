@@ -1,4 +1,4 @@
-import { ID, Logger, RequestContext, StockLevel, StockLocation, StockMovementEvent } from '@vendure/core';
+import { ID, Logger, ProductVariantPrice, RequestContext, StockLocation, StockMovementEvent } from '@vendure/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CHANGE_HISTORY_ACTIONS } from '../constants';
 import { ChangeHistoryDefinitions } from '../entity-definitions/definitions.service';
@@ -12,21 +12,59 @@ import { TransactionState } from './transaction-state';
 
 const ctx = { languageCode: 'en' } as unknown as RequestContext;
 
+/** A query builder over `rows`, recording the `IN` lists it was given. */
+function rawQuery(rows: () => unknown[], params: Array<Record<string, unknown>>) {
+  const builder: Record<string, unknown> = {};
+  for (const method of ['select', 'addSelect', 'groupBy']) {
+    builder[method] = () => builder;
+  }
+  builder.where = builder.andWhere = (_sql: string, values: Record<string, unknown>) => {
+    params.push(values);
+    return builder;
+  };
+  builder.getRawMany = async () => rows();
+  return builder;
+}
+
 function setup(
   options: {
     enabled?: boolean;
-    level?: { stockOnHand: number } | null;
-    location?: { name: string } | null;
+    /** Stock on hand by `variantId:locationId`. */
+    levels?: Record<string, number>;
+    locations?: Record<string, string>;
     variants?: Record<string, Partial<LoadedState>>;
-    prices?: number;
+    /** The variants with a price; default every one asked for. */
+    priced?: string[];
     failWrite?: boolean;
   } = {},
 ) {
   const transaction = new TransactionState();
+  const params: Array<Record<string, unknown>> = [];
+  const asked = (key: string) => params.flatMap((values) => (values[key] as string[] | undefined) ?? []);
   const manager = {
-    count: vi.fn(async () => options.prices ?? 1),
-    findOne: vi.fn(async (entity: unknown) =>
-      entity === StockLevel ? (options.level ?? null) : entity === StockLocation ? (options.location ?? null) : null,
+    createQueryBuilder: vi.fn((entity: unknown) =>
+      entity === ProductVariantPrice
+        ? rawQuery(
+            () => (options.priced ?? asked('ids')).map((variantId) => ({ variantId: Number(variantId) })),
+            params,
+          )
+        : rawQuery(
+            () =>
+              Object.entries(options.levels ?? {}).map(([key, stockOnHand]) => {
+                const [variantId, locationId] = key.split(':');
+                return {
+                  variantId: Number(variantId),
+                  locationId: Number(locationId),
+                  stockOnHand: String(stockOnHand),
+                };
+              }),
+            params,
+          ),
+    ),
+    find: vi.fn(async (entity: unknown) =>
+      entity === StockLocation
+        ? Object.entries(options.locations ?? {}).map(([id, name]) => ({ id: Number(id), name }))
+        : [],
     ),
   };
   const load = vi.fn(
@@ -55,7 +93,7 @@ function setup(
     { managerOf: () => manager } as unknown as CapturePipeline,
     { write } as unknown as ChangeHistoryWriter,
   );
-  return { capture, write, drafts, transaction, manager };
+  return { capture, write, drafts, transaction, manager, load };
 }
 
 const adjustment = (...stockMovements: Array<Record<string, unknown>>) =>
@@ -76,8 +114,8 @@ describe('StockAdjustmentCapture', () => {
 
   it('records the location and stock on hand of each adjustment, under the product', async () => {
     const { capture, write, drafts } = setup({
-      level: { stockOnHand: 12 },
-      location: { name: 'Kyiv' },
+      levels: { '21:1': 12 },
+      locations: { '1': 'Kyiv' },
       variants: { '21': { label: 'Shirt S (SH-1)', parentId: '3' } },
     });
     await capture.record(adjustment({ type: 'ADJUSTMENT', productVariantId: 21, stockLocationId: 1, quantity: 5 }));
@@ -125,14 +163,37 @@ describe('StockAdjustmentCapture', () => {
       adjustment({ type: 'ADJUSTMENT', productVariantId: 21, stockLocationId: 1, quantity: 5 }),
     );
     expect(created.drafts).toEqual([]);
-    expect(created.manager.count).not.toHaveBeenCalled();
+    expect(created.manager.createQueryBuilder).not.toHaveBeenCalled();
 
-    const unpriced = setup({ prices: 0 });
+    const unpriced = setup({ priced: ['22'] });
     await unpriced.capture.record(
-      adjustment({ type: 'ADJUSTMENT', productVariantId: 21, stockLocationId: 1, quantity: 5 }),
+      adjustment(
+        { type: 'ADJUSTMENT', productVariantId: 21, stockLocationId: 1, quantity: 5 },
+        { type: 'ADJUSTMENT', productVariantId: 22, stockLocationId: 1, quantity: 3 },
+      ),
     );
-    expect(unpriced.drafts).toEqual([]);
-    expect(unpriced.manager.findOne).not.toHaveBeenCalled();
+    expect(unpriced.drafts.map((draft) => draft.entityId)).toEqual(['22']);
+  });
+
+  it('loads prices, stock levels, locations and variants once for a bulk adjustment', async () => {
+    const movements = Array.from({ length: 300 }, (_, index) => ({
+      type: 'ADJUSTMENT',
+      productVariantId: 100 + index,
+      stockLocationId: 1 + (index % 2),
+      quantity: 1,
+    }));
+    const { capture, drafts, manager, load } = setup({
+      levels: { '100:1': 9, '101:2': 4 },
+      locations: { '1': 'Kyiv', '2': 'Lviv' },
+    });
+    await capture.record(adjustment(...movements));
+    expect(drafts).toHaveLength(300);
+    expect(drafts.slice(0, 2).map((draft) => draft.summary)).toEqual(['stock Kyiv: 8 → 9', 'stock Lviv: 3 → 4']);
+    // One price query, one stock-level query, one location read, one variant load — not four per movement.
+    expect(manager.createQueryBuilder).toHaveBeenCalledTimes(2);
+    expect(manager.find).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load.mock.calls[0][1]).toHaveLength(300);
   });
 
   it('logs a failed write instead of failing the adjustment', async () => {
