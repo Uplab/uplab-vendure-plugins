@@ -53,8 +53,15 @@ export function stripHtml(html: string): string {
  */
 export const NBSP = '\u00A0';
 
-/** «label: value», the value kept on the label's line. */
-export const labelled = (label: string, value: string | number): string => `${label}:${NBSP}${value}`;
+/** A first word of a value at least this long may start the next line: kept on the label's, it would be cut. */
+const LONG_WORD = 13;
+
+/**
+ * «label: value», the value kept on the label's line — unless its first word is long («Note: перевизначення»):
+ * held to the label, it would make a run wider than a narrow column, which then breaks inside the word.
+ */
+export const labelled = (label: string, value: string | number): string =>
+  `${label}:${String(value).split(/\s/, 1)[0].length >= LONG_WORD ? ' ' : NBSP}${value}`;
 
 /**
  * «from → to», the arrow kept with the new value: a narrow column (the feed's «What changed») breaks the line

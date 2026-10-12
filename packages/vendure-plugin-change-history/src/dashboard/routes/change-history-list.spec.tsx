@@ -458,8 +458,15 @@ describe('ChangeHistoryListPage', () => {
       expect(cell('actorLabel').textContent).toBe('Іван Петренко');
       expect((cell('actorLabel').firstChild as HTMLElement).title).toBe('Іван Петренко');
       expect(cell('entityType').textContent).toBe('Колекція');
-      expect(cell('entityLabel').textContent).toBe('Sale');
-      expect((cell('entityLabel').firstChild as HTMLElement).title).toBe('Sale');
+      // The «Type» column is marked so that a narrow box hides it; the object then shows the type above it.
+      expect(cell('entityType').querySelector('[data-change-history-column="type"]')).not.toBeNull();
+      const typeHeader = screen.getAllByRole('columnheader').find((header) => header.textContent === 'Тип');
+      expect(typeHeader?.querySelector('[data-change-history-column="type"]')).not.toBeNull();
+      expect(wrapper().className).toContain('@max-[859px]:[&_td:has([data-change-history-column=type])]:hidden');
+      const object = cell('entityLabel').firstChild as HTMLElement;
+      expect(object.title).toBe('Sale');
+      expect([...object.children].map((child) => child.textContent)).toEqual(['Колекція', 'Sale']);
+      expect(object.firstElementChild?.className).toContain('@min-[860px]:hidden');
       expect(cell('action').textContent).toBe('оновлено');
       expect(cell('summary').textContent).not.toBe('');
       expect(cell('source').textContent).toBe('Адмін-панель');

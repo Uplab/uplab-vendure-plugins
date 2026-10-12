@@ -23,6 +23,8 @@ import {
   mapRows,
   soleEntry,
   splitDateTime,
+  labelled,
+  NBSP,
   splitTrailingCode,
   withFacetValueLabels,
   wordDiff,
@@ -258,6 +260,12 @@ describe('values', () => {
     // An empty object is a side of no keys, like no value.
     expect(changedEntries({}, { Kyiv: 13 })).toEqual([['Kyiv', '—', '13']]);
     expect(changedEntries({ Kyiv: null }, {})).toEqual([]);
+  });
+
+  it('keeps a value on its label’s line unless its first word is long', () => {
+    expect(labelled('Kyiv', 13)).toBe(`Kyiv:${NBSP}13`);
+    expect(labelled('Відстеження', 'Успадкувати з глобальних')).toBe(`Відстеження:${NBSP}Успадкувати з глобальних`);
+    expect(labelled('Note', 'перевизначення → b')).toBe('Note: перевизначення → b');
   });
 
   it('splits a short date and time before the time, the date keeping its separator', () => {

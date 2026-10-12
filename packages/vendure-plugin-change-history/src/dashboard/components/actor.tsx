@@ -117,7 +117,7 @@ function ApiKeyMarker() {
 
 /**
  * Icon and name in one line, greyed for the system — the feed's and the widget's «who». `wrap` lets a long
- * name («Odoo: stock refresh after an order») take two lines instead of being cut.
+ * name («Odoo: stock refresh after an order») take two lines, broken between words only, instead of being cut.
  */
 export function ActorName({ actor, className, wrap }: { actor: ActorView; className?: string; wrap?: boolean }) {
   const { Icon } = actor;
@@ -126,9 +126,7 @@ export function ActorName({ actor, className, wrap }: { actor: ActorView; classN
       className={`inline-flex items-center gap-1.5 ${actor.tone === 'system' ? 'text-muted-foreground' : ''} ${className ?? ''}`}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span className={`min-w-0 ${wrap ? 'line-clamp-2 whitespace-normal break-words' : 'truncate'}`}>
-        {actor.name}
-      </span>
+      <span className={wrap ? 'line-clamp-2 whitespace-normal' : 'min-w-0 truncate'}>{actor.name}</span>
       {actor.tone === 'api_key' && <ApiKeyMarker />}
     </span>
   );

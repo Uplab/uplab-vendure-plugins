@@ -356,6 +356,8 @@ Everything needs the **ReadChangeHistory** permission, and each page shows only 
   action, source and who, pick a period, and two switches: **Collapse bulk operations** (on: a batch is one
   row) and **Hide system changes** (off: collection rules and external runs are listed too). Filters, switches,
   period and the open entry are in the URL, so a view is a link you can send. Clicking a row opens the entry.
+  The table fits its box without scrolling sideways from 760 px on; below 860 px the type is written above the
+  object instead of in a column of its own.
 - **Entry window** — who, when, from where, a link to the entity, and for a derived entry its cause («Caused
   by: Product «Tee» · assigned to channel», opening the cause's entry); the changed fields as _field · was · became_;
   the derived entries (variant prices a product save rewrote), a batch's members and a run's rows, each paged;

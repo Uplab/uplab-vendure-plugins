@@ -129,16 +129,20 @@ function Cell({
   id,
   className,
   title,
+  column,
   children,
 }: {
   id: string;
   className?: string;
   title?: string;
+  /** Marks the cell (and so its table cell) for the layout: `type` is hidden in a narrow box. */
+  column?: string;
   children: ReactNode;
 }) {
   return (
     <div
       data-change-history-entry={id}
+      data-change-history-column={column}
       className={className}
       title={title}
       onMouseEnter={title ? undefined : (event) => titleWhenCut(event.currentTarget)}
@@ -147,6 +151,14 @@ function Cell({
     </div>
   );
 }
+
+/**
+ * Below an 860 px box the «Type» column is hidden (its header and cells, wherever the column settings put it)
+ * and the type is written above the object instead: Type, Who and Action never break a word, so with a long
+ * word in each («перевизначення») six columns do not fit there.
+ */
+const NARROW_HIDES_TYPE =
+  '@max-[859px]:[&_th:has([data-change-history-column=type])]:hidden @max-[859px]:[&_td:has([data-change-history-column=type])]:hidden';
 
 interface FeedQueryState {
   error?: unknown;
@@ -396,15 +408,18 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
           {/*
             The column widths follow this box (a container query), not the viewport: a host's sidebar and padding
             decide how wide the feed is. Short labels stay on one line where there is room; long ones (a host's
-            types, actions and sources) wrap. Every column but the date has a cap per box width («What changed»
-            its minimum), and the caps, the date (the header's width below 900 px, where the time goes under the
-            date) and the cells' padding add up to no more than the box, so from a 760 px box on the table never
-            gets wider than it: 757 px below 900, 883 from 900, 931 from 940, 995 from 1000, 1075 from 1100, then
-            1131, 1163, 1211 and 1243 from 1150, 1200, 1250 and 1300. A step changes one of them: keep the sum.
+            types, actions and sources) wrap between words, never inside one: «Who», «Type» and «Action» are at
+            least as wide as their longest word (`min-w-min` wins over the cap), the cap bounds the rest. Every
+            column but the date has a cap per box width («What changed» its minimum). With a 15-letter word
+            («перевизначення») in each of those three, the caps, the date (the header's width below 900 px, where
+            the time goes under the date) and the cells' padding add up to no more than the box, so from a 760 px
+            box on the table never gets wider than it: 724 px below 860 (no «Type» column), 839 from 860, 898 from
+            900, 946 from 960, 995 from 1000, 1075 from 1100, then 1131, 1163, 1211 and 1243 from 1150, 1200, 1250
+            and 1300. A step changes one of them: keep the sum.
           */}
           <div
             onClick={openRow}
-            className={`@container [&_tbody_tr]:cursor-pointer ${feedQuery.error ? '[&_tbody]:hidden' : ''}`}
+            className={`@container [&_tbody_tr]:cursor-pointer ${NARROW_HIDES_TYPE} ${feedQuery.error ? '[&_tbody]:hidden' : ''}`}
           >
             <PaginatedListDataTable
               key={tableKey}
@@ -491,7 +506,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                     return (
                       <Cell
                         id={row.original.id}
-                        className="min-w-[6rem] max-w-[7rem] whitespace-normal @min-[900px]:max-w-[8rem] @min-[1000px]:max-w-[9rem] @min-[1100px]:min-w-[8rem] @min-[1100px]:max-w-[12rem]"
+                        className="min-w-min max-w-[7rem] whitespace-normal @min-[900px]:max-w-[8rem] @min-[1000px]:max-w-[9rem] @min-[1100px]:max-w-[12rem]"
                         title={actor.name}
                       >
                         <ActorName actor={actor} className="max-w-full" wrap />
@@ -500,13 +515,18 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   },
                 },
                 entityType: {
-                  header: () => <Trans context="change-history">Type</Trans>,
+                  header: () => (
+                    <span data-change-history-column="type">
+                      <Trans context="change-history">Type</Trans>
+                    </span>
+                  ),
                   enableSorting: false,
                   meta: { dependencies: [...ROW_FIELDS] },
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="min-w-[5rem] max-w-[6.5rem] whitespace-normal break-words @min-[900px]:max-w-[7rem] @min-[1000px]:max-w-[7.5rem] @min-[1150px]:max-w-[11rem]"
+                      column="type"
+                      className="min-w-min max-w-[7rem] whitespace-normal @min-[1000px]:max-w-[7.5rem] @min-[1150px]:max-w-[11rem]"
                     >
                       <EntryType entry={row.original} />
                     </Cell>
@@ -517,13 +537,17 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   enableColumnFilter: false,
                   meta: { dependencies: [...ROW_FIELDS] },
                   // Long names are cut — a variant's name, not its SKU — the whole name in the tooltip. From a
-                  // 940 px table on, a normal SKU stays whole beside a «Deleted» badge, in English or Ukrainian.
+                  // 960 px table on, a normal SKU stays whole beside a «Deleted» badge, in English or Ukrainian.
+                  // Where the «Type» column is hidden, the type is the first line here.
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="flex min-w-0 max-w-[8rem] @min-[900px]:max-w-[11rem] @min-[940px]:max-w-[14rem] @min-[1300px]:max-w-[16rem]"
+                      className="flex min-w-0 max-w-[10rem] flex-col @min-[860px]:max-w-[9rem] @min-[900px]:max-w-[11rem] @min-[960px]:max-w-[14rem] @min-[1300px]:max-w-[16rem]"
                       title={row.original.entityLabel ?? undefined}
                     >
+                      <span className="truncate text-xs text-muted-foreground @min-[860px]:hidden">
+                        <EntryType entry={row.original} />
+                      </span>
                       <EntryObject entry={row.original} cut />
                     </Cell>
                   ),
@@ -535,7 +559,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="min-w-[6rem] max-w-[6.5rem] whitespace-normal break-words @min-[900px]:max-w-[7.5rem] @min-[1000px]:max-w-[8rem] @min-[1100px]:max-w-[10rem] @min-[1250px]:max-w-[13rem]"
+                      className="min-w-min max-w-[6.5rem] whitespace-normal @min-[900px]:max-w-[7.5rem] @min-[1000px]:max-w-[8rem] @min-[1100px]:max-w-[10rem] @min-[1250px]:max-w-[13rem]"
                     >
                       <EntryAction entry={row.original} />
                     </Cell>
@@ -554,7 +578,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="line-clamp-3 min-w-[7rem] whitespace-normal wrap-anywhere [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:whitespace-normal @min-[900px]:min-w-[8rem] @min-[1000px]:min-w-[10rem] @min-[1200px]:min-w-[12rem]"
+                      className="line-clamp-3 min-w-[8rem] whitespace-normal wrap-anywhere [&_[data-slot=badge]]:h-auto [&_[data-slot=badge]]:whitespace-normal @min-[1000px]:min-w-[10rem] @min-[1200px]:min-w-[12rem]"
                     >
                       <EntrySummary entry={row.original} />
                     </Cell>
