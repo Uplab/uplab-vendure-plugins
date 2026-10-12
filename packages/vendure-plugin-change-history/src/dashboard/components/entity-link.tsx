@@ -49,9 +49,9 @@ export function CutText({ children }: { children: ReactNode }) {
 
 /**
  * A variant's label in a cell that cuts it: «name (SKU)» on one line when both fit, else the SKU on a line of
- * its own under the name, so neither is crushed to a letter («C. (E2E-FOLD-40-424…»). Each line is cut with an
- * ellipsis only when it alone is wider than the cell (a long name; a code of 30 characters); the whole label
- * is the tooltip. Any other label takes up to two lines, broken between words (`CutText`).
+ * its own under the name, so neither is crushed to a letter («C. (E2E-FOLD-40-424…»). The name takes up to two
+ * lines broken between words, like any cut label (`CutText`), an ellipsis only past the second; the SKU is cut
+ * only when it alone is wider than the cell (a code of 30 characters). The whole label is the tooltip.
  */
 function CuttableLabel({ text, keepCode }: { text: ReactNode; keepCode: boolean }) {
   if (!keepCode || typeof text !== 'string') {
@@ -63,7 +63,7 @@ function CuttableLabel({ text, keepCode }: { text: ReactNode; keepCode: boolean 
   }
   return (
     <span className="inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-[0.3em]" title={text}>
-      <span className="min-w-0 max-w-full truncate">{name}</span>
+      <span className={TWO_LINES}>{name}</span>
       <span className="min-w-0 max-w-full truncate">({code})</span>
     </span>
   );

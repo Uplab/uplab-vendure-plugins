@@ -88,10 +88,15 @@ describe('EntityLink', () => {
       expect.arrayContaining(['inline-flex', 'flex-wrap', 'min-w-0', 'max-w-full']),
     );
     for (const part of [name, code]) {
-      // Each line is cut only when it alone is wider than the cell; neither keeps its room at the other's cost.
-      expect(part.className.split(' ')).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full', 'truncate']));
+      // Neither keeps its room at the other's cost.
+      expect(part.className.split(' ')).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full']));
       expect(part.className).not.toContain('shrink-0');
     }
+    // The name takes up to two lines broken between words, like any cut label; the SKU one, cut only when it
+    // alone is wider than the cell.
+    expect(name.className.split(' ')).toEqual(expect.arrayContaining(['line-clamp-2', 'whitespace-normal']));
+    expect(name.className).not.toContain('truncate');
+    expect(code.className).toContain('truncate');
 
     // A long SKU: the whole label in the tooltip.
     const long = 'Oversize tee Basic (TEE-NIGHT-SKY-ORGANIC-WHITE-XL)';
