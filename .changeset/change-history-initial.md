@@ -2,4 +2,23 @@
 '@uplab/vendure-plugin-change-history': minor
 ---
 
-Initial release of the change history plugin: entities, options with validation, automatic capture of the catalogue (products, variants, collections incl. moves and their contents per product with one collection-rules batch per run, facets, facet values, assets, promotions and channel assignments — created / updated with before → after values / deleted, cascaded deletions derived from their cause, option groups, manual stock adjustments, derived changes of a product save, actors incl. API keys and the collection rules), the `ChangeHistoryService` facade (`capture` for every core catalogue type, `recordAction`, `recordRun` with detail rows grouped by their parent product, `runBatch`, `reseedCollectionMembership`, and the unstable read helpers `list`, `entityHistory`, `filterOptions`, `runDetails`, `runsForEntity`, `runDetailsForEntity`), tiered retention in `ChangeHistoryRetentionService` (`compact` archives to the archive storage and verifies before it strips or deletes anything, `purge` deletes compacted entries only, `preview`, `restore`) with two built-in scheduled tasks or `retention.schedule: false` for your own scheduler, the before-state and archive storage strategies, the Admin API read queries behind the new per-channel `ReadChangeHistory` permission — each user reads the entries of the channels they hold it in, a SuperAdmin all of them — (`changeHistoryEntries` — the feed, derived entries left out by default, with `derivedCount`, `batchCounts`, `entityDeleted`, `isCompacted`, `derivedEntries` and `batchMembers` per entry —, `changeHistoryEntry`, `changeHistoryEntityTimeline` keyset-paged from the primary database with one item per run carrying the entity's rows, `changeHistoryRunDetails` with current labels sorted by SKU, and `changeHistoryFilterOptions`), and the dashboard: the change history feed under System (search, type / action / source / who filters, a period, «collapse bulk operations» and «hide system changes», all kept in the URL), the entry window (field · was · became, derived entries, batch members and run rows paged, a deleted entity’s last state and full history), a history block on the product, variant, collection, facet and promotion pages, the «Recent changes» Insights widget, built-in English and Ukrainian labels for the core fields, and a `./dashboard` entry where hosts register field labels, sources (tone, icon, count labels), actions, batch kinds, entity types, value renderers and run-detail renderers.
+Initial release of the change history plugin.
+
+- **Capture.** Records the catalogue from Vendure's events inside the transaction that makes the change:
+  products, variants, collections (moves and contents included), facets, facet values, assets, promotions and
+  channel assignments, with before → after values. Cascaded deletions are derived from their cause; option
+  groups and manual stock adjustments are recorded too. Actors: administrators, API keys (under the owner's
+  name), the collection rules and your own resolvers.
+- **Service.** `ChangeHistoryService`: `capture` after a raw write, `recordAction`, `recordRun` for external
+  syncs (detail rows grouped under their product, an optional `subject`), `runBatch` (batches follow the
+  callback's async context) and `reseedCollectionMembership`, plus unstable read helpers.
+- **Kill switch.** `enabled: false` records nothing; the next boot with capture on brings the collection
+  contents up to date by itself.
+- **Retention.** `ChangeHistoryRetentionService` archives to your storage and verifies it before it compacts
+  or deletes anything; `purge`, `preview` and `restore`; two built-in scheduled tasks, or your own scheduler.
+- **Admin API.** The feed, one entry, entity timelines, run details and filter options, behind the new
+  per-channel `ReadChangeHistory` permission. A reader sees only the entity types they may read anyway
+  (`ReadCatalog`, `ReadPromotion`, …); `readPermissions` sets them for your own types. Offset pages are stable.
+- **Dashboard.** A change history feed, the entry window, a history block on the detail pages, the «Recent
+  changes» Insights widget, English and Ukrainian labels, and a `./dashboard` entry to register your own
+  labels, sources, actions, batch kinds, entity types and renderers.
