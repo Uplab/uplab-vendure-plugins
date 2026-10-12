@@ -12,7 +12,8 @@ packages/dev-server/vendure.sqlite
 packages/dev-server/static/
 packages/dev-server/dist/
 packages/dev-server/src/gql/
-packages/dev-server/.vendure/
+# Vendure's telemetry installation id, written wherever a server or a test boots
+.vendure/
 packages/dev-server/.change-history-archive/
 
 # env
