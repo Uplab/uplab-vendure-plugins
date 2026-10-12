@@ -30,6 +30,12 @@ export function entry(over: Partial<ChangeHistoryEntryData> = {}): ChangeHistory
   };
 }
 
+/**
+ * A text with its no-break spaces written as `~`, so that a test reads where a line may not break:
+ * `nb('Odoo id:~5950013~→~941185322')`.
+ */
+export const nb = (text: string): string => text.replaceAll('~', ' ');
+
 /** The entry window's query result: the entry with empty pages of derived entries and batch members. */
 export function dialogData(value: ChangeHistoryEntryData | null, members: ChangeHistoryEntryData[] = []) {
   return {

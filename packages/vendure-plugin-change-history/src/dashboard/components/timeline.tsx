@@ -9,7 +9,7 @@ import type { ChangeHistoryDetailData, ChangeHistoryEntryData } from '../registr
 import { actorOf, EntryBadges, runLabelOf, TONE_ICON_CLASSES, type EntryBadge } from './actor';
 import { DetailRows } from './details';
 import { EntityLink } from './entity-link';
-import { EntryDialog } from './entry-dialog';
+import { CausedBy, EntryDialog } from './entry-dialog';
 import { QueryError } from './query-error';
 import {
   BatchSummary,
@@ -357,13 +357,20 @@ function EntryItem({ entry, subject }: { entry: ChangeHistoryEntryData; subject:
         </>
       }
       badges={[
-        !!entry.derivedFromId && { key: 'derived', text: t({ message: 'Derived', context: 'change-history' }) },
+        // A cause the reader cannot see (gone, or of a type they may not read) is only said to exist.
+        !!entry.derivedFromId &&
+          !entry.derivedFrom && { key: 'derived', text: t({ message: 'Derived', context: 'change-history' }) },
         // Not when it says what the line says (a channel operation of several products).
         !!batchKind &&
           batchKind !== 'collection_rules' &&
           batchKind !== entry.action && { key: 'batch', text: labels.batchKind(batchKind) },
       ]}
     >
+      {entry.derivedFrom && (
+        <div className="text-sm text-muted-foreground">
+          <CausedBy cause={entry.derivedFrom} />
+        </div>
+      )}
       {hasChanges && entry.action === 'created' && <CreatedValues entityType={entry.entityType} changes={changes} />}
       {hasChanges && entry.action !== 'created' && (
         <FieldChangesTable entityType={entry.entityType} changes={changes} showHeader={false} />

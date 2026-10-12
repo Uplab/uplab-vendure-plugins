@@ -9,6 +9,7 @@ import {
 import type { ChangeHistoryFieldChange, ChangeHistoryValueRendererProps } from '../registry';
 import { changeHistoryAssetPreviewsDocument, operationDefinitionDocuments } from '../graphql';
 import { answerQueries } from '../testing/dashboard-mock';
+import { nb } from '../testing/fixtures';
 import { setLocale } from '../testing/i18n';
 import {
   CreatedGrid,
@@ -245,7 +246,7 @@ describe('useValueText', () => {
   });
 
   it('reads an object of plain values as key: value, a list of plain values as a list, anything else as JSON', () => {
-    expect(textOf({ Kyiv: 3, Lviv: null }, { kind: 'json' })).toBe('Kyiv: 3, Lviv: —');
+    expect(textOf({ Kyiv: 3, Lviv: null }, { kind: 'json' })).toBe(nb('Kyiv:~3, Lviv:~—'));
     expect(textOf([1, null, 'a'], { kind: 'json' })).toBe('1, null, a');
     expect(textOf({ point: { x: 1 } }, { kind: 'json' })).toBe('{"point":{"x":1}}');
     expect(textOf([{ code: 'a' }], { kind: 'json' })).toBe('[{"code":"a"}]');
@@ -548,10 +549,60 @@ describe('FieldChangesTable: JSON', () => {
     expect(within(became).getByText('y: 0.5').className).not.toContain('bg-green-50');
     cleanup();
     table({ focalPoint: { kind: 'json', from: null, to: { x: 1 } } });
-    expect(cellTexts()).toEqual(['Фокусна точка', '—', 'x: 1']);
+    expect(cellTexts()).toEqual(['Фокусна точка', '—', nb('x:~1')]);
     cleanup();
     table({ focalPoint: { kind: 'json', from: null, to: null } });
     expect(cellTexts()).toEqual(['Фокусна точка', '—', '—']);
+  });
+});
+
+describe('FieldChangesTable: an object of plain values of a kind nothing renders', () => {
+  const locations = {
+    'Шоурум Дніпро': 0,
+    'Шоурум Київ': 0,
+    'Шоурум Львів': 0,
+    'Шоурум Одеса': 0,
+    'Основний склад': 3,
+  };
+
+  it('shows every key: value line unclipped, the changed key marked though it comes past 80 characters', () => {
+    table({
+      'customFields.minStock': { kind: 'stockThreshold', from: locations, to: { ...locations, 'Основний склад': 5 } },
+    });
+    const [, was, became] = cells();
+    const lines = (cell: HTMLElement) => [...cell.querySelectorAll('div > div')].map((line) => line.textContent);
+    expect(lines(was)).toEqual([
+      nb('Шоурум Дніпро:~0'),
+      nb('Шоурум Київ:~0'),
+      nb('Шоурум Львів:~0'),
+      nb('Шоурум Одеса:~0'),
+      nb('Основний склад:~3'),
+    ]);
+    expect(lines(became).at(-1)).toBe(nb('Основний склад:~5'));
+    expect(within(was).getByText('Основний склад: 3').className).toContain('bg-red-50');
+    expect(within(became).getByText('Основний склад: 5').className).toContain('bg-green-50');
+    expect(within(became).getByText('Шоурум Київ: 0').className).not.toContain('bg-green-50');
+    expect(was.textContent).not.toContain('…');
+  });
+
+  it("keeps a host's text of the kind, and marks every line of a value that was not there before", () => {
+    registerChangeHistoryValueText('stockThreshold', (value) =>
+      value && typeof value === 'object' ? `${Object.keys(value).length} locations` : undefined,
+    );
+    table({ 'customFields.minStock': { kind: 'stockThreshold', from: { Kyiv: 1 }, to: { Kyiv: 1, Lviv: 2 } } });
+    expect(cellTexts()).toEqual(['Min stock', '1 locations', '2 locations']);
+    cleanup();
+    delete (globalThis as unknown as Record<symbol, unknown>)[
+      Symbol.for('@uplab/vendure-plugin-change-history/registry')
+    ];
+    table({ 'customFields.minStock': { kind: 'stockThreshold', from: null, to: { Kyiv: 1 } } });
+    const [, was, became] = cells();
+    expect(was.textContent).toBe('—');
+    expect(within(became).getByText('Kyiv: 1').className).toContain('bg-green-50');
+    cleanup();
+    // A change recorded without a kind reads the same.
+    table({ 'customFields.minStock': { from: { Kyiv: 1 }, to: { Kyiv: 2 } } });
+    expect(within(cells()[2]).getByText('Kyiv: 2').className).toContain('bg-green-50');
   });
 });
 
@@ -884,6 +935,15 @@ describe('LastStateValue', () => {
   const last = (fieldKey: string, value: unknown, fields?: unknown, entityType = 'Product') =>
     render(<LastStateValue entityType={entityType} fieldKey={fieldKey} value={value} fields={fields} />).container;
 
+  it('shows an object of plain values of a kind nothing renders as all its key: value lines', () => {
+    const value = { 'Шоурум Дніпро': 0, 'Шоурум Київ': 0, 'Шоурум Львів': 0, 'Шоурум Одеса': 0, 'Основний склад': 3 };
+    const container = last('customFields.minStock', value, { 'customFields.minStock': { kind: 'stockThreshold' } });
+    expect([...(container.firstElementChild?.children ?? [])].map((line) => line.textContent)).toEqual(
+      Object.entries(value).map(([key, count]) => nb(`${key}:~${count}`)),
+    );
+    expect(container.querySelector('.bg-green-50')).toBeNull();
+  });
+
   it('formats a value by the kind the server kept', () => {
     expect(last('price', 1250, { price: { kind: 'money' } }).textContent).toBe('12.50 UAH');
     cleanup();
@@ -896,7 +956,7 @@ describe('LastStateValue', () => {
   it('guesses the kind of an older entry: markup is rich text, an object JSON', () => {
     expect(last('description.uk', '<p>Warm</p>').textContent).toBe('«Warm»');
     cleanup();
-    expect(last('focalPoint', { x: 0.5, y: 0.25 }).textContent).toBe('x: 0.5y: 0.25');
+    expect(last('focalPoint', { x: 0.5, y: 0.25 }).textContent).toBe(nb('x:~0.5y:~0.25'));
     expect(document.querySelector('.font-mono')).toBeNull();
     cleanup();
     expect(last('enabled', false).textContent).toBe('Ні');

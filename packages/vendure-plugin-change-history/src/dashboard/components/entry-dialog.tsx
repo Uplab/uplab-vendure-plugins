@@ -3,6 +3,7 @@ import {
   api,
   Button,
   Dialog,
+  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -12,7 +13,7 @@ import {
   useLocalFormat,
   useQuery,
 } from '@vendure/dashboard';
-import { ArrowLeft, ArrowRight, Info } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Info, X } from 'lucide-react';
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import { batchTotal, capitalizeFirst, repeatsShown } from '../format';
 import { changeHistoryEntryDocument, changeHistoryRunDetailsDocument } from '../graphql';
@@ -363,6 +364,11 @@ function DialogBody({
           )}
           <EntryBadges actor={actor} shown={shown} />
         </div>
+        {entry.derivedFrom && (
+          <div className="text-sm text-muted-foreground">
+            <CausedBy cause={entry.derivedFrom} />
+          </div>
+        )}
       </DialogHeader>
 
       <div className="-mx-6 min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-1">
@@ -496,6 +502,32 @@ function DialogBody({
   );
 }
 
+/**
+ * What a derived entry follows from — «Caused by: Product «Tee» · assigned to channel» — opening the cause's
+ * entry window. Shown only when the reader can see the cause (`derivedFrom` is `null` when it is gone, or of a
+ * type they may not read).
+ */
+export function CausedBy({ cause }: { cause: NonNullable<ChangeHistoryEntryData['derivedFrom']> }) {
+  const labels = useLabels();
+  const [open, setOpen] = useState(false);
+  return (
+    <span>
+      <Trans context="change-history">Caused by:</Trans>{' '}
+      <button
+        type="button"
+        className="rounded-sm text-left text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        {labels.type(cause.entityType)} «{cause.entityLabel ?? cause.entityId}» · {labels.action(cause.action)}
+      </button>
+      <EntryDialog entryId={open ? cause.id : undefined} onClose={() => setOpen(false)} />
+    </span>
+  );
+}
+
 /** The entry window: opened from a feed row, a widget line or an entry link. */
 export function EntryDialog({ entryId, onClose }: { entryId: string | undefined; onClose: () => void }) {
   const { t } = useLingui();
@@ -520,7 +552,11 @@ export function EntryDialog({ entryId, onClose }: { entryId: string | undefined;
   return (
     <Dialog open={!!entryId} onOpenChange={(open) => !open && close()}>
       {/* The header stays while the body scrolls; focus lands on the header, not on the close button. */}
-      <DialogContent className="flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-4xl" initialFocus={focusRef}>
+      <DialogContent
+        className="flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-4xl"
+        initialFocus={focusRef}
+        showCloseButton={false}
+      >
         {entryId && !history && (
           <DialogBody
             entryId={entryId}
@@ -560,6 +596,19 @@ export function EntryDialog({ entryId, onClose }: { entryId: string | undefined;
             </div>
           </>
         )}
+        {/* Core's close button, named in the dashboard's language (core's says «Close» in every language). */}
+        <DialogClose
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="absolute right-4 top-4"
+              aria-label={t({ message: 'Close', context: 'change-history' })}
+            />
+          }
+        >
+          <X />
+        </DialogClose>
       </DialogContent>
     </Dialog>
   );

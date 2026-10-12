@@ -53,6 +53,20 @@ const ENTRY_FIELDS = `
   }
 `;
 
+/**
+ * A derived entry's cause, where one entry or a timeline is shown (the feed and the widget list no derived
+ * entries, and a cause's own derived entries need no cause).
+ */
+const CAUSE_FIELDS = `
+  derivedFrom {
+    id
+    entityType
+    entityId
+    entityLabel
+    action
+  }
+`;
+
 const DETAIL_FIELDS = `
   fragment ChangeHistoryDetailFields on ChangeHistoryDetail {
     id
@@ -101,6 +115,7 @@ export const changeHistoryEntryDocument = typedDocument<
   ) {
     changeHistoryEntry(id: $id) {
       ...ChangeHistoryEntryFields
+      ${CAUSE_FIELDS}
       derivedEntries(options: $derivedOptions) {
         items {
           ...ChangeHistoryEntryFields
@@ -144,6 +159,7 @@ export const changeHistoryEntityTimelineDocument = typedDocument<
     ) {
       items {
         ...ChangeHistoryEntryFields
+        ${CAUSE_FIELDS}
         details {
           ...ChangeHistoryDetailFields
         }

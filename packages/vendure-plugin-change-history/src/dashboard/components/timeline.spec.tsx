@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChangeHistoryDetailData, ChangeHistoryEntryData } from '../registry';
 import { getChangeHistoryRegistry } from '../registry';
 import { answerQueries, api, refetches } from '../testing/dashboard-mock';
-import { dialogData, entry } from '../testing/fixtures';
+import { dialogData, entry, nb } from '../testing/fixtures';
 import { setLocale } from '../testing/i18n';
 import { EntityTimeline } from './timeline';
 
@@ -393,7 +393,7 @@ describe('EntityTimeline, a batch', () => {
     });
     const members = [...document.querySelectorAll('ul li')].map((item) => item.textContent);
     expect(members).toEqual([
-      'Худі · оновлено · Увімкнено: Так → Ні',
+      nb('Худі · оновлено · Увімкнено:~Так~→~Ні'),
       'Кепка · додано до каналуНаслідки зміни: 3',
       'Шапка · додано до каналу',
     ]);
@@ -508,6 +508,43 @@ describe('EntityTimeline, an entry', () => {
     getChangeHistoryRegistry().batchKinds.set('archive', { label: 'архівування' });
     timeline([entry({ derivedFromId: '4', batchId: 'archive:1' })]);
     expect(badges()).toEqual(['Наслідок іншої зміни', 'Архівування']);
+  });
+
+  it('names the cause of a derived change, which opens the cause’s entry, instead of the bare badge', () => {
+    const query = vi.spyOn(api, 'query');
+    const cause = entry({ id: '4', entityLabel: 'Oversize tee Basic', action: 'channel_assigned' });
+    timeline(
+      [
+        entry({
+          id: '5',
+          entityType: 'ProductVariant',
+          entityLabel: 'Oversize tee Basic S (OTB-S)',
+          action: 'channel_assigned',
+          derivedFromId: '4',
+          derivedFrom: cause,
+          meta: { channelCode: 'uk-store' },
+        }),
+      ],
+      (key) => (key[0] === 'change-history-entry' && key[1] === '4' ? { data: dialogData(cause) } : undefined),
+    );
+    expect(badges()).toEqual([]);
+    const link = screen.getByRole('button', { name: 'Товар «Oversize tee Basic» · додано до каналу' });
+    expect(link.parentElement?.textContent).toBe('Наслідок зміни: Товар «Oversize tee Basic» · додано до каналу');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(link);
+    expect(query).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: '4' }));
+    expect(screen.getByRole('heading').textContent).toContain('Товар «Oversize tee Basic»');
+    cleanup();
+
+    // A cause recorded without a name reads by its id.
+    timeline([
+      entry({
+        id: '5',
+        derivedFromId: '4',
+        derivedFrom: { ...cause, entityId: '12', entityLabel: null, action: 'deleted' },
+      }),
+    ]);
+    expect(screen.getByRole('button', { name: 'Товар «12» · видалено' })).toBeTruthy();
   });
 
   it("leaves out a batch badge that would repeat the line, or that collection rules' own items carry", () => {

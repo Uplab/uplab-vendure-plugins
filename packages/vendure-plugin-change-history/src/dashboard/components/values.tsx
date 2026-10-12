@@ -18,6 +18,7 @@ import {
   isOperationList,
   jsonDiff,
   jsonLines,
+  labelled,
   lastStateChange,
   numericDelta,
   operationLines,
@@ -203,7 +204,7 @@ export function useValueText() {
     }
     const flat = flatEntries(value);
     if (flat) {
-      return clipText(flat.map(([key, inner]) => `${key}: ${inner}`).join(', '), 80).text;
+      return clipText(flat.map(([key, inner]) => labelled(key, inner)).join(', '), 80).text;
     }
     if (Array.isArray(value) && value.every((item) => item === null || typeof item !== 'object')) {
       return clipText(value.map(String).join(', '), 80).text;
@@ -230,10 +231,16 @@ function BoolValue({ change, side }: BuiltInProps) {
 }
 
 function ScalarValue({ change, side, entityType, fieldKey }: BuiltInProps) {
+  const labels = useLabels();
   const text = useValueText();
   const value = change[side];
   if (isBlank(value)) {
     return <Empty />;
+  }
+  // An object of plain values (thresholds per location) of a kind without a renderer or a text of its own: all
+  // its `key: value` lines, the changed ones marked — not the one-line text, which is cut.
+  if (flatEntries(value) && !labels.valueText(change.kind ?? 'text')) {
+    return <ValueLines lines={jsonDiff(change)[side]} side={side} mono={false} />;
   }
   return (
     <>
@@ -819,6 +826,14 @@ export function LastStateValue({
   }
   if (kind === 'assets') {
     return <AssetsValue change={{ ...change, added: [], removed: [] }} side="to" />;
+  }
+  if (flatEntries(value) && !labels.valueText(kind)) {
+    return (
+      <ValueLines
+        lines={jsonLines(value, change.labels).map((line) => ({ text: line, changed: false }))}
+        mono={false}
+      />
+    );
   }
   return <span>{clipText(text(value, change, { entityType, fieldKey }), 300).text}</span>;
 }

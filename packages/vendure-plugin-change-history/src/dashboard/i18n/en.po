@@ -690,8 +690,8 @@ msgstr "s"
 
 #: src/dashboard/components/details.tsx
 msgctxt "change-history"
-msgid "Scope"
-msgstr "Scope"
+msgid "Location"
+msgstr "Location"
 
 #: src/dashboard/components/timeline.tsx
 msgctxt "change-history"
@@ -791,3 +791,13 @@ msgstr "You do not have permission to view this history."
 msgctxt "change-history"
 msgid "The filter options could not be loaded."
 msgstr "The filter options could not be loaded."
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Caused by:"
+msgstr "Caused by:"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Close"
+msgstr "Close"

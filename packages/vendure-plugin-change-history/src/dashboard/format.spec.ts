@@ -238,7 +238,7 @@ describe('values', () => {
     expect(flatEntries({})).toBeUndefined();
     expect(flatEntries(['a'])).toBeUndefined();
     expect(flatEntries('text')).toBeUndefined();
-    expect(jsonLines({ Kyiv: 3, Lviv: 0 }, undefined)).toEqual(['Kyiv: 3', 'Lviv: 0']);
+    expect(jsonLines({ Kyiv: 3, Lviv: 0 }, undefined)).toEqual(['Kyiv:\u00A03', 'Lviv:\u00A00']);
   });
 
   it('reads a change of a map of scalars as the keys that changed, a missing side as a dash', () => {

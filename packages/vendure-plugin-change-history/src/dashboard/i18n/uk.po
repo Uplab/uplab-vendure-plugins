@@ -690,8 +690,8 @@ msgstr "с"
 
 #: src/dashboard/components/details.tsx
 msgctxt "change-history"
-msgid "Scope"
-msgstr "Область"
+msgid "Location"
+msgstr "Місце"
 
 #: src/dashboard/components/timeline.tsx
 msgctxt "change-history"
@@ -791,3 +791,13 @@ msgstr "Немає прав на перегляд цієї історії."
 msgctxt "change-history"
 msgid "The filter options could not be loaded."
 msgstr "Не вдалося завантажити варіанти фільтрів."
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Caused by:"
+msgstr "Наслідок зміни:"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Close"
+msgstr "Закрити"

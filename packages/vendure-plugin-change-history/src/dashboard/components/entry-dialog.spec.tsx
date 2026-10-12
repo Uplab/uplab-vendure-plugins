@@ -96,6 +96,40 @@ describe('EntryDialog', () => {
     expect(screen.getByText('uk-store')).toBeTruthy();
   });
 
+  it('names the cause of a derived entry under its header, and opens the cause’s entry from it', () => {
+    const cause = entry({ id: '4', entityLabel: 'Oversize tee Basic', action: 'channel_assigned' });
+    const derived = entry({
+      id: '7',
+      entityType: 'Asset',
+      entityLabel: 'tee.jpg',
+      action: 'channel_assigned',
+      derivedFromId: '4',
+      derivedFrom: cause,
+      meta: { channelCode: 'uk-store' },
+    });
+    answerQueries((key) =>
+      key[0] === 'change-history-entry' ? { data: dialogData(key[1] === '4' ? cause : derived) } : undefined,
+    );
+    render(<EntryDialog entryId="7" onClose={() => undefined} />);
+    expect(header()).toContain('Наслідок зміни: Товар «Oversize tee Basic» · додано до каналу');
+    fireEvent.click(screen.getByRole('button', { name: 'Товар «Oversize tee Basic» · додано до каналу' }));
+    expect(screen.getAllByRole('dialog')).toHaveLength(2);
+    expect(screen.getAllByRole('heading', { level: 2 }).map((title) => title.textContent)).toEqual([
+      'Ресурс «tee.jpg»відкрити →',
+      'Товар «Oversize tee Basic»відкрити →',
+    ]);
+    // Closing the cause's window goes back to the derived entry's.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]);
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Ресурс «tee.jpg»відкрити →');
+  });
+
+  it('says nothing of a cause the reader cannot see, and names its close button in the dashboard’s language', () => {
+    open(entry({ derivedFromId: '4', derivedFrom: null }));
+    expect(header()).not.toContain('Наслідок');
+    expect(screen.getByRole('button', { name: 'Закрити' })).toBeTruthy();
+  });
+
   it('titles a batch without a label of its own by its registered kind, never by the raw kind', () => {
     const batch = entry({
       entityType: 'Batch',

@@ -55,7 +55,7 @@ describe('DetailRows in the entry dialog', () => {
     expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
       'SKU / ID',
       'Назва',
-      'Область',
+      'Місце',
       'Було',
       'Стало',
     ]);

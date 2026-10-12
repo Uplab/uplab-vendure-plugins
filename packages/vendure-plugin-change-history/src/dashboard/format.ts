@@ -48,6 +48,18 @@ export function stripHtml(html: string): string {
 }
 
 /** The first `max` characters (on a word boundary when one is near), with an ellipsis when cut. */
+/**
+ * A no-break space: «Odoo id: 5950013 → 941185322» breaks before a label or between words of a value, never
+ * right after a colon or an arrow, which would leave the value alone on the next line.
+ */
+export const NBSP = '\u00A0';
+
+/** «label: value», the value kept on the label's line. */
+export const labelled = (label: string, value: string | number): string => `${label}:${NBSP}${value}`;
+
+/** «from → to», the arrow kept with both sides. */
+export const fromTo = (from: string, to: string): string => `${from}${NBSP}→${NBSP}${to}`;
+
 export function clipText(text: string, max: number): { text: string; clipped: boolean } {
   if (text.length <= max) {
     return { text, clipped: false };
@@ -147,7 +159,7 @@ export function jsonLines(value: unknown, labels: Record<string, string> | undef
   }
   const flat = flatEntries(value);
   if (flat) {
-    return flat.map(([key, text]) => `${key}: ${text}`);
+    return flat.map(([key, text]) => labelled(key, text));
   }
   return JSON.stringify(withFacetValueLabels(value, labels), null, 2).split('\n');
 }

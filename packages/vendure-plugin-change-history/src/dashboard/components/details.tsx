@@ -26,8 +26,8 @@ function Delta({ row }: { row: ChangeHistoryDetailData }) {
 const objectOf = (row: ChangeHistoryDetailData) => row.sku ?? row.entityLabel ?? row.entityId;
 
 /**
- * The package's renderer for detail rows of any kind: «SKU · Name · Scope · Was · Became (±delta)» in the
- * dialog, «[SKU] Scope  was → became» in a timeline, «Variants: 3 · Rows: 4» as the count line (numbers next
+ * The package's renderer for detail rows of any kind: «SKU · Name · Location · Was · Became (±delta)» in the
+ * dialog, «[SKU] Location  was → became» in a timeline, «Variants: 3 · Rows: 4» as the count line (numbers next
  * to the nouns, so no plural forms are needed). A host overrides it per kind.
  */
 function DefaultDetailRenderer({ rows, entry, mode }: ChangeHistoryDetailRendererProps) {
@@ -83,7 +83,7 @@ function DefaultDetailRenderer({ rows, entry, mode }: ChangeHistoryDetailRendere
             <Trans context="change-history">Name</Trans>
           </th>
           <th className={`${th} pr-3`}>
-            <Trans context="change-history">Scope</Trans>
+            <Trans context="change-history">Location</Trans>
           </th>
           <th className={`${th} pr-3 text-right`}>
             <Trans context="change-history">Was</Trans>

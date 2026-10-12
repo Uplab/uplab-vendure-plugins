@@ -4,7 +4,7 @@
  *
  * Used with `vi.mock('@vendure/dashboard', () => import('./testing/dashboard-mock'))`.
  */
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { cloneElement, type ButtonHTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
 export interface QueryAnswer {
   data?: unknown;
@@ -125,8 +125,19 @@ export function Dialog({ open, children }: { open: boolean; children?: ReactNode
   return open ? <>{children}</> : null;
 }
 
-export function DialogContent({ children }: { children?: ReactNode; className?: string; initialFocus?: unknown }) {
+export function DialogContent({
+  children,
+}: {
+  children?: ReactNode;
+  className?: string;
+  initialFocus?: unknown;
+  showCloseButton?: boolean;
+}) {
   return <div role="dialog">{children}</div>;
+}
+
+export function DialogClose({ render, children }: { render: ReactElement; children?: ReactNode }) {
+  return cloneElement(render, undefined, children);
 }
 
 export function DialogHeader({ children, ...props }: { children?: ReactNode; className?: string }) {

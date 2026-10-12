@@ -41,6 +41,7 @@ interface TableProps {
   defaultVisibility: Record<string, boolean>;
   defaultColumnOrder: string[];
   customizeColumns: Record<string, Column>;
+  listQuery: { source: string };
 }
 
 /** A query of the fake query cache, shaped like TanStack Query's. */
@@ -481,6 +482,12 @@ describe('ChangeHistoryListPage', () => {
         enableHiding: false,
         meta: { dependencies: ['id', 'actorType', 'actorLabel'] },
       });
+    });
+
+    it('leaves the cause of a derived entry out of its query: the feed lists none, and the table would add a column', () => {
+      feed();
+      expect(h.table.listQuery.source).toContain('derivedFromId');
+      expect(h.table.listQuery.source).not.toContain('derivedFrom {');
     });
 
     it('keeps the cells’ inputs out of the columns, and selects each through the cells that read it', () => {

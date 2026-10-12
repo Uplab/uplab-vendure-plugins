@@ -39,6 +39,8 @@ export interface ChangeHistoryEntryData {
   actorLabel: string | null;
   batchId: string | null;
   derivedFromId: string | null;
+  /** The entry that caused this one; `null` when there is none, it is gone, or the reader may not read it. */
+  derivedFrom?: Pick<ChangeHistoryEntryData, 'id' | 'entityType' | 'entityId' | 'entityLabel' | 'action'> | null;
   changes: Record<string, ChangeHistoryFieldChange> | null;
   meta: Record<string, unknown>;
   summary: string;

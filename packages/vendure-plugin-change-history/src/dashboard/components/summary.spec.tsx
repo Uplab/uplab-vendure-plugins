@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { entry } from '../testing/fixtures';
+import { entry, nb } from '../testing/fixtures';
 import { setLocale } from '../testing/i18n';
 import { registerChangeHistoryBatchKind, registerChangeHistoryValueText } from '../public';
 import { ActorName, actorOf } from './actor';
@@ -40,7 +40,7 @@ describe('EntrySummary', () => {
         })}
       />,
     );
-    expect(document.body.textContent).toBe('Min stock: Шоурум Київ: 0 → 13, Основний: — → 3');
+    expect(document.body.textContent).toBe(nb('Min stock:~Шоурум Київ:~0~→~13, Основний:~—~→~3'));
   });
 
   it("lets a host's text of a kind say what changed, and falls back where it does not", () => {
@@ -54,24 +54,24 @@ describe('EntrySummary', () => {
         })}
       />,
     );
-    expect(document.body.textContent).toBe('Min stock: 4 → 2 locations');
+    expect(document.body.textContent).toBe(nb('Min stock:~4~→~2 locations'));
   });
 
   it('shows an identifier as stored, a quantity grouped', () => {
     render(
       <EntrySummary entry={entry({ changes: { 'customFields.odooId': { kind: 'text', from: 5950013, to: null } } })} />,
     );
-    expect(document.body.textContent).toBe('Odoo id: 5950013 → —');
+    expect(document.body.textContent).toBe(nb('Odoo id:~5950013~→~—'));
     cleanup();
     render(
       <EntrySummary entry={entry({ changes: { 'customFields.erp': { kind: 'id', from: 9342, to: 941185322 } } })} />,
     );
-    expect(document.body.textContent).toBe('Erp: 9342 → 941185322');
+    expect(document.body.textContent).toBe(nb('Erp:~9342~→~941185322'));
     cleanup();
     render(
       <EntrySummary entry={entry({ changes: { 'customFields.paid': { kind: 'text', from: 1000, to: 25000 } } })} />,
     );
-    expect(document.body.textContent).toBe('Paid: 1,000 → 25,000');
+    expect(document.body.textContent).toBe(nb('Paid:~1,000~→~25,000'));
   });
 
   it("names a channel assignment's channel with the changes it caused", () => {
@@ -86,7 +86,7 @@ describe('EntrySummary', () => {
 
   it('shows one short field as «field: was → became»', () => {
     render(<EntrySummary entry={entry({ changes: { enabled: { kind: 'bool', from: true, to: false } } })} />);
-    expect(document.body.textContent).toBe('Enabled: Yes → No');
+    expect(document.body.textContent).toBe(nb('Enabled:~Yes~→~No'));
   });
 
   it('lists what a set change added and removed', () => {
@@ -105,7 +105,7 @@ describe('EntrySummary', () => {
         })}
       />,
     );
-    expect(document.body.textContent).toBe('Значення фасетів: +Color: White, −Color: Black');
+    expect(document.body.textContent).toBe(nb('Значення фасетів:~+Color: White, −Color: Black'));
   });
 
   it('names a created entity instead of a dash', () => {
@@ -120,7 +120,7 @@ describe('EntrySummary', () => {
         })}
       />,
     );
-    expect(document.body.textContent).toBe('Name (en): Oversize tee');
+    expect(document.body.textContent).toBe(nb('Name (en):~Oversize tee'));
   });
 
   it('shows a localized core enum value', () => {
@@ -133,7 +133,9 @@ describe('EntrySummary', () => {
         })}
       />,
     );
-    expect(document.body.textContent).toBe('Відстеження запасів: Успадкувати з глобальних налаштувань → Відстежувати');
+    expect(document.body.textContent).toBe(
+      nb('Відстеження запасів:~Успадкувати з глобальних налаштувань~→~Відстежувати'),
+    );
   });
 
   it('shows the stock location after the field and the delta', () => {
@@ -145,7 +147,7 @@ describe('EntrySummary', () => {
         })}
       />,
     );
-    expect(document.body.textContent).toBe('Stock (Main): 10 → 42 (+32)');
+    expect(document.body.textContent).toBe(nb('Stock (Main):~10~→~42~(+32)'));
   });
 
   it("counts a run's rows as «label: number»", () => {
@@ -161,7 +163,7 @@ describe('EntrySummary', () => {
         })}
       />,
     );
-    expect(document.body.textContent).toBe('оновлено: 3, помилки: 1');
+    expect(document.body.textContent).toBe(nb('оновлено:~3, помилки:~1'));
   });
 });
 
@@ -207,7 +209,9 @@ describe('a batch row', () => {
         <EntrySummary entry={head} />
       </>,
     );
-    expect(document.body.textContent).toBe('Масова операція|uk-store3|додано до каналу|Товар · додано до каналу: 3');
+    expect(document.body.textContent).toBe(
+      nb('Масова операція|uk-store3|додано до каналу|Товар · додано до каналу:~3'),
+    );
   });
 
   it('says what the members of an unlabelled batch had done to them, and what they are', () => {
@@ -255,11 +259,11 @@ describe('EntrySummary, every kind of row', () => {
   it("counts a host action's numbers, its total last", () => {
     const action = (counts: Record<string, number>) => entry({ action: 'products_reordered', meta: { counts } });
     const { container, rerender } = render(<EntrySummary entry={action({ moved: 3, added: 0, total: 12 })} />);
-    expect(container.textContent).toBe('moved: 3 (total: 12)');
+    expect(container.textContent).toBe(nb('moved:~3 (total:~12)'));
     rerender(<EntrySummary entry={action({ total: 12 })} />);
-    expect(container.textContent).toBe('total: 12');
+    expect(container.textContent).toBe(nb('total:~12'));
     rerender(<EntrySummary entry={action({ moved: 3 })} />);
-    expect(container.textContent).toBe('moved: 3');
+    expect(container.textContent).toBe(nb('moved:~3'));
   });
 
   it('says that the details of an update recorded without its old values are unavailable, nothing more for a creation', () => {
@@ -274,22 +278,20 @@ describe('EntrySummary, every kind of row', () => {
     expect(container.textContent).toBe('—');
   });
 
-  it('names the fields of a larger change, four at most', () => {
+  it('names the fields of a larger change, four and how many more, the count on the last name’s line', () => {
     const text = { kind: 'text', from: 'a', to: 'b' };
+    const five = { 'name.en': text, 'slug.en': text, 'description.en': text, sku: text, 'customFields.erp': text };
     const { container, rerender } = render(
       <EntrySummary
         entry={entry({ changes: { enabled: { kind: 'bool', from: true, to: false }, 'name.en': text } })}
       />,
     );
     expect(container.textContent).toBe('Enabled, Name (en)');
-    rerender(
-      <EntrySummary
-        entry={entry({
-          changes: { 'name.en': text, 'slug.en': text, 'description.en': text, sku: text, 'customFields.erp': text },
-        })}
-      />,
-    );
-    expect(container.textContent).toBe('Name (en), Slug (en), Description (en), SKU, …');
+    // A fifth name rather than «+1».
+    rerender(<EntrySummary entry={entry({ changes: five })} />);
+    expect(container.textContent).toBe('Name (en), Slug (en), Description (en), SKU, Erp');
+    rerender(<EntrySummary entry={entry({ changes: { ...five, enabled: text, 'customFields.note': text } })} />);
+    expect(container.textContent).toBe(nb('Name (en), Slug (en), Description (en), SKU,~+3'));
   });
 
   it('names a single list-like or shortened field without its values', () => {
@@ -315,9 +317,9 @@ describe('EntrySummary, every kind of row', () => {
     const { container, rerender } = render(
       <EntrySummary entry={entry({ changes: { 'customFields.note': { from: 'draft', to: 'final' } } })} />,
     );
-    expect(container.textContent).toBe('Note: draft → final');
+    expect(container.textContent).toBe(nb('Note:~draft~→~final'));
     rerender(<EntrySummary entry={entry({ changes: { 'customFields.minStock': { from: null, to: { Kyiv: 2 } } } })} />);
-    expect(container.textContent).toBe('Min stock: Kyiv: — → 2');
+    expect(container.textContent).toBe(nb('Min stock:~Kyiv:~—~→~2'));
   });
 
   it('lists only what a set change added when nothing was removed', () => {
@@ -326,14 +328,14 @@ describe('EntrySummary, every kind of row', () => {
         entry={entry({ changes: { facetValues: { kind: 'refs', added: ['2'], labels: { 2: 'Color: White' } } } })}
       />,
     );
-    expect(document.body.textContent).toBe('Facet values: +Color: White');
+    expect(document.body.textContent).toBe(nb('Facet values:~+Color: White'));
   });
 
   it('names a created entity by a value of no recorded kind, and shows a dash when no value can name it', () => {
     const { container, rerender } = render(
       <EntrySummary entry={entry({ action: 'created', changes: { 'name.en': { to: 'Oversize tee' } } })} />,
     );
-    expect(container.textContent).toBe('Name (en): Oversize tee');
+    expect(container.textContent).toBe(nb('Name (en):~Oversize tee'));
     rerender(
       <EntrySummary
         entry={entry({
@@ -353,7 +355,7 @@ describe('EntrySummary, every kind of row', () => {
     const run = (meta: Record<string, unknown>) =>
       entry({ entityType: 'Run', action: 'run', source: 'erp', actorType: 'system', meta });
     const { container, rerender } = render(<EntrySummary entry={run({ counts: { updated: 3 }, durationMs: 4200 })} />);
-    expect(container.textContent).toBe('updated: 3 · 4 s');
+    expect(container.textContent).toBe(nb('updated:~3 · 4 s'));
     rerender(<EntrySummary entry={run({ durationMs: 10 })} />);
     expect(container.textContent).toBe('1 s');
   });
@@ -366,7 +368,7 @@ describe('EntrySummary, every kind of row', () => {
         separator=" · "
       />,
     );
-    expect(document.body.textContent).toBe('updated: 3 · failed: 0');
+    expect(document.body.textContent).toBe(nb('updated:~3 · failed:~0'));
   });
 
   it('shows nothing for a host action whose counts are all zero', () => {

@@ -356,21 +356,23 @@ Everything needs the **ReadChangeHistory** permission, and each page shows only 
   action, source and who, pick a period, and two switches: **Collapse bulk operations** (on: a batch is one
   row) and **Hide system changes** (off: collection rules and external runs are listed too). Filters, switches,
   period and the open entry are in the URL, so a view is a link you can send. Clicking a row opens the entry.
-- **Entry window** — who, when, from where, a link to the entity; the changed fields as _field · was · became_;
+- **Entry window** — who, when, from where, a link to the entity, and for a derived entry its cause («Caused
+  by: Product «Tee» · assigned to channel», opening the cause's entry); the changed fields as _field · was · became_;
   the derived entries (variant prices a product save rewrote), a batch's members and a run's rows, each paged;
   for a deleted entity its last state, rendered like a change (rich text as text, money formatted, references
   by name), and **Full history**, the entity's timeline in the same window.
 - **History block** — at the bottom of the product, variant, collection, facet, facet value, asset and
   promotion pages: the entity's history newest first, each item reading what happened, then who and when
   («Updated · Jane Doe · 4 hours ago»), 20 at a time with **Show more**, the changes of its children (variants, facet
-  values, child collections) marked with their name, derived entries folded under their cause, collection
+  values, child collections) marked with their name, derived entries folded under their cause (and on the page
+  of a derived entry's own entity, a line naming the cause that opens its entry), collection
   rules batches with their counts and members (the first 50 inline, **show all** for the rest), and each external run as one collapsed item with its count
   line («Variants: 3 · Rows: 4») that unfolds into this entity's rows — the first 50, with **show all (240)**
   opening the whole run in the entry window. On a page whose entity a run touched alone (a variant), the rows
   show directly.
 - **Insights widget «Recent changes»** — the last 10 rows of the feed's default view in the Insights date
-  range (who, the object's type and name, what changed), with **All changes →** opening the feed for the
-  same period.
+  range (who, the object's type and name, what changed); a click on a line, or Enter on its time, opens the
+  entry, and **All changes →** opens the feed for the same period.
 
 A request that fails shows a translated message with **Retry** in the feed, the entry window, the history
 block and the widget — never the «no changes» text; when the feed's filter options fail to load, the feed says
@@ -388,7 +390,8 @@ did), `richtext` (plain text, the words around each change marked, «show in ful
 changed lines highlighted, facet value ids shown by name; collection filters and promotion conditions and
 actions read as their descriptions with `argument: value` lines, money formatted), `stock` (with the delta),
 and a compacted value as «changed (3,412 → 3,587 characters)». An object of plain values (stock thresholds
-per location, a focal point) reads as `key: value` lines; in a one-line summary (the feed, the widget, a
+per location, a focal point) reads as `key: value` lines, the changed ones marked, whatever its kind when nothing
+renders it; in a one-line summary (the feed, the widget, a
 batch's member rows) a change of one names only the keys that changed: «Min. stock: Kyiv: 0 → 13». A number
 of kind `id`, or under a key named `id` or ending in `Id`, is shown as stored, without digit grouping. A host action with `meta.counts` shows them with
 the count labels, the `total` last: «moved: 3 (total: 48)». Action, batch kind and count labels read best in
@@ -467,8 +470,8 @@ registerChangeHistoryDetailRenderer('stock', StockRows);
 defineDashboardExtension({});
 ```
 
-Without a renderer of its own, a run's rows use the package's table: _SKU / ID · name · scope · was · became
-(±delta)_, sorted by SKU, with the count line «Variants: 3 · Rows: 4». A field nobody labelled shows its key in
+Without a renderer of its own, a run's rows use the package's table: _SKU / ID · name · location · was · became
+(±delta)_ (the location is the row's `scopeLabel`, else its `scope`), sorted by SKU, with the count line «Variants: 3 · Rows: 4». A field nobody labelled shows its key in
 words (`customFields.fullPrice` → «Full price»), a source nobody registered its value in words. A registration
 the dashboard cannot use (an empty key, a missing label, an unknown tone) is reported with `console.error` and
 skipped — it never throws, so a mistake in your extension cannot leave the dashboard blank.
@@ -506,6 +509,7 @@ type ChangeHistoryEntry implements Node {
   batchId: String
   channelId: ID
   derivedFromId: ID
+  derivedFrom: ChangeHistoryEntry # the cause; null when gone or not readable
   changes: JSON
   meta: JSON!
   summary: String! # an English machine summary, not display text
@@ -622,7 +626,8 @@ extend type Query {
   cause); `derivedEntries` lists those still stored, such as cascaded deletions. `batchCounts` counts the members
   `batchMembers` lists — an entry derived from a member counts on that member's `derivedCount`, not as a member
   of its own (an archived product's variant). After compaction `batchCounts` come from the counts the compaction
-  kept.
+  kept. `derivedFrom` is a derived entry's cause, loaded in one query per page; it is `null` when the cause is no
+  longer stored or the user may not read it (its channel or type), even though `derivedFromId` names it.
 
 ### Permissions and channels
 

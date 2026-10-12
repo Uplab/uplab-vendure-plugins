@@ -8,6 +8,9 @@ import {
   countsLine,
   durationSeconds,
   formatDelta,
+  fromTo,
+  labelled,
+  NBSP,
   numericDelta,
   orderCreatedKeys,
   refLabel,
@@ -164,7 +167,7 @@ function BatchObject({ entry, cut }: { entry: ChangeHistoryEntryData; cut: boole
 }
 
 /** «updated: 37» — a count after its label, so that a noun («errors») reads as well as a participle. */
-const countText = (label: string, count: number) => `${label}: ${count}`;
+const countText = (label: string, count: number) => labelled(label, count);
 
 /** «updated: 37, zeroed: 2 · 4 s» — a run's counts with the source's labels. */
 export function RunCounts({
@@ -272,8 +275,10 @@ function ChangesSummary({
     // A per-location map (or any object of scalars): only what changed, «Kyiv: 0 → 13».
     return (
       <span>
-        {labels.field(entry.entityType, keys[0], only)}:{' '}
-        {changed.map(([key, from, to]) => `${key}: ${from} → ${to}`).join(', ')}
+        {labelled(
+          labels.field(entry.entityType, keys[0], only),
+          changed.map(([key, from, to]) => labelled(key, fromTo(from, to))).join(', '),
+        )}
       </span>
     );
   }
@@ -283,8 +288,10 @@ function ChangesSummary({
       (list ?? []).map((id) => `${sign}${refLabel(only.labels, id)}`);
     return (
       <span>
-        {labels.field(entry.entityType, keys[0], only)}:{' '}
-        {[...ids(only.added, '+'), ...ids(only.removed, '−')].join(', ')}
+        {labelled(
+          labels.field(entry.entityType, keys[0], only),
+          [...ids(only.added, '+'), ...ids(only.removed, '−')].join(', '),
+        )}
       </span>
     );
   }
@@ -293,17 +300,23 @@ function ChangesSummary({
     const delta = only.kind === 'stock' ? numericDelta(only.from, only.to) : undefined;
     return (
       <span>
-        {labels.field(entry.entityType, keys[0], only)}: {text(only.from, only, field, 'from')} →{' '}
-        {text(only.to, only, field, 'to')}
-        {delta !== undefined && delta !== 0 && ` (${formatDelta(delta)})`}
+        {labelled(
+          labels.field(entry.entityType, keys[0], only),
+          fromTo(text(only.from, only, field, 'from'), text(only.to, only, field, 'to')),
+        )}
+        {delta !== undefined && delta !== 0 && `${NBSP}(${formatDelta(delta)})`}
       </span>
     );
   }
-  const names = keys.slice(0, MAX_FIELDS).map((key) => labels.field(entry.entityType, key, changes[key]));
+  // The first names and how many more, kept on the last name's line («Assets, Name (en), Slug (en), Enabled,
+  // +2»); a fifth name rather than «+1».
+  const count = keys.length > MAX_FIELDS + 1 ? MAX_FIELDS : keys.length;
+  const names = keys.slice(0, count).map((key) => labels.field(entry.entityType, key, changes[key]));
+  const more = keys.length - count;
   return (
     <span>
       {names.join(', ')}
-      {keys.length > MAX_FIELDS && ', …'}
+      {more > 0 && `,${NBSP}+${more}`}
     </span>
   );
 }
@@ -328,8 +341,10 @@ function CreatedSummary({
   const change = changes[key];
   return (
     <span>
-      {labels.field(entry.entityType, key, change)}:{' '}
-      {text(change.to, change, { entityType: entry.entityType, fieldKey: key })}
+      {labelled(
+        labels.field(entry.entityType, key, change),
+        text(change.to, change, { entityType: entry.entityType, fieldKey: key }),
+      )}
     </span>
   );
 }
