@@ -10,18 +10,17 @@ import {
   TransactionalConnection,
 } from '@vendure/core';
 import { randomUUID } from 'node:crypto';
-import { Brackets, In, SelectQueryBuilder } from 'typeorm';
+import { Brackets, In, Not, SelectQueryBuilder } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { CapturePipeline } from '../capture/capture-pipeline';
 import { CollectionCapture } from '../capture/collection-capture';
 import { ChangeHistoryWriter } from '../capture/entry-writer.service';
 import { DETAIL_COLUMN_LENGTHS, fitColumns, warnClipped } from '../capture/fit';
-import { inChannels, readableChannelIds } from '../read/channel-scope';
+import { chunks, clip } from '../common/utils';
 import {
   CHANGE_HISTORY_ACTIONS,
   CHANGE_HISTORY_ENTITY_TYPES,
   CHANGE_HISTORY_PLUGIN_OPTIONS,
-  DETAIL_CHUNK_SIZE,
   MAX_BATCH_KIND_LENGTH,
   MAX_DETAIL_PAGE,
   MAX_RUN_DETAILS,
@@ -36,6 +35,7 @@ import {
   ChangeHistoryReader,
   ChangeHistoryTimelineArgs,
 } from '../read/change-history-reader.service';
+import { inRunScope } from '../read/read-scope';
 import {
   ChangeHistoryActionInput,
   ChangeHistoryBatchInput,
@@ -43,6 +43,7 @@ import {
   ChangeHistoryCoreEntityType,
   ChangeHistoryDetailInput,
   ChangeHistoryRunInput,
+  ChangeHistoryRunSubject,
   ResolvedChangeHistoryPluginOptions,
 } from '../types';
 import { ChangeHistoryContextService } from './change-history-context.service';
@@ -54,8 +55,6 @@ const PARENT_LOOKUPS = {
   ProductVariant: { parentType: 'Product', entity: ProductVariant, column: 'productId' },
   FacetValue: { parentType: 'Facet', entity: FacetValue, column: 'facetId' },
 } as const;
-
-const clip = (value: string, length: number) => (value.length > length ? value.slice(0, length) : value);
 
 /**
  * @description
@@ -205,6 +204,7 @@ export class ChangeHistoryService {
               durationMs: input.durationMs,
               detailCount: details.length,
               ...(omitted > 0 ? { detailsOmitted: omitted } : {}),
+              ...(input.subject?.label ? { subject: runSubject(input.subject) } : {}),
             },
           },
         ];
@@ -237,10 +237,8 @@ export class ChangeHistoryService {
           });
           warnClipped(`recordRun "${input.source}" detail rows`, clipped);
           const repository = this.connection.getRepository(tctx, ChangeHistoryDetail);
-          for (let i = 0; i < rows.length; i += DETAIL_CHUNK_SIZE) {
-            await repository.insert(
-              rows.slice(i, i + DETAIL_CHUNK_SIZE) as QueryDeepPartialEntity<ChangeHistoryDetail>[],
-            );
+          for (const chunk of chunks(rows)) {
+            await repository.insert(chunk as QueryDeepPartialEntity<ChangeHistoryDetail>[]);
           }
         },
       },
@@ -313,11 +311,12 @@ export class ChangeHistoryService {
     opts: { skip?: number; take?: number } = {},
   ): Promise<PaginatedList<ChangeHistoryDetail>> {
     return this.context.serialize(ctx, async () => {
-      if (!(await this.reader.readable(ctx, entryId))) {
+      const denied = await this.reader.deniedDetailTypes(ctx, entryId);
+      if (denied === null) {
         return { items: [], totalItems: 0 };
       }
       const [items, totalItems] = await this.connection.getRepository(ctx, ChangeHistoryDetail).findAndCount({
-        where: { entryId },
+        where: { entryId, ...(denied.length > 0 ? { entityType: Not(In(denied)) } : {}) },
         order: { id: 'ASC' },
         skip: Math.max(0, Math.trunc(opts.skip ?? 0)),
         take: Math.min(MAX_DETAIL_PAGE, Math.max(1, Math.trunc(opts.take ?? 100))),
@@ -385,7 +384,7 @@ export class ChangeHistoryService {
     };
   }
 
-  /** The subject's detail rows, of runs in the channels `ctx` may read. */
+  /** The subject's detail rows that `ctx` may read (see `ChangeHistoryReader.scopeOf`). */
   private runRows(
     ctx: RequestContext,
     subject: { entityType: string; entityId: ID },
@@ -394,12 +393,7 @@ export class ChangeHistoryService {
       .getRepository(ctx, ChangeHistoryDetail)
       .createQueryBuilder('detail')
       .where(subjectCondition(subject));
-    const channels = readableChannelIds(ctx);
-    if (channels) {
-      query.innerJoin(ChangeHistoryEntry, 'run', 'run.id = detail.entryId');
-      inChannels(query, 'run', channels);
-    }
-    return query;
+    return inRunScope(query, this.reader.scopeOf(ctx));
   }
 
   private async loadRunDetailsForEntity(
@@ -408,9 +402,9 @@ export class ChangeHistoryService {
     entryIds: ID[],
   ): Promise<Map<string, ChangeHistoryDetail[]>> {
     const grouped = new Map<string, ChangeHistoryDetail[]>();
-    for (let i = 0; i < entryIds.length; i += DETAIL_CHUNK_SIZE) {
+    for (const chunk of chunks(entryIds)) {
       const rows = await this.runRows(ctx, subject)
-        .andWhere({ entryId: In(entryIds.slice(i, i + DETAIL_CHUNK_SIZE)) })
+        .andWhere({ entryId: In(chunk) })
         .orderBy('detail.id', 'ASC')
         .getMany();
       for (const row of rows) {
@@ -444,10 +438,10 @@ export class ChangeHistoryService {
       const ids = [
         ...new Set(details.filter((d) => !d.parent && d.entityType === entityType).map((d) => String(d.entityId))),
       ];
-      for (let i = 0; i < ids.length; i += DETAIL_CHUNK_SIZE) {
+      for (const chunk of chunks(ids)) {
         const rows = (await this.connection.getRepository(ctx, lookup.entity).find({
           select: { id: true, [lookup.column]: true },
-          where: { id: In(ids.slice(i, i + DETAIL_CHUNK_SIZE)) },
+          where: { id: In(chunk) },
         })) as unknown as Array<Record<string, ID>>;
         for (const row of rows) {
           parents.set(`${entityType}:${String(row.id)}`, { type: lookup.parentType, id: row[lookup.column] });
@@ -466,6 +460,15 @@ function subjectCondition(subject: { entityType: string; entityId: ID }): Bracke
       .where('(detail.entityType = :subjectType AND detail.entityId = :subjectId)', params)
       .orWhere('(detail.parentType = :subjectType AND detail.parentId = :subjectId)', params),
   );
+}
+
+/** `meta.subject` of a run: the label clipped like an entry label, the id as a string. */
+function runSubject(subject: ChangeHistoryRunSubject): { label: string; type?: string; id?: string } {
+  return {
+    label: clip(subject.label, 255),
+    ...(subject.type ? { type: subject.type } : {}),
+    ...(subject.id != null ? { id: String(subject.id) } : {}),
+  };
 }
 
 function runSummary(counts: Record<string, number>): string {

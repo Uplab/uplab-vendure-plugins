@@ -8,12 +8,14 @@ import {
   TransactionalConnection,
 } from '@vendure/core';
 import { Brackets, EntityManager, In, SelectQueryBuilder } from 'typeorm';
+import { plainActorLabel } from '../actors/built-in-resolvers';
 import { ChangeHistoryWriter } from '../capture/entry-writer.service';
+import { Lru } from '../capture/lru';
+import { chunks } from '../common/utils';
 import {
   CHANGE_HISTORY_ACTIONS,
   CHANGE_HISTORY_ENTITY_TYPES,
   CHANGE_HISTORY_PLUGIN_OPTIONS,
-  DETAIL_CHUNK_SIZE,
   MAX_DETAIL_PAGE,
   MAX_TIMELINE_RUN_DETAILS,
 } from '../constants';
@@ -22,9 +24,18 @@ import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
 import { BatchCount } from '../retention/compact';
 import { ResolvedChangeHistoryPluginOptions } from '../types';
 import { Batcher } from './batcher';
-import { inChannels, readableChannelIds, scopeKey } from './channel-scope';
 import { compareKeys, decodeCursor, encodeCursor, TimelineKey } from './cursor';
 import { currentLabels, deletedRefs, refKey } from './entity-lookups';
+import {
+  deniedTypesIn,
+  ENTRY_COLUMNS,
+  inRunScope,
+  inScope,
+  ReadScope,
+  readScopeOf,
+  scopeAllows,
+  scopeKey,
+} from './read-scope';
 import { ordersTimestampsAsText, timestampAsText, withPrimaryManager } from './sql';
 
 /** One row of a run with the current label of its entity, as the Admin API serves it. */
@@ -91,8 +102,8 @@ interface CachedActor {
 
 interface CachedFilterOptions {
   at: number;
-  /** The scope the values were read for (`undefined`: every channel). */
-  channels: string[] | undefined;
+  /** The scope the values were read for (`undefined`: everything). */
+  scope: ReadScope;
   /** By `type:id`. */
   actors: Map<string, CachedActor>;
   sources: Set<string>;
@@ -129,19 +140,15 @@ interface Candidate {
 const MEMBERSHIP_ACTIONS = [CHANGE_HISTORY_ACTIONS.collection_added, CHANGE_HISTORY_ACTIONS.collection_removed];
 const MAX_TIMELINE_PAGE = 100;
 const FILTER_OPTIONS_TTL_MS = 60_000;
+/** How long the sorted order of a run's rows is reused for its next pages. */
+const RUN_ORDER_TTL_MS = 60_000;
+/** Runs whose order is kept at once. */
+const RUN_ORDER_CACHE_SIZE = 50;
 const DAY_MS = 86_400_000;
 const collator = new Intl.Collator(undefined, { numeric: true });
 
 const clamp = (value: number | undefined | null, fallback: number, max: number) =>
   Math.min(max, Math.max(1, Math.trunc(value ?? fallback)));
-
-function chunks<T>(items: T[]): T[][] {
-  const result: T[][] = [];
-  for (let i = 0; i < items.length; i += DETAIL_CHUNK_SIZE) {
-    result.push(items.slice(i, i + DETAIL_CHUNK_SIZE));
-  }
-  return result;
-}
 
 /** Whether a list filter names `property`, also inside `_and` / `_or`. */
 function filterMentions(filter: unknown, property: string): boolean {
@@ -153,6 +160,27 @@ function filterMentions(filter: unknown, property: string): boolean {
       ? Array.isArray(value) && value.some((nested) => filterMentions(nested, property))
       : key === property,
   );
+}
+
+type SortOrder = 'ASC' | 'DESC';
+
+/**
+ * The client's sort (default: newest first) with `id` appended in the direction of its last key, unless it
+ * names `id` itself. Entries of one transaction share `createdAt` (on Postgres to the microsecond): ordered by
+ * it alone, offset pages over them would skip some rows and repeat others.
+ */
+function stableSort(sort: ListQueryOptions<ChangeHistoryEntry>['sort']): Record<string, SortOrder> {
+  const keys = Object.entries((sort ?? {}) as Record<string, SortOrder | null | undefined>).filter(
+    (entry): entry is [string, SortOrder] => entry[1] === 'ASC' || entry[1] === 'DESC',
+  );
+  if (keys.length === 0) {
+    return { createdAt: 'DESC', id: 'DESC' };
+  }
+  const result = Object.fromEntries(keys);
+  if (!('id' in result)) {
+    result.id = keys[keys.length - 1][1];
+  }
+  return result;
 }
 
 /** Sorted by SKU (or name), then name, then scope — the order a person scans a run in. */
@@ -187,8 +215,10 @@ export class ChangeHistoryReader {
     (entry) => String(entry.id),
     (ctx, entries) => this.loadParentsDeleted(ctx, entries),
   );
-  /** Per channel scope (see `scopeKey`). */
+  /** Per read scope (see `scopeKey`). */
   private readonly filterOptionsCache = new Map<string, CachedFilterOptions>();
+  /** A run's row ids in display order, per run, language and read scope (see `runOrder`). */
+  private readonly runOrders = new Lru<string, { at: number; ids: string[] }>(RUN_ORDER_CACHE_SIZE);
 
   constructor(
     @Inject(CHANGE_HISTORY_PLUGIN_OPTIONS) private readonly options: ResolvedChangeHistoryPluginOptions,
@@ -199,9 +229,25 @@ export class ChangeHistoryReader {
     writer.onSaved((entries) => this.mergeFilterOptions(entries));
   }
 
-  /** Whether `ctx` may read the entry: always, unless the entry is in a channel the user may not read. */
-  async readable(ctx: RequestContext, entryId: ID): Promise<boolean> {
-    return !readableChannelIds(ctx) || (await this.entry(ctx, entryId)) !== null;
+  /**
+   * What `ctx` may read: the entries of the channels in which the user holds `ReadChangeHistory`, of the types
+   * whose read permission (`readPermissions`) they hold there too. `undefined`: everything.
+   */
+  scopeOf(ctx: RequestContext): ReadScope {
+    return readScopeOf(ctx, this.options.readPermissions);
+  }
+
+  /**
+   * The detail-row types `ctx` may not read in the run `entryId` (checked in the run's channel); `null` when
+   * it may not read the run itself.
+   */
+  async deniedDetailTypes(ctx: RequestContext, entryId: ID): Promise<string[] | null> {
+    const scope = this.scopeOf(ctx);
+    if (!scope) {
+      return [];
+    }
+    const entry = await this.entry(ctx, entryId);
+    return entry ? deniedTypesIn(scope, entry.channelId) : null;
   }
 
   /**
@@ -214,15 +260,14 @@ export class ChangeHistoryReader {
     options: ListQueryOptions<ChangeHistoryEntry> = {},
     scope: { derivedFromId?: ID; batchId?: string } = {},
   ): Promise<PaginatedList<ChangeHistoryEntry>> {
-    const sort =
-      options.sort && Object.keys(options.sort).length > 0 ? options.sort : { createdAt: 'DESC', id: 'DESC' };
+    const sort = stableSort(options.sort);
     const query = this.listQueryBuilder.build(
       ChangeHistoryEntry,
       { ...options, sort } as ListQueryOptions<ChangeHistoryEntry>,
       { ctx },
     );
     const alias = query.alias;
-    inChannels(query, alias, readableChannelIds(ctx));
+    inScope(query, { channel: `${alias}.channelId`, type: `${alias}.entityType` }, this.scopeOf(ctx));
     if (scope.derivedFromId !== undefined) {
       query.andWhere(`${alias}.derivedFromId = :chDerivedFromId`, { chDerivedFromId: scope.derivedFromId });
     } else if (!filterMentions(options.filter, 'derivedFromId')) {
@@ -237,13 +282,13 @@ export class ChangeHistoryReader {
     return { items, totalItems };
   }
 
-  /** One entry, `null` when it does not exist or belongs to a channel the user may not read. */
+  /** One entry, `null` when it does not exist or the user may not read it (see `scopeOf`). */
   entry(ctx: RequestContext, id: ID): Promise<ChangeHistoryEntry | null> {
     const query = this.connection
       .getRepository(ctx, ChangeHistoryEntry)
       .createQueryBuilder('entry')
       .where('entry.id = :id', { id });
-    return inChannels(query, 'entry', readableChannelIds(ctx)).getOne();
+    return inScope(query, ENTRY_COLUMNS, this.scopeOf(ctx)).getOne();
   }
 
   /**
@@ -259,17 +304,17 @@ export class ChangeHistoryReader {
     const includeChildren = args.includeChildren !== false;
     const subject = { subjectType: args.entityType, subjectId: String(args.entityId) };
     const driver = this.connection.rawConnection.options.type;
-    const channels = readableChannelIds(ctx);
+    const scope = this.scopeOf(ctx);
     return withPrimaryManager(this.connection, ctx, async (manager) => {
       const candidates: Candidate[] = [
-        ...(await this.entryBranch(manager, channels, after, first + 1, (query) =>
+        ...(await this.entryBranch(manager, scope, after, first + 1, (query) =>
           query.where('entry.entityType = :subjectType AND entry.entityId = :subjectId', subject),
         )),
       ];
-      const runKeys = await this.runBranch(manager, channels, 'entity', subject, after, first + 1);
+      const runKeys = await this.runBranch(manager, scope, 'entity', subject, after, first + 1);
       if (includeChildren) {
         candidates.push(
-          ...(await this.entryBranch(manager, channels, after, first + 1, (query) => {
+          ...(await this.entryBranch(manager, scope, after, first + 1, (query) => {
             query
               .where('entry.parentType = :subjectType AND entry.parentId = :subjectId', subject)
               .andWhere('entry.derivedFromId IS NULL');
@@ -279,7 +324,7 @@ export class ChangeHistoryReader {
             }
           })),
         );
-        runKeys.push(...(await this.runBranch(manager, channels, 'parent', subject, after, first + 1)));
+        runKeys.push(...(await this.runBranch(manager, scope, 'parent', subject, after, first + 1)));
       }
       candidates.push(...(await this.runCandidates(manager, runKeys)));
 
@@ -291,7 +336,7 @@ export class ChangeHistoryReader {
       const textual = ordersTimestampsAsText(driver);
       const sorted = [...byId.values()].sort((a, b) => compareKeys(b.key, a.key, textual));
       const page = sorted.slice(0, first);
-      await this.fillDetails(ctx, manager, subject, includeChildren, page);
+      await this.fillDetails(ctx, manager, scope, subject, includeChildren, page);
       const last = page.at(-1);
       return {
         items: page.map((candidate) => candidate.entry),
@@ -301,7 +346,11 @@ export class ChangeHistoryReader {
     });
   }
 
-  /** A run's rows with current labels, sorted by SKU (or name), name, scope; paged (`take` 1–500, default 100). */
+  /**
+   * A run's rows with current labels, sorted by SKU (or name), name, scope; paged (`take` 1–500, default 100).
+   * Only the rows of the types the user may read. The order needs every row's current label, so it is worked
+   * out once and kept for a minute (`runOrder`); each page then loads and labels its own rows only.
+   */
   async runDetails(
     ctx: RequestContext,
     entryId: ID,
@@ -309,13 +358,60 @@ export class ChangeHistoryReader {
   ): Promise<PaginatedList<ChangeHistoryDetailView>> {
     const skip = Math.max(0, Math.trunc(opts.skip ?? 0));
     const take = clamp(opts.take, 100, MAX_DETAIL_PAGE);
-    const manager = this.connection.getRepository(ctx, ChangeHistoryDetail).manager;
-    if (!(await this.readable(ctx, entryId))) {
+    const denied = await this.deniedDetailTypes(ctx, entryId);
+    if (denied === null) {
       return { items: [], totalItems: 0 };
     }
-    const rows = await manager.getRepository(ChangeHistoryDetail).find({ where: { entryId }, order: { id: 'ASC' } });
-    const views = await this.detailViews(ctx, manager, rows);
-    return { items: views.slice(skip, skip + take), totalItems: views.length };
+    const manager = this.connection.getRepository(ctx, ChangeHistoryDetail).manager;
+    const order = await this.runOrder(ctx, manager, entryId, denied);
+    const pageIds = order.slice(skip, skip + take);
+    const rows: ChangeHistoryDetail[] = [];
+    for (const chunk of chunks(pageIds)) {
+      rows.push(...(await manager.getRepository(ChangeHistoryDetail).find({ where: { id: In(chunk) } })));
+    }
+    const position = new Map(pageIds.map((id, index) => [id, index]));
+    const views = (await this.detailViews(ctx, manager, rows)).sort(
+      (a, b) => position.get(String(a.id))! - position.get(String(b.id))!,
+    );
+    return { items: views, totalItems: order.length };
+  }
+
+  /**
+   * The ids of a run's rows (of the types not `denied`) in display order: worked out from the rows without
+   * their values and the current labels, then reused for a minute per run, language and denied types. Run
+   * rows never change once written.
+   */
+  private async runOrder(
+    ctx: RequestContext,
+    manager: EntityManager,
+    entryId: ID,
+    denied: string[],
+  ): Promise<string[]> {
+    const key = `${String(entryId)}|${ctx.languageCode}|${denied.join(',')}`;
+    const now = Date.now();
+    const cached = this.runOrders.get(key);
+    if (cached && now - cached.at < RUN_ORDER_TTL_MS) {
+      return cached.ids;
+    }
+    const query = manager
+      .getRepository(ChangeHistoryDetail)
+      .createQueryBuilder('detail')
+      .select([
+        'detail.id',
+        'detail.entryId',
+        'detail.entityType',
+        'detail.entityId',
+        'detail.scope',
+        'detail.scopeLabel',
+      ])
+      .where('detail.entryId = :entryId', { entryId });
+    if (denied.length > 0) {
+      query.andWhere('detail.entityType NOT IN (:...deniedTypes)', { deniedTypes: denied });
+    }
+    const rows = await query.getMany();
+    const ids = (await this.detailViews(ctx, manager, rows)).map((view) => String(view.id));
+    this.runOrders.set(key, { at: now, ids });
+    return ids;
   }
 
   /**
@@ -326,21 +422,21 @@ export class ChangeHistoryReader {
    */
   async filterOptions(ctx: RequestContext): Promise<ChangeHistoryFilterOptions> {
     const now = Date.now();
-    const channels = readableChannelIds(ctx);
-    const key = scopeKey(channels);
+    const scope = this.scopeOf(ctx);
+    const key = scopeKey(scope);
     const cached = this.filterOptionsCache.get(key);
     if (cached && now - cached.at < FILTER_OPTIONS_TTL_MS) {
       return filterOptionsOf(cached);
     }
     const since = new Date(now - this.options.retention.summaryDays * DAY_MS);
     const recent = () =>
-      inChannels(
+      inScope(
         this.connection
           .getRepository(ctx, ChangeHistoryEntry)
           .createQueryBuilder('entry')
           .where('entry.createdAt >= :since', { since }),
-        'entry',
-        channels,
+        ENTRY_COLUMNS,
+        scope,
       );
     const distinct = async (column: 'source' | 'action' | 'entityType') =>
       new Set(
@@ -362,11 +458,12 @@ export class ChangeHistoryReader {
     const actors = new Map<string, CachedActor>();
     for (const row of actorRows) {
       const at = row.lastAt instanceof Date ? row.lastAt.getTime() : Date.parse(String(row.lastAt).replace(' ', 'T'));
-      rememberActor(actors, { id: String(row.id), type: row.type, label: row.label ?? String(row.id), at });
+      const label = plainActorLabel(row.type, row.label) ?? String(row.id);
+      rememberActor(actors, { id: String(row.id), type: row.type, label, at });
     }
     const fresh: CachedFilterOptions = {
       at: now,
-      channels,
+      scope,
       actors,
       sources: await distinct('source'),
       actions: await distinct('action'),
@@ -381,7 +478,7 @@ export class ChangeHistoryReader {
     const now = Date.now();
     for (const cached of this.filterOptionsCache.values()) {
       for (const entry of entries) {
-        if (cached.channels && !cached.channels.includes(String(entry.channelId))) {
+        if (!scopeAllows(cached.scope, entry.channelId, entry.entityType)) {
           continue;
         }
         cached.sources.add(entry.source);
@@ -389,7 +486,8 @@ export class ChangeHistoryReader {
         cached.entityTypes.add(entry.entityType);
         if (entry.actorId != null) {
           const id = String(entry.actorId);
-          rememberActor(cached.actors, { id, type: entry.actorType, label: entry.actorLabel ?? id, at: now });
+          const label = plainActorLabel(entry.actorType, entry.actorLabel) ?? id;
+          rememberActor(cached.actors, { id, type: entry.actorType, label, at: now });
         }
       }
     }
@@ -430,7 +528,7 @@ export class ChangeHistoryReader {
 
   private async entryBranch(
     manager: EntityManager,
-    channels: string[] | undefined,
+    scope: ReadScope,
     after: TimelineKey | undefined,
     limit: number,
     where: (query: SelectQueryBuilder<ChangeHistoryEntry>) => void,
@@ -440,7 +538,7 @@ export class ChangeHistoryReader {
       .createQueryBuilder('entry')
       .addSelect(this.asText('entry.createdAt'), 'cursor_created_at');
     where(query);
-    inChannels(query, 'entry', channels);
+    inScope(query, ENTRY_COLUMNS, scope);
     if (after) {
       query.andWhere('(entry.createdAt < :afterAt OR (entry.createdAt = :afterAt AND entry.id < :afterId))', {
         afterAt: after.createdAt,
@@ -463,7 +561,7 @@ export class ChangeHistoryReader {
   /** Runs with a row of the subject (`entity`) or of one of its children (`parent`): `(createdAt, entryId)`. */
   private async runBranch(
     manager: EntityManager,
-    channels: string[] | undefined,
+    scope: ReadScope,
     side: 'entity' | 'parent',
     subject: { subjectType: string; subjectId: string },
     after: TimelineKey | undefined,
@@ -476,11 +574,7 @@ export class ChangeHistoryReader {
       .select('detail.entryId', 'entryId')
       .addSelect(this.asText('detail.createdAt'), 'createdAt')
       .where(`detail.${typeColumn} = :subjectType AND detail.${idColumn} = :subjectId`, subject);
-    if (channels) {
-      // A run belongs to the channel of its entry.
-      query.innerJoin(ChangeHistoryEntry, 'run', 'run.id = detail.entryId');
-      inChannels(query, 'run', channels);
-    }
+    inRunScope(query, scope);
     if (after) {
       query.andWhere('(detail.createdAt < :afterAt OR (detail.createdAt = :afterAt AND detail.entryId < :afterId))', {
         afterAt: after.createdAt,
@@ -516,6 +610,7 @@ export class ChangeHistoryReader {
   private async fillDetails(
     ctx: RequestContext,
     manager: EntityManager,
+    scope: ReadScope,
     subject: { subjectType: string; subjectId: string },
     includeChildren: boolean,
     page: Candidate[],
@@ -525,18 +620,21 @@ export class ChangeHistoryReader {
       return;
     }
     const ofSubject = (entryIds: ID[]) =>
-      manager
-        .getRepository(ChangeHistoryDetail)
-        .createQueryBuilder('detail')
-        .where({ entryId: In(entryIds) })
-        .andWhere(
-          new Brackets((query) => {
-            query.where('(detail.entityType = :subjectType AND detail.entityId = :subjectId)', subject);
-            if (includeChildren) {
-              query.orWhere('(detail.parentType = :subjectType AND detail.parentId = :subjectId)', subject);
-            }
-          }),
-        );
+      inRunScope(
+        manager
+          .getRepository(ChangeHistoryDetail)
+          .createQueryBuilder('detail')
+          .where({ entryId: In(entryIds) })
+          .andWhere(
+            new Brackets((query) => {
+              query.where('(detail.entityType = :subjectType AND detail.entityId = :subjectId)', subject);
+              if (includeChildren) {
+                query.orWhere('(detail.parentType = :subjectType AND detail.parentId = :subjectId)', subject);
+              }
+            }),
+          ),
+        scope,
+      );
     const counts = await ofSubject(runs.map((candidate) => candidate.entry.id))
       .select('detail.entryId', 'entryId')
       .addSelect('COUNT(*)', 'total')
@@ -616,13 +714,18 @@ export class ChangeHistoryReader {
       compactedAway.set(String(entry.id), typeof snapshot === 'number' ? snapshot : 0);
     }
     const result = new Map(compactedAway);
+    const scope = this.scopeOf(ctx);
     for (const chunk of chunks(entries.map((entry) => entry.id))) {
-      const rows = await this.connection
-        .getRepository(ctx, ChangeHistoryEntry)
-        .createQueryBuilder('entry')
-        .select('entry.derivedFromId', 'derivedFromId')
-        .addSelect('COUNT(*)', 'count')
-        .where({ derivedFromId: In(chunk) })
+      const rows = await inScope(
+        this.connection
+          .getRepository(ctx, ChangeHistoryEntry)
+          .createQueryBuilder('entry')
+          .select('entry.derivedFromId', 'derivedFromId')
+          .addSelect('COUNT(*)', 'count')
+          .where({ derivedFromId: In(chunk) }),
+        ENTRY_COLUMNS,
+        scope,
+      )
         .groupBy('entry.derivedFromId')
         .getRawMany<{ derivedFromId: unknown; count: string | number }>();
       for (const row of rows) {
@@ -636,25 +739,34 @@ export class ChangeHistoryReader {
   private async loadBatchCounts(ctx: RequestContext, heads: ChangeHistoryEntry[]): Promise<Map<string, BatchCount[]>> {
     const result = new Map<string, BatchCount[]>();
     const live = new Map<string, string[]>();
+    const scope = this.scopeOf(ctx);
     for (const head of heads) {
       const snapshot = head.compactedAt ? head.meta?.batchCounts : undefined;
       if (Array.isArray(snapshot)) {
-        result.set(String(head.id), snapshot as BatchCount[]);
+        // The members' types the reader may not read are left out, like the members themselves.
+        result.set(
+          String(head.id),
+          (snapshot as BatchCount[]).filter((count) => scopeAllows(scope, head.channelId, count.entityType)),
+        );
       } else {
         result.set(String(head.id), []);
         live.set(head.batchId!, [...(live.get(head.batchId!) ?? []), String(head.id)]);
       }
     }
     for (const chunk of chunks([...live.keys()])) {
-      const rows = await this.connection
-        .getRepository(ctx, ChangeHistoryEntry)
-        .createQueryBuilder('entry')
-        .select('entry.batchId', 'batchId')
-        .addSelect('entry.entityType', 'entityType')
-        .addSelect('entry.action', 'action')
-        .addSelect('COUNT(*)', 'count')
-        .where({ batchId: In(chunk) })
-        .andWhere('entry.entityType != :batch', { batch: CHANGE_HISTORY_ENTITY_TYPES.Batch })
+      const rows = await inScope(
+        this.connection
+          .getRepository(ctx, ChangeHistoryEntry)
+          .createQueryBuilder('entry')
+          .select('entry.batchId', 'batchId')
+          .addSelect('entry.entityType', 'entityType')
+          .addSelect('entry.action', 'action')
+          .addSelect('COUNT(*)', 'count')
+          .where({ batchId: In(chunk) })
+          .andWhere('entry.entityType != :batch', { batch: CHANGE_HISTORY_ENTITY_TYPES.Batch }),
+        ENTRY_COLUMNS,
+        scope,
+      )
         .groupBy('entry.batchId')
         .addGroupBy('entry.entityType')
         .addGroupBy('entry.action')

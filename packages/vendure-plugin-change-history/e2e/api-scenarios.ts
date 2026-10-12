@@ -311,7 +311,8 @@ export function apiScenarios(env: ApiEnv): void {
         expect(options.actors).toEqual(
           expect.arrayContaining([
             { id: encode(901), type: 'admin', label: 'Feed Admin' },
-            { id: encode(901), type: 'api_key', label: 'Feed Admin (API key)' },
+            // A row of a pre-release version said "Feed Admin (API key)": read as the plain name.
+            { id: encode(901), type: 'api_key', label: 'Feed Admin' },
             { id: encode(902), type: 'admin', label: 'Bulk Admin' },
           ]),
         );
@@ -645,6 +646,198 @@ export function apiScenarios(env: ApiEnv): void {
       );
     });
 
+    it('pages the members of a batch written in one transaction without a gap or a repeat', async () => {
+      const ctx = await superadminCtx(env.app());
+      // On Postgres the rows share one timestamp; ordered by it alone, 300 of them paged by 20 came back as
+      // 294 distinct ids (the top-N sort orders ties differently per LIMIT). Smaller batches may not show it.
+      const size = 300;
+      await env
+        .app()
+        .get(TransactionalConnection)
+        .withTransaction(ctx, (tctx) =>
+          history().runBatch(tctx, { kind: 'm1_paging', label: 'm1-batch' }, async (bctx) => {
+            for (let step = 0; step < size; step++) {
+              await history().recordAction(bctx, {
+                entityType: 'Product',
+                entityId: `m1-${step}`,
+                entityLabel: `m1-member-${step}`,
+                action: 'm1_step',
+              });
+            }
+          }),
+        );
+      const [head] = await entriesWhere(env.app(), { entityLabel: 'm1-batch' });
+      const pages = async (read: (skip: number) => Promise<{ items: Array<{ id: string }>; totalItems: number }>) => {
+        const ids: string[] = [];
+        for (let skip = 0; skip < size + 20; skip += 20) {
+          const page = await read(skip);
+          expect(page.totalItems).toBe(size);
+          ids.push(...page.items.map((item) => item.id));
+        }
+        return ids;
+      };
+      for (const sort of [{ createdAt: 'ASC' }, { createdAt: 'DESC' }]) {
+        const members = await pages(
+          async (skip) =>
+            (await query(CHANGE_HISTORY_ENTRY, { id: encode(head.id), members: { skip, take: 20, sort } }))
+              .changeHistoryEntry.batchMembers,
+        );
+        expect(members).toHaveLength(size);
+        expect(new Set(members).size).toBe(size);
+        const feedIds = await pages((skip) =>
+          feed({ batchId: { eq: head.batchId }, entityType: { notEq: 'Batch' } }, { skip, take: 20, sort }),
+        );
+        expect(new Set(feedIds).size).toBe(size);
+      }
+    });
+
+    it('names no batch recorded without a label: its kind is a key for the client to label', async () => {
+      const ctx = await superadminCtx(env.app());
+      await history().runBatch(ctx, { kind: 'nolabel_kind' }, (bctx) =>
+        history().recordAction(bctx, {
+          entityType: 'Product',
+          entityId: 'nolabel-1',
+          entityLabel: 'nolabel-member',
+          action: 'nolabel_action',
+        }),
+      );
+      const [member] = await entriesWhere(env.app(), { entityLabel: 'nolabel-member' });
+      const [head] = await entriesWhere(env.app(), { batchId: member.batchId, entityType: 'Batch' });
+      // Stored with the kind, for any other reader of the table.
+      expect(head).toMatchObject({ entityLabel: 'nolabel_kind', meta: { kind: 'nolabel_kind' } });
+      const read = (await query(CHANGE_HISTORY_ENTRY, { id: encode(head.id) })).changeHistoryEntry as Item;
+      expect(read).toMatchObject({ entityType: 'Batch', entityLabel: null, meta: { kind: 'nolabel_kind' } });
+      // A labelled batch keeps its label.
+      expect((await feed({ batchId: { eq: 'bulk_edit:p2f' }, entityType: { eq: 'Batch' } })).items[0]).toMatchObject({
+        entityLabel: 'p2f-batch',
+      });
+    });
+
+    it('serves only the entity types whose read permission the reader holds, in every query', async () => {
+      const ctx = await superadminCtx(env.app());
+      const channelId = String(ctx.channelId);
+      const head = await insert({
+        entityType: 'Batch',
+        entityId: 'm7-batch',
+        entityLabel: 'm7-batch',
+        action: 'batch',
+        batchId: 'bulk_edit:m7',
+        channelId,
+        meta: { kind: 'bulk_edit', label: 'm7-batch' },
+      });
+      const product = await insert({
+        entityType: 'Product',
+        entityId: 'm7-product',
+        entityLabel: 'm7-product',
+        action: 'updated',
+        batchId: 'bulk_edit:m7',
+        channelId,
+        actorId: '977',
+        actorLabel: 'M7 Cataloguer',
+      });
+      const promotion = await insert({
+        entityType: 'Promotion',
+        entityId: 'm7-promotion',
+        entityLabel: 'm7-promotion',
+        action: 'm7_promotion_action',
+        source: 'm7_promotion_source',
+        batchId: 'bulk_edit:m7',
+        channelId,
+        derivedFromId: null,
+        changes: { couponCode: { kind: 'text', from: 'OLD', to: 'SECRET' } },
+      });
+      await insert({
+        entityType: 'Promotion',
+        entityId: 'm7-promotion-derived',
+        entityLabel: 'm7-promotion-derived',
+        action: 'updated',
+        channelId,
+        derivedFromId: product.id,
+      });
+      await insert({
+        entityType: 'E2eSecret',
+        entityId: 'm7-s',
+        entityLabel: 'm7-secret',
+        action: 'updated',
+        channelId,
+      });
+      await insert({ entityType: 'E2eOpen', entityId: 'm7-o', entityLabel: 'm7-open', action: 'updated', channelId });
+      await history().recordRun(ctx, {
+        source: 'm7_sync',
+        label: 'm7-run',
+        counts: { updated: 2 },
+        details: [
+          { entityType: 'Product', entityId: 'm7-product', kind: 'field', from: 1, to: 2 },
+          { entityType: 'Promotion', entityId: 'm7-promotion', kind: 'field', from: 'A', to: 'B' },
+        ],
+      });
+      const [run] = await entriesWhere(env.app(), { entityLabel: 'm7-run' });
+      const { createRole } = await query(CREATE_ROLE, {
+        input: {
+          code: 'm7-cataloguer',
+          description: 'm7-cataloguer',
+          permissions: ['ReadChangeHistory', 'ReadCatalog'],
+        },
+      });
+      await query(CREATE_ADMINISTRATOR, {
+        input: {
+          firstName: 'M7',
+          lastName: 'Cataloguer',
+          emailAddress: 'm7-cataloguer@example.com',
+          password: 'm7-cataloguer',
+          roleIds: [createRole.id],
+        },
+      });
+      const labels = async () =>
+        (await feed({ entityLabel: { contains: 'm7-' }, derivedFromId: { isNull: false } }, {})).items
+          .concat((await feed({ entityLabel: { contains: 'm7-' } })).items)
+          .map((item) => item.entityLabel)
+          .sort();
+      const readEntry = async (id: unknown) =>
+        (await query(CHANGE_HISTORY_ENTRY, { id: encode(id), members: { take: 10 } })).changeHistoryEntry;
+      const runRows = async () =>
+        (await query(CHANGE_HISTORY_RUN_DETAILS, { entryId: encode(run.id) })).changeHistoryRunDetails.items.map(
+          (row: Item) => row.entityType,
+        );
+
+      expect(await labels()).toEqual([
+        'm7-batch',
+        'm7-open',
+        'm7-product',
+        'm7-promotion',
+        'm7-promotion-derived',
+        'm7-run',
+        'm7-secret',
+      ]);
+      expect(await runRows()).toEqual(['Product', 'Promotion']);
+      try {
+        await env.adminClient.asUserWithCredentials('m7-cataloguer@example.com', 'm7-cataloguer');
+        // Promotions need ReadPromotion and the host's E2eSecret ReadSettings; batches, runs and unlisted types
+        // need ReadChangeHistory only.
+        expect(await labels()).toEqual(['m7-batch', 'm7-open', 'm7-product', 'm7-run']);
+        expect(await readEntry(promotion.id)).toBeNull();
+        const readHead = await readEntry(head.id);
+        expect(readHead.batchMembers).toEqual({
+          items: [{ id: encode(product.id), entityLabel: 'm7-product' }],
+          totalItems: 1,
+        });
+        expect(readHead.batchCounts).toEqual([{ entityType: 'Product', action: 'updated', count: 1 }]);
+        expect((await readEntry(product.id)).derivedCount).toBe(0);
+        expect(await runRows()).toEqual(['Product']);
+        expect((await timeline({ entityType: 'Promotion', entityId: 'm7-promotion' })).items).toEqual([]);
+        const productTimeline = await timeline({ entityType: 'Product', entityId: 'm7-product' });
+        expect(productTimeline.items.map((item) => item.entityLabel)).toEqual(['m7-run', 'm7-product']);
+        expect(productTimeline.items[0].details.map((row: Item) => row.entityType)).toEqual(['Product']);
+        const { changeHistoryFilterOptions: options } = await query(CHANGE_HISTORY_FILTER_OPTIONS);
+        expect(options.entityTypes).not.toEqual(expect.arrayContaining(['Promotion']));
+        expect(options.entityTypes).not.toContain('E2eSecret');
+        expect(options.actions).not.toContain('m7_promotion_action');
+        expect(options.sources).not.toContain('m7_promotion_source');
+      } finally {
+        await env.adminClient.asSuperAdmin();
+      }
+    });
+
     it('needs ReadChangeHistory for every query', async () => {
       const administrator = async (code: string, permissions: string[]) => {
         const { createRole } = await query(CREATE_ROLE, { input: { code, description: code, permissions } });
@@ -718,7 +911,7 @@ export function apiScenarios(env: ApiEnv): void {
         input: {
           code: 'p3-scope-reader',
           description: 'p3-scope-reader',
-          permissions: ['ReadChangeHistory'],
+          permissions: ['ReadChangeHistory', 'ReadCatalog'],
           channelIds: [createChannel.id],
         },
       });

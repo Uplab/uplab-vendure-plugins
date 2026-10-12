@@ -2,7 +2,7 @@ import { ListQueryBuilder, Product, RequestContext, TransactionalConnection, Typ
 import { Brackets, WhereExpressionBuilder } from 'typeorm';
 import { describe, expect, it, vi } from 'vitest';
 import { ChangeHistoryWriter } from '../capture/entry-writer.service';
-import { CHANGE_HISTORY_ENTITY_TYPES } from '../constants';
+import { CHANGE_HISTORY_ENTITY_TYPES, CHANGE_HISTORY_READ_PERMISSIONS } from '../constants';
 import { ChangeHistoryDetail } from '../entities/change-history-detail.entity';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
 import { ResolvedChangeHistoryPluginOptions } from '../types';
@@ -95,15 +95,20 @@ function setup(listQueryBuilder = {} as ListQueryBuilder) {
       saved = listener;
     },
   } as unknown as ChangeHistoryWriter;
-  const options = { retention: { summaryDays: 30 } } as unknown as ResolvedChangeHistoryPluginOptions;
+  const options = {
+    retention: { summaryDays: 30 },
+    readPermissions: CHANGE_HISTORY_READ_PERMISSIONS,
+  } as unknown as ResolvedChangeHistoryPluginOptions;
   const reader = new ChangeHistoryReader(options, db.connection, listQueryBuilder, writer);
   return { reader, db, save: (entries: ChangeHistoryEntry[]) => saved(entries) };
 }
 
 const system = () => ({}) as RequestContext;
-const inChannel2 = () =>
+const inChannel2 = (...permissions: string[]) =>
   ({
-    session: { user: { channelPermissions: [{ id: 2, permissions: ['ReadChangeHistory'] }] } },
+    session: {
+      user: { channelPermissions: [{ id: 2, permissions: ['ReadChangeHistory', 'ReadCatalog', ...permissions] }] },
+    },
   }) as unknown as RequestContext;
 
 /** An entry with only the columns a test needs (stored values as the database returns them). */
@@ -133,11 +138,20 @@ describe('ChangeHistoryReader.list', () => {
     await expect(reader.list(system())).resolves.toEqual({ items: [{ id: 1 }], totalItems: 1 });
     await reader.list(system(), { sort: {} });
     await reader.list(system(), { sort: { id: 'ASC' } });
+    await reader.list(system(), { sort: { createdAt: 'ASC' } });
+    await reader.list(system(), { sort: { entityLabel: 'ASC', createdAt: 'DESC' } });
 
     const sorts = build.mock.calls
       .map((call) => (call as unknown[])[1])
       .map((options) => (options as { sort: unknown }).sort);
-    expect(sorts).toEqual([{ createdAt: 'DESC', id: 'DESC' }, { createdAt: 'DESC', id: 'DESC' }, { id: 'ASC' }]);
+    // `id` breaks the ties of one transaction's shared `createdAt`, in the direction of the last key.
+    expect(sorts).toEqual([
+      { createdAt: 'DESC', id: 'DESC' },
+      { createdAt: 'DESC', id: 'DESC' },
+      { id: 'ASC' },
+      { createdAt: 'ASC', id: 'ASC' },
+      { entityLabel: 'ASC', createdAt: 'DESC', id: 'DESC' },
+    ]);
     expect(fake.calls).toContainEqual(['andWhere', 'changehistoryentry.derivedFromId IS NULL']);
   });
 });
@@ -214,18 +228,42 @@ describe('ChangeHistoryReader.timeline', () => {
 });
 
 describe('ChangeHistoryReader.runDetails', () => {
-  it('pages the sorted rows, 100 from the start by default', async () => {
+  it('pages the sorted rows, 100 from the start by default, sorting the run once', async () => {
     const { reader, db } = setup();
     const rows = [detail(1, 7, 'c'), detail(2, 7, 'a'), detail(3, 7, 'b')];
-    db.queueFound(rows, rows);
+    const order = fakeQuery({ getMany: rows }, 'detail');
+    db.queue(order);
+    db.queueFound([rows[2]], [rows[0], rows[1], rows[2]]);
 
     const page = await reader.runDetails(system(), 7, { skip: 1, take: 1 });
     expect(page.totalItems).toBe(3);
     expect(page.items.map((view) => view.entityId)).toEqual(['b']);
+    expect(order.calls).toContainEqual(['where', 'detail.entryId = :entryId', { entryId: 7 }]);
+    // Only the page's rows are loaded with their values.
+    expect(db.find).toHaveBeenLastCalledWith({ where: { id: expect.objectContaining({ _value: ['3'] }) } });
 
+    // The next page reuses the order: no second sorting query is queued.
     const all = await reader.runDetails(system(), 7);
     expect(all.items.map((view) => view.entityId)).toEqual(['a', 'b', 'c']);
-    expect(db.find).toHaveBeenCalledWith({ where: { entryId: 7 }, order: { id: 'ASC' } });
+    expect(db.pending()).toBe(0);
+  });
+
+  it('leaves out the rows of types the reader may not read, and every row of a run they may not read', async () => {
+    const { reader, db } = setup();
+    const run = entry({ id: 7, entityType: 'Run', channelId: '2' });
+    const order = fakeQuery({ getMany: [detail(1, 7, 'a')] }, 'detail');
+    db.queue(fakeQuery({ getOne: run }), order, fakeQuery({ getOne: null }));
+    db.queueFound([detail(1, 7, 'a')]);
+
+    const page = await reader.runDetails(inChannel2(), 7);
+    expect(page.totalItems).toBe(1);
+    expect(order.calls).toContainEqual([
+      'andWhere',
+      'detail.entityType NOT IN (:...deniedTypes)',
+      { deniedTypes: ['Promotion'] },
+    ]);
+    await expect(reader.runDetails(inChannel2(), 8)).resolves.toEqual({ items: [], totalItems: 0 });
+    expect(db.pending()).toBe(0);
   });
 });
 
@@ -288,16 +326,27 @@ describe('ChangeHistoryReader.filterOptions', () => {
         actorLabel: 'Zed',
       }),
       entry({ channelId: 2, source: 'job', action: 'deleted', entityType: 'Asset', actorId: null }),
+      // The reader of channel 2 may not read promotions; a legacy API-key label reads as the plain name.
+      entry({
+        channelId: 2,
+        source: 'api_key',
+        action: 'promoted',
+        entityType: 'Promotion',
+        actorId: 11,
+        actorType: 'api_key',
+        actorLabel: 'Key Owner (API key)',
+      }),
     ]);
 
     await expect(reader.filterOptions(system())).resolves.toEqual({
       actors: [
         { id: '9', type: 'administrator', label: '9' },
+        { id: '11', type: 'api_key', label: 'Key Owner' },
         { id: '10', type: 'administrator', label: 'Zed' },
       ],
-      sources: ['admin-api', 'job', 'odoo'],
-      actions: ['created', 'deleted', 'updated'],
-      entityTypes: ['Asset', 'Facet', 'Product'],
+      sources: ['admin-api', 'api_key', 'job', 'odoo'],
+      actions: ['created', 'deleted', 'promoted', 'updated'],
+      entityTypes: ['Asset', 'Facet', 'Product', 'Promotion'],
     });
     await expect(reader.filterOptions(inChannel2())).resolves.toEqual({
       actors: [{ id: '10', type: 'administrator', label: 'Zed' }],
@@ -319,6 +368,24 @@ describe('ChangeHistoryReader field values', () => {
     await expect(Promise.all([reader.derivedCount(ctx, compacted), reader.derivedCount(ctx, live)])).resolves.toEqual([
       5, 0,
     ]);
+  });
+
+  it("leaves the members of types the reader may not read out of a compacted batch's counts", async () => {
+    const { reader } = setup();
+    const snapshot = [
+      { entityType: 'Product', action: 'updated', count: 4 },
+      { entityType: 'Promotion', action: 'updated', count: 2 },
+    ];
+    const head = entry({
+      id: 2,
+      entityType: CHANGE_HISTORY_ENTITY_TYPES.Batch,
+      batchId: 'b2',
+      channelId: '2',
+      compactedAt: new Date(),
+      meta: { batchCounts: snapshot },
+    });
+    await expect(reader.batchCountsOf(inChannel2(), head)).resolves.toEqual([snapshot[0]]);
+    await expect(reader.batchCountsOf(inChannel2('ReadPromotion'), head)).resolves.toEqual(snapshot);
   });
 
   it("counts a batch's members live, or from the snapshot once compacted, and nothing for other entries", async () => {

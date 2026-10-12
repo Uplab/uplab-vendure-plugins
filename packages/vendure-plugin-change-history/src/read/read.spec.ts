@@ -2,7 +2,7 @@ import { Collection, Product, ProductVariant, RequestContext, TransactionalConne
 import type { EntityManager, FindOperator, ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 import { describe, expect, it, vi } from 'vitest';
 import { Batcher } from './batcher';
-import { inChannels, readableChannelIds, scopeKey } from './channel-scope';
+import { deniedTypesIn, ENTRY_COLUMNS, inRunScope, inScope, readScopeOf, scopeAllows, scopeKey } from './read-scope';
 import { compareKeys, decodeCursor, encodeCursor } from './cursor';
 import { currentLabels, deletedRefs } from './entity-lookups';
 import { ordersTimestampsAsText, timestampAsText, withPrimaryManager } from './sql';
@@ -109,44 +109,97 @@ describe('Batcher', () => {
   });
 });
 
-describe('channel scope', () => {
+describe('read scope', () => {
+  const READ = { Product: ['ReadCatalog', 'ReadProduct'], Promotion: ['ReadPromotion'], Open: [] };
   const ctxWith = (channelPermissions?: Array<{ id: number; permissions: string[] }>) =>
     ({ session: channelPermissions ? { user: { channelPermissions } } : undefined }) as unknown as RequestContext;
   const query = () => {
     const andWhere = vi.fn();
-    return { andWhere, builder: { andWhere } as unknown as SelectQueryBuilder<ObjectLiteral> };
+    const innerJoin = vi.fn();
+    return { andWhere, innerJoin, builder: { andWhere, innerJoin } as unknown as SelectQueryBuilder<ObjectLiteral> };
   };
 
-  it('reads every channel without a user and for a SuperAdmin', () => {
-    expect(readableChannelIds(ctxWith())).toBeUndefined();
-    expect(readableChannelIds(ctxWith([{ id: 2, permissions: ['SuperAdmin'] }]))).toBeUndefined();
+  it('reads everything without a user and for a SuperAdmin', () => {
+    expect(readScopeOf(ctxWith(), READ)).toBeUndefined();
+    expect(readScopeOf(ctxWith([{ id: 2, permissions: ['SuperAdmin'] }]), READ)).toBeUndefined();
   });
 
-  it('reads the channels in which the user holds ReadChangeHistory', () => {
-    const ctx = ctxWith([
-      { id: 1, permissions: ['ReadCatalog'] },
-      { id: 2, permissions: ['ReadChangeHistory'] },
-      { id: 3, permissions: ['ReadChangeHistory', 'ReadCatalog'] },
+  it('reads, per channel with ReadChangeHistory, the types whose read permission the user holds there', () => {
+    const scope = readScopeOf(
+      ctxWith([
+        { id: 1, permissions: ['ReadCatalog', 'ReadPromotion'] },
+        { id: 2, permissions: ['ReadChangeHistory'] },
+        { id: 3, permissions: ['ReadChangeHistory', 'ReadProduct'] },
+        { id: 4, permissions: ['ReadChangeHistory', 'ReadCatalog'] },
+        { id: 5, permissions: ['ReadChangeHistory', 'ReadCatalog', 'ReadPromotion'] },
+      ]),
+      READ,
+    );
+    expect(scope).toEqual([
+      { channelIds: ['2'], deniedTypes: ['Product', 'Promotion'] },
+      { channelIds: ['3', '4'], deniedTypes: ['Promotion'] },
+      { channelIds: ['5'], deniedTypes: [] },
     ]);
-    expect(readableChannelIds(ctx)).toEqual(['2', '3']);
+    expect(scopeAllows(scope, '3', 'Product')).toBe(true);
+    expect(scopeAllows(scope, '3', 'Promotion')).toBe(false);
+    expect(scopeAllows(scope, '2', 'Open')).toBe(true);
+    expect(scopeAllows(scope, '2', 'HostType')).toBe(true);
+    expect(scopeAllows(scope, '1', 'Product')).toBe(false);
+    expect(scopeAllows(scope, null, 'Product')).toBe(false);
+    expect(scopeAllows(undefined, null, 'Promotion')).toBe(true);
+    expect(deniedTypesIn(scope, '4')).toEqual(['Promotion']);
+    expect(deniedTypesIn(scope, '1')).toBeNull();
+    expect(deniedTypesIn(undefined, null)).toEqual([]);
     const withoutPermissions = { session: { user: {} } } as unknown as RequestContext;
-    expect(readableChannelIds(withoutPermissions)).toEqual([]);
-    expect(scopeKey(['3', '2'])).toBe('2,3');
-    expect(scopeKey(undefined)).toBe('*');
+    expect(readScopeOf(withoutPermissions, READ)).toEqual([]);
   });
 
-  it('narrows a query to the channels, to nothing for none, and leaves it alone for all', () => {
-    const some = query();
-    inChannels(some.builder, 'entry', ['2']);
-    expect(some.andWhere).toHaveBeenCalledWith('entry.channelId IN (:...chReadableChannels)', {
-      chReadableChannels: ['2'],
-    });
+  it('keys a cache per scope, whatever the order of its channels', () => {
+    expect(scopeKey(undefined)).toBe('*');
+    expect(scopeKey([{ channelIds: ['3', '2'], deniedTypes: ['Promotion'] }])).toBe(
+      scopeKey([{ channelIds: ['2', '3'], deniedTypes: ['Promotion'] }]),
+    );
+    expect(scopeKey([{ channelIds: ['2'], deniedTypes: [] }])).not.toBe(
+      scopeKey([{ channelIds: ['2'], deniedTypes: ['Promotion'] }]),
+    );
+  });
+
+  it('narrows a query to the channels and their readable types, to nothing for none, and leaves it alone for all', () => {
+    const one = query();
+    inScope(one.builder, ENTRY_COLUMNS, [{ channelIds: ['2'], deniedTypes: [] }]);
+    expect(one.andWhere).toHaveBeenCalledWith('(entry.channelId IN (:...chScopeC0))', { chScopeC0: ['2'] });
+    const two = query();
+    inScope(two.builder, ENTRY_COLUMNS, [
+      { channelIds: ['2'], deniedTypes: ['Promotion'] },
+      { channelIds: ['3'], deniedTypes: [] },
+    ]);
+    expect(two.andWhere).toHaveBeenCalledWith(
+      '((entry.channelId IN (:...chScopeC0) AND entry.entityType NOT IN (:...chScopeT0)) OR (entry.channelId IN (:...chScopeC1)))',
+      { chScopeC0: ['2'], chScopeT0: ['Promotion'], chScopeC1: ['3'] },
+    );
     const none = query();
-    inChannels(none.builder, 'entry', []);
+    inScope(none.builder, ENTRY_COLUMNS, []);
     expect(none.andWhere).toHaveBeenCalledWith('1 = 0');
     const all = query();
-    inChannels(all.builder, 'entry', undefined);
+    inScope(all.builder, ENTRY_COLUMNS, undefined);
     expect(all.andWhere).not.toHaveBeenCalled();
+  });
+
+  it("narrows a run's rows by the run and by each row's own type, in the run's channel", () => {
+    const rows = query();
+    inRunScope(rows.builder, [{ channelIds: ['2'], deniedTypes: ['Promotion'] }]);
+    expect(rows.innerJoin).toHaveBeenCalledWith(expect.anything(), 'run', 'run.id = detail.entryId');
+    expect(rows.andWhere).toHaveBeenCalledWith(
+      '(run.channelId IN (:...chRunC0) AND run.entityType NOT IN (:...chRunT0))',
+      { chRunC0: ['2'], chRunT0: ['Promotion'] },
+    );
+    expect(rows.andWhere).toHaveBeenCalledWith(
+      '(run.channelId IN (:...chRowC0) AND detail.entityType NOT IN (:...chRowT0))',
+      { chRowC0: ['2'], chRowT0: ['Promotion'] },
+    );
+    const all = query();
+    inRunScope(all.builder, undefined);
+    expect(all.innerJoin).not.toHaveBeenCalled();
   });
 });
 

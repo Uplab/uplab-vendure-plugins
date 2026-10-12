@@ -87,6 +87,22 @@ export const readChangeHistory = new PermissionDefinition({
   description: 'Allows reading the change history of the catalogue',
 });
 
+/**
+ * @description
+ * What a reader needs besides `ReadChangeHistory` to read the entries of a core type, in the entry's channel:
+ * any one of the listed permissions — the ones Vendure's own queries of that type accept. Types not listed
+ * (`Batch`, `Run`, host types) need `ReadChangeHistory` only, unless the `readPermissions` option names them.
+ */
+export const CHANGE_HISTORY_READ_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  Product: ['ReadCatalog', 'ReadProduct'],
+  ProductVariant: ['ReadCatalog', 'ReadProduct'],
+  Collection: ['ReadCatalog', 'ReadCollection'],
+  Facet: ['ReadCatalog', 'ReadProduct', 'ReadFacet'],
+  FacetValue: ['ReadCatalog', 'ReadProduct', 'ReadFacet'],
+  Asset: ['ReadCatalog', 'ReadAsset'],
+  Promotion: ['ReadPromotion'],
+};
+
 /** `<kind>:<uuid>` must fit the `batchId` column, `varchar(64)`. */
 export const MAX_BATCH_KIND_LENGTH = 27;
 

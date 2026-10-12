@@ -81,6 +81,8 @@ describe('ChangeHistoryPlugin on sql.js', () => {
       plugins: [
         ChangeHistoryPlugin.init({
           retention: { archive },
+          // A host type with a read permission of its own (see the Admin API scenarios).
+          readPermissions: { E2eSecret: 'ReadSettings' },
         }),
       ],
     }),

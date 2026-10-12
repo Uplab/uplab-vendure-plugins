@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NoBeforeStateStrategy } from './before-state/no-before-state.strategy';
+import { CHANGE_HISTORY_READ_PERMISSIONS } from './constants';
 import { resolveOptions } from './options';
 import { FileSystemArchiveStorage } from './retention/file-system-archive-storage';
 import { ChangeHistoryFieldExtractor, ChangeHistoryPluginOptions } from './types';
@@ -16,6 +17,7 @@ describe('resolveOptions', () => {
       fieldExtractors: [],
       actorResolvers: [],
       handlerOrder: {},
+      readPermissions: CHANGE_HISTORY_READ_PERMISSIONS,
       beforeState: 'auto',
       maxValueBytes: 16_384,
       retention: {
@@ -57,7 +59,8 @@ describe('resolveOptions', () => {
       enabled: false,
       beforeState,
       maxValueBytes: 1_000,
-      handlerOrder: { Product: { before: 'other-handler' } },
+      handlerOrder: { Product: { before: 'other-handler' }, StockMovement: { after: 'stock-sync' } },
+      readPermissions: { ProductOrder: 'ReadCatalog', Promotion: ['ReadPromotion', 'ReadMarketing'], Run: [] },
       retention: {
         archive: 'none',
         archiveKeyPrefix: 'archive/history/',
@@ -70,6 +73,17 @@ describe('resolveOptions', () => {
       },
     });
     expect(resolved).toMatchObject({ enabled: false, beforeState, maxValueBytes: 1_000 });
+    expect(resolved.handlerOrder).toEqual({
+      Product: { before: 'other-handler' },
+      StockMovement: { after: 'stock-sync' },
+    });
+    // Over the core defaults: a host type, a replaced core type, a type opened to ReadChangeHistory alone.
+    expect(resolved.readPermissions).toEqual({
+      ...CHANGE_HISTORY_READ_PERMISSIONS,
+      ProductOrder: ['ReadCatalog'],
+      Promotion: ['ReadPromotion', 'ReadMarketing'],
+      Run: [],
+    });
     expect(resolved.retention).toMatchObject({
       archive: 'none',
       archiveKeyPrefix: 'archive/history',
@@ -113,6 +127,31 @@ describe('resolveOptions', () => {
       'an empty handler id',
       { handlerOrder: { Product: { after: '' } }, retention: { archive } },
       /"handlerOrder.Product.after" must be a non-empty handler id/,
+    ],
+    [
+      'an unknown handler',
+      { handlerOrder: { Order: { after: 'x' } }, retention: { archive } },
+      /"handlerOrder.Order" is not one of Product, .*StockMovement, Channel/,
+    ],
+    [
+      'read permissions that are not an object',
+      { readPermissions: ['ReadCatalog'], retention: { archive } },
+      /"readPermissions" must be an object/,
+    ],
+    [
+      'an empty read permission',
+      { readPermissions: { ProductOrder: [''] }, retention: { archive } },
+      /"readPermissions.ProductOrder" must be a permission name/,
+    ],
+    [
+      'a read permission that is not a string',
+      { readPermissions: { ProductOrder: 7 }, retention: { archive } },
+      /"readPermissions.ProductOrder" must be a permission name/,
+    ],
+    [
+      'an entity type longer than its column',
+      { readPermissions: { ['T'.repeat(33)]: 'ReadCatalog' }, retention: { archive } },
+      /an entity type is 1–32 characters/,
     ],
     [
       'an extractor of an unknown entity',

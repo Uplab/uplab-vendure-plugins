@@ -25,7 +25,8 @@ changed value, and shows it all in the dashboard — in English and Ukrainian.
 
 [Install](#install) · [Options](#options) · [What is recorded](#what-is-recorded) ·
 [Recording from your own code](#recording-from-your-own-code) ·
-[Retention](#retention) · [Dashboard](#dashboard) · [GraphQL API](#graphql-api) · [Database](#database) ·
+[Retention](#retention) · [Dashboard](#dashboard) · [GraphQL API](#graphql-api) ·
+[Permissions and channels](#permissions-and-channels) · [Database](#database) ·
 [Changelog](#changelog)
 
 ## Install
@@ -53,32 +54,35 @@ export const config: VendureConfig = {
 The plugin adds three tables (`change_history_entry`, `change_history_detail`,
 `change_history_collection_members`); generate a migration for them as for any plugin entity. Grant the new
 **ReadChangeHistory** permission to the roles that may read the history. It is per channel, like Vendure's own
-permissions: a role sees the entries written in the channels it holds the permission in (see
-[Channels](#channels)).
+permissions, and it adds to them rather than replacing them: a role sees the entries written in the channels it
+holds the permission in, and there only those of the entity types it may read anyway — products with
+`ReadCatalog` or `ReadProduct`, promotions with `ReadPromotion`, and so on (see
+[Permissions and channels](#permissions-and-channels)).
 
 ## Options
 
 Everything is configured through `ChangeHistoryPlugin.init(options)`; the plugin never reads environment
 variables. Invalid options throw at startup with a message naming the option.
 
-| Option                        | Default                                          | Description                                                                                                                                         |
-| ----------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`                     | `true`                                           | Kill switch. With `false` nothing is recorded; `runBatch` still runs its callback.                                                                  |
-| `entities`                    | `{}`                                             | Per core entity: `ignoreFields`, `includeReadonlyCustomFields`, `fieldKinds`, `label`.                                                              |
-| `fieldExtractors`             | `[]`                                             | Extra fields of an entity's history view, e.g. a value your plugin keeps in its own table.                                                          |
-| `actorResolvers`              | `[]`                                             | Your resolvers for who made a change (service accounts, SSO), tried before the built-in session resolver.                                           |
-| `handlerOrder`                | `{}`                                             | `{ Product: { before: 'other-handler-id' } }` — ordering of the history's event handlers relative to another plugin's.                              |
-| `beforeState`                 | `'auto'`                                         | How the "was" value is read. `auto`: a committed read on a second connection on Postgres / MySQL / MariaDB, none on SQLite. Or a strategy instance. |
-| `maxValueBytes`               | `16384`                                          | Cap per side of a stored value.                                                                                                                     |
-| `retention.archive`           | **required**                                     | Where compaction puts the full record first: an archive storage, or `'none'` to opt out explicitly.                                                 |
-| `retention.archiveKeyPrefix`  | `'change-history-archive'`                       | Key prefix of archive objects.                                                                                                                      |
-| `retention.detailDays`        | `90`                                             | Days full detail is kept.                                                                                                                           |
-| `retention.summaryDays`       | `365`                                            | Days compacted entries are kept. Must be at least `detailDays` and `runLineDays`.                                                                   |
-| `retention.runLineDays`       | `detailDays`                                     | Days external-run entries are kept (deleted at compaction once older; purge removes compacted ones).                                                |
-| `retention.compactValueBytes` | `1024`                                           | Text values longer than this are reduced to their length at compaction.                                                                             |
-| `retention.schedule`          | `{ compact: '45 4 * * *', purge: '15 5 * * *' }` | Cron expressions of the built-in retention tasks, or `false` to run `ChangeHistoryRetentionService` from your own scheduler.                        |
-| `retention.batchSize`         | `2000` / `5000`                                  | Rows per compaction / purge batch.                                                                                                                  |
-| `retention.maxBatches`        | `20`                                             | Batches per run.                                                                                                                                    |
+| Option                        | Default                                          | Description                                                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`                     | `true`                                           | Kill switch. With `false` nothing is recorded; `runBatch` still runs its callback. See [Switching capture off](#switching-capture-off).                                                   |
+| `entities`                    | `{}`                                             | Per core entity: `ignoreFields`, `includeReadonlyCustomFields`, `fieldKinds`, `label`.                                                                                                    |
+| `fieldExtractors`             | `[]`                                             | Extra fields of an entity's history view, e.g. a value your plugin keeps in its own table.                                                                                                |
+| `actorResolvers`              | `[]`                                             | Your resolvers for who made a change (service accounts, SSO), tried before the built-in session resolver.                                                                                 |
+| `handlerOrder`                | `{}`                                             | `{ Product: { before: 'other-handler-id' } }` — ordering of the history's event handlers relative to another plugin's, keyed as `CHANGE_HISTORY_HANDLER_IDS`.                             |
+| `readPermissions`             | `CHANGE_HISTORY_READ_PERMISSIONS`                | What a reader needs besides `ReadChangeHistory` per entity type, e.g. `{ ProductOrder: ['ReadCatalog'] }` for a type of yours. See [Permissions and channels](#permissions-and-channels). |
+| `beforeState`                 | `'auto'`                                         | How the "was" value is read. `auto`: a committed read on a second connection on Postgres / MySQL / MariaDB, none on SQLite. Or a strategy instance.                                       |
+| `maxValueBytes`               | `16384`                                          | Cap per side of a stored value.                                                                                                                                                           |
+| `retention.archive`           | **required**                                     | Where compaction puts the full record first: an archive storage, or `'none'` to opt out explicitly.                                                                                       |
+| `retention.archiveKeyPrefix`  | `'change-history-archive'`                       | Key prefix of archive objects.                                                                                                                                                            |
+| `retention.detailDays`        | `90`                                             | Days full detail is kept.                                                                                                                                                                 |
+| `retention.summaryDays`       | `365`                                            | Days compacted entries are kept. Must be at least `detailDays` and `runLineDays`.                                                                                                         |
+| `retention.runLineDays`       | `detailDays`                                     | Days external-run entries are kept (deleted at compaction once older; purge removes compacted ones).                                                                                      |
+| `retention.compactValueBytes` | `1024`                                           | Text values longer than this are reduced to their length at compaction.                                                                                                                   |
+| `retention.schedule`          | `{ compact: '45 4 * * *', purge: '15 5 * * *' }` | Cron expressions of the built-in retention tasks, or `false` to run `ChangeHistoryRetentionService` from your own scheduler.                                                              |
+| `retention.batchSize`         | `2000` / `5000`                                  | Rows per compaction / purge batch.                                                                                                                                                        |
+| `retention.maxBatches`        | `20`                                             | Batches per run.                                                                                                                                                                          |
 
 ## What is recorded
 
@@ -142,15 +146,28 @@ without values (`meta.noBefore = "evicted"`) rather than with a diff that would 
 - A value longer than `maxValueBytes` is stored shortened, its head and tail kept (`truncated: true`).
 
 **Who.** The actor is resolved once per request: a `runBatch` actor first, then your `actorResolvers`, then the
-session's administrator (`admin`) or the owner of the API key the request authenticated with (`api_key`), and
-otherwise `system`: with source `collection_rules` for a change of a collection's contents made by Vendure's
+session's administrator (`admin`) or the owner of the API key the request authenticated with (`api_key`, recorded
+under the owner's name: `actorType` says it was a key, and the dashboard marks it), and otherwise `system`: with source `collection_rules` for a change of a collection's contents made by Vendure's
 filters job, else `unknown_system` (its `meta` says which API and process). An entry's `source` is the actor's.
 
 **Derived changes.** An entry gets `derivedFromId` when, in the same transaction, its parent already has an
 entry (a variant after its product) or the entity itself was created earlier in it. A plugin that rewrites the
 variants from a product handler (a price fan-out) therefore shows as one product change with derived variant
 changes. That needs the history handler to run first: declare `after: CHANGE_HISTORY_HANDLER_IDS.Product` on
-your own handler, or use the `handlerOrder` option for a handler you cannot edit.
+your own handler, or use the `handlerOrder` option for a handler you cannot edit. `handlerOrder` takes every
+handler of `CHANGE_HISTORY_HANDLER_IDS`, the collection contents, option groups, stock adjustments and channel
+assignments included.
+
+### Switching capture off
+
+`enabled: false` is read once per process: nothing is recorded, and the read side keeps working. The contents
+of the collections are the one thing the plugin keeps track of between changes, so a boot with capture off
+leaves a marker row in `change_history_collection_members`. The next boot with capture on finds it, records the
+current contents of every collection again (without entries) and removes it. Changes of contents made while
+capture was off are therefore not recorded, and they do not turn up later inside the first change of each
+collection. Several instances may boot at once in either mode: the marker is inserted and removed by key, and
+the contents re-recorded by two of them are the same. During a rolling deploy an instance that still boots with
+capture off sets the marker again; the next boot with capture on re-records the contents once more.
 
 ## Recording from your own code
 
@@ -177,6 +194,8 @@ await this.changeHistory.recordRun(ctx, {
   source: 'erp_stock_sync',
   label: 'ERP stock sync',
   counts: { updated: 37, failed: 0 },
+  // Optional: what the run was about, shown as its object in the dashboard.
+  subject: { type: 'Order', id: order.id, label: order.code },
   details: [{ entityType: 'ProductVariant', entityId: 12, kind: 'stock', scope: '1', from: 10, to: 14 }],
 });
 
@@ -193,7 +212,14 @@ For `ProductVariant` and `FacetValue` detail rows the plugin resolves the parent
 product finds the rows of its variants. A run stores its `counts`, `durationMs` and `detailCount` in `meta`,
 writes its rows in chunks of 500 and keeps at most 5,000 rows (a larger run stores the first 5,000 and counts
 the rest in `meta.detailsOmitted`). A run with no rows and only zero counts writes nothing. Called inside your
-transaction, the run commits or rolls back with it.
+transaction, the run commits or rolls back with it. A run's `subject` is kept in `meta.subject`
+(`{ label, type?, id? }`, the id as a string).
+
+`runBatch` groups what is written inside its callback, following the callback's async context rather than the
+`RequestContext`: two batches started at once on one context (`Promise.all`) stay two batches, and work on the same
+context outside the callback is not batched. Give a batch a `label` (in your shop's language) or register a label
+for its `kind` in the dashboard: the head of a batch without a label stores its kind, and the Admin API returns its
+`entityLabel` as `null` so that clients name it by `meta.kind`.
 
 `entityType`, `action`, `source` and batch `kind` are free strings; give yours labels in the dashboard. They
 must fit their columns: `entityType`, `parentType`, `action`, `source` and a detail row's `kind` at most 32
@@ -436,20 +462,20 @@ type ChangeHistoryEntry implements Node {
   createdAt: DateTime!
   entityType: String!
   entityId: String!
-  entityLabel: String
+  entityLabel: String # null for a batch without a label: name it by meta.kind
   parentType: String
   parentId: String
   action: String!
   source: String!
   actorType: String!
   actorId: ID
-  actorLabel: String
+  actorLabel: String # the administrator's name, also for api_key
   batchId: String
   channelId: ID
   derivedFromId: ID
   changes: JSON
   meta: JSON!
-  summary: String!
+  summary: String! # an English machine summary, not display text
   compactedAt: DateTime
   isCompacted: Boolean!
   derivedCount: Int!
@@ -534,9 +560,12 @@ extend type Query {
   | collapse batches     | `_or: [{ batchId: { isNull: true } }, { entityType: { eq: "Batch" } }]` |
 
   `derivedCount`, `batchCounts`, `entityDeleted`, `parentDeleted` and `isCompacted` are computed, so they
-  cannot be filtered or sorted on.
+  cannot be filtered or sorted on. Whatever the sort, `id` breaks its ties (in the direction of the last key):
+  the entries of one transaction share `createdAt`, and offset pages over them neither skip nor repeat one.
 
-- **`changeHistoryEntry`** is one entry. `derivedEntries` and `batchMembers` page with the same list options.
+- **`changeHistoryEntry`** is one entry. `derivedEntries` and `batchMembers` page with the same list options
+  (`skip`, `take`, `sort`, `filter`) and say how many there are in `totalItems`, so a client reaches every member
+  of a large batch. The feed reaches them too: `filter: { batchId: { eq }, entityType: { notEq: "Batch" } }`.
 - **`changeHistoryEntityTimeline`** is one entity's history, newest first, paged with `first` (1–100) and
   `after` (the previous page's `endCursor`). `entityId` is the database id, as stored in
   `ChangeHistoryEntry.entityId`. It includes the entity's own entries, and with `includeChildren` (the default)
@@ -547,22 +576,49 @@ extend type Query {
   `changeHistoryRunDetails`). The timeline is read from the primary database, so a change shows right after its save, even
   with read replicas.
 - **`changeHistoryRunDetails`** returns a run's rows with the current name (and a variant's SKU), sorted by
-  SKU or name, then name, then scope. `take` is at most 500.
+  SKU or name, then name, then scope. `take` is at most 500. The order needs every row's current name, so it is
+  worked out once per run and language and kept for a minute; each further page loads and names its own rows
+  only.
 - **`changeHistoryFilterOptions`** lists the actors (an API key under its owner's id with `type: "api_key"`),
-  sources, actions and entity types of the last `summaryDays`, for filter dropdowns. It is cached for 60
-  seconds per process; values the process writes in the meantime are added to the cached lists at once.
+  sources, actions and entity types of the last `summaryDays` that the user may read, for filter dropdowns. It is
+  cached for 60 seconds per process and read scope; values the process writes in the meantime are added to the
+  cached lists at once.
+- **`summary`** is a short English description for logs and exports («3 fields: name, slug, enabled»), not
+  display text: a client renders an entry from `changes` and `meta`.
 - `derivedCount` counts every derived entry, the ones compaction deleted included (their count is kept on the
   cause); `derivedEntries` lists those still stored, such as cascaded deletions. After compaction `batchCounts`
   come from the counts the compaction kept.
 
-### Channels
+### Permissions and channels
 
-Every entry stores the channel of the request that wrote it (`channelId`). Each query — the feed, one entry
-with its derived entries and batch members, timelines, run details and filter options — returns only the
-entries of the channels in which the user holds `ReadChangeHistory` (whatever the active channel); an entry of
-another channel is `null`, a run of another channel has no rows. A SuperAdmin reads every channel, and so do
-calls from your own code with a context that has no user (a job, a scheduled task). The `ChangeHistoryService`
-read helpers follow the same rule for the context they are given.
+`ReadChangeHistory` opens the history, it does not widen what a role may see. Every entry stores the channel of
+the request that wrote it (`channelId`), and a user reads an entry when, in that channel, they hold
+`ReadChangeHistory` **and** the read permission of the entry's type:
+
+| Entity type                    | Needs (any one of)                          |
+| ------------------------------ | ------------------------------------------- |
+| `Product`, `ProductVariant`    | `ReadCatalog`, `ReadProduct`                |
+| `Collection`                   | `ReadCatalog`, `ReadCollection`             |
+| `Facet`, `FacetValue`          | `ReadCatalog`, `ReadProduct`, `ReadFacet`   |
+| `Asset`                        | `ReadCatalog`, `ReadAsset`                  |
+| `Promotion`                    | `ReadPromotion`                             |
+| `Batch`, `Run`, your own types | nothing more, unless `readPermissions` says |
+
+These are the permissions of Vendure's own queries of each type (`CHANGE_HISTORY_READ_PERMISSIONS`). Give your
+own entity types theirs, or change a core type's, with the `readPermissions` option:
+
+```ts
+ChangeHistoryPlugin.init({
+  retention: { archive },
+  readPermissions: { ProductOrder: ['ReadCatalog'], StockThreshold: 'ReadProduct', Run: ['ReadCatalog'] },
+});
+```
+
+The rule holds in every query: the feed, one entry (`null` when unreadable), its derived entries and batch
+members, `derivedCount` and `batchCounts` (the members of other types are not counted), timelines, the rows of a
+run (each row is checked by its own entity type, in the run's channel) and the filter options. A SuperAdmin
+reads everything, and so do calls from your own code with a context that has no user (a job, a scheduled task).
+The `ChangeHistoryService` read helpers follow the same rule for the context they are given.
 
 ## Database
 

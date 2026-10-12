@@ -17,7 +17,7 @@ import {
 } from '@vendure/core';
 import { CHANGE_HISTORY_ACTIONS, CHANGE_HISTORY_HANDLER_IDS, CHANGE_HISTORY_PLUGIN_OPTIONS } from '../constants';
 import { ChangeHistoryDefinitions } from '../entity-definitions/definitions.service';
-import { ResolvedChangeHistoryPluginOptions } from '../types';
+import { ChangeHistoryHandlerName, ResolvedChangeHistoryPluginOptions } from '../types';
 import { CapturePipeline } from './capture-pipeline';
 import { ChannelCapture } from './channel-capture';
 import { CollectionCapture } from './collection-capture';
@@ -43,13 +43,16 @@ export class ChangeHistoryEventHandlers {
     private readonly channels: ChannelCapture,
   ) {}
 
+  /** A handler's id with the `handlerOrder` the host gave it. */
+  private ordered(name: ChangeHistoryHandlerName): { id: string; before?: string; after?: string } {
+    const order = this.options.handlerOrder[name];
+    return { id: CHANGE_HISTORY_HANDLER_IDS[name], before: order?.before, after: order?.after };
+  }
+
   register(): void {
-    const order = this.options.handlerOrder;
     this.eventBus.registerBlockingEventHandler({
       event: ProductEvent,
-      id: CHANGE_HISTORY_HANDLER_IDS.Product,
-      before: order.Product?.before,
-      after: order.Product?.after,
+      ...this.ordered('Product'),
       handler: (event: ProductEvent) =>
         this.pipeline.run(event.ctx, this.definitions.product, [event.entity.id], {
           mode: event.type,
@@ -60,9 +63,7 @@ export class ChangeHistoryEventHandlers {
     });
     this.eventBus.registerBlockingEventHandler({
       event: ProductVariantEvent,
-      id: CHANGE_HISTORY_HANDLER_IDS.ProductVariant,
-      before: order.ProductVariant?.before,
-      after: order.ProductVariant?.after,
+      ...this.ordered('ProductVariant'),
       handler: (event: ProductVariantEvent) =>
         this.pipeline.run(
           event.ctx,
@@ -73,7 +74,7 @@ export class ChangeHistoryEventHandlers {
     });
     this.eventBus.registerBlockingEventHandler({
       event: ProductOptionGroupChangeEvent,
-      id: CHANGE_HISTORY_HANDLER_IDS.ProductOptionGroup,
+      ...this.ordered('ProductOptionGroup'),
       handler: (event: ProductOptionGroupChangeEvent) =>
         this.pipeline.run(event.ctx, this.definitions.product, [event.product.id], {
           mode: 'updated',
@@ -87,40 +88,32 @@ export class ChangeHistoryEventHandlers {
     });
     this.eventBus.registerBlockingEventHandler({
       event: StockMovementEvent,
-      id: CHANGE_HISTORY_HANDLER_IDS.StockMovement,
+      ...this.ordered('StockMovement'),
       handler: (event: StockMovementEvent) => this.stock.record(event),
     });
     this.eventBus.registerBlockingEventHandler({
       event: CollectionEvent,
-      id: CHANGE_HISTORY_HANDLER_IDS.Collection,
-      before: order.Collection?.before,
-      after: order.Collection?.after,
+      ...this.ordered('Collection'),
       handler: (event: CollectionEvent) => this.collections.onCollectionEvent(event),
     });
     this.eventBus.registerBlockingEventHandler({
       event: CollectionModificationEvent,
-      id: CHANGE_HISTORY_HANDLER_IDS.CollectionMembership,
+      ...this.ordered('CollectionMembership'),
       handler: (event: CollectionModificationEvent) => this.collections.onModification(event),
     });
     this.eventBus.registerBlockingEventHandler({
       event: FacetEvent,
-      id: CHANGE_HISTORY_HANDLER_IDS.Facet,
-      before: order.Facet?.before,
-      after: order.Facet?.after,
+      ...this.ordered('Facet'),
       handler: (event: FacetEvent) => this.facets.onFacetEvent(event),
     });
     this.eventBus.registerBlockingEventHandler({
       event: FacetValueEvent,
-      id: CHANGE_HISTORY_HANDLER_IDS.FacetValue,
-      before: order.FacetValue?.before,
-      after: order.FacetValue?.after,
+      ...this.ordered('FacetValue'),
       handler: (event: FacetValueEvent) => this.facets.onFacetValueEvent(event),
     });
     this.eventBus.registerBlockingEventHandler({
       event: AssetEvent,
-      id: CHANGE_HISTORY_HANDLER_IDS.Asset,
-      before: order.Asset?.before,
-      after: order.Asset?.after,
+      ...this.ordered('Asset'),
       handler: (event: AssetEvent) =>
         this.pipeline.run(event.ctx, this.definitions.asset, [event.entity.id], {
           mode: event.type,
@@ -133,9 +126,7 @@ export class ChangeHistoryEventHandlers {
     });
     this.eventBus.registerBlockingEventHandler({
       event: PromotionEvent,
-      id: CHANGE_HISTORY_HANDLER_IDS.Promotion,
-      before: order.Promotion?.before,
-      after: order.Promotion?.after,
+      ...this.ordered('Promotion'),
       handler: (event: PromotionEvent) =>
         this.pipeline.run(event.ctx, this.definitions.promotion, [event.entity.id], {
           mode: event.type,
@@ -146,7 +137,7 @@ export class ChangeHistoryEventHandlers {
     });
     this.eventBus.registerBlockingEventHandler({
       event: [ProductChannelEvent, ProductVariantChannelEvent, AssetChannelEvent],
-      id: CHANGE_HISTORY_HANDLER_IDS.Channel,
+      ...this.ordered('Channel'),
       handler: (event: ProductChannelEvent | ProductVariantChannelEvent | AssetChannelEvent) =>
         this.channels.record(event),
     });

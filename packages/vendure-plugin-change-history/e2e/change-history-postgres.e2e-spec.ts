@@ -119,6 +119,8 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
           Product: { before: FAN_OUT_HANDLER_ID },
           ProductVariant: { before: VARIANT_FAN_OUT_HANDLER_ID },
         },
+        // A host type with a read permission of its own (see the Admin API scenarios).
+        readPermissions: { E2eSecret: 'ReadSettings' },
       }),
     ],
   });

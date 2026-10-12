@@ -1,7 +1,7 @@
 import { ID, RequestContext, VendureEvent } from '@vendure/core';
 import type { EntityManager } from 'typeorm';
 import { BeforeStateStrategy } from './before-state/before-state-strategy';
-import { CHANGE_HISTORY_ACTOR_TYPES } from './constants';
+import { CHANGE_HISTORY_ACTOR_TYPES, CHANGE_HISTORY_HANDLER_IDS } from './constants';
 import { ChangeHistoryArchiveStorage } from './retention/archive-storage';
 
 /** The core catalogue entities whose changes the package captures from Vendure events. */
@@ -137,6 +137,15 @@ export interface ChangeHistoryDetailInput {
   to: unknown;
 }
 
+/** What a run was about (`ChangeHistoryRunInput.subject`). */
+export interface ChangeHistoryRunSubject {
+  /** E.g. `'SO-1042'`. At most 255 characters. */
+  label: string;
+  /** An entity type, e.g. `'Order'`. */
+  type?: string;
+  id?: ID;
+}
+
 /** An external sync run (`recordRun`): one `Run` entry plus its detail rows. */
 export interface ChangeHistoryRunInput {
   /** E.g. `erp_stock_sync`. */
@@ -145,6 +154,12 @@ export interface ChangeHistoryRunInput {
   label: string;
   /** The pseudo entity the run belongs to. Default: `source`. */
   entityId?: string;
+  /**
+   * What the run was about, when it was about one thing: the order whose stock a run refreshed, the file an
+   * import read. Stored as `meta.subject`; the dashboard shows its label as the run's object (a link when `type`
+   * is an entity type it can open).
+   */
+  subject?: ChangeHistoryRunSubject;
   /** E.g. `{ updated: 37, failed: 0 }`. */
   counts: Record<string, number>;
   durationMs?: number;
@@ -222,6 +237,12 @@ export interface ChangeHistoryRetentionOptions {
   maxBatches?: number;
 }
 
+/** A blocking event handler of the package, named as in `CHANGE_HISTORY_HANDLER_IDS`. */
+export type ChangeHistoryHandlerName = keyof typeof CHANGE_HISTORY_HANDLER_IDS;
+
+/** `handlerOrder`: per handler of the package, the one other handler id it runs before and / or after. */
+export type ChangeHistoryHandlerOrder = Partial<Record<ChangeHistoryHandlerName, { before?: string; after?: string }>>;
+
 /**
  * @description
  * Options of {@link ChangeHistoryPlugin.init}. Only `retention.archive` is required.
@@ -236,12 +257,19 @@ export interface ChangeHistoryPluginOptions {
   /** Host actor resolvers, tried before the built-in ones. */
   actorResolvers?: ChangeHistoryActorResolver[];
   /**
-   * Ordering of the package's blocking event handlers relative to other handlers, per entity:
-   * `{ Product: { before: 'some-handler-id' } }`. Vendure takes one id per side and silently ignores an
-   * id that is not registered. For a handler the host owns, declaring
+   * Ordering of the package's blocking event handlers relative to other handlers, per handler (the keys of
+   * `CHANGE_HISTORY_HANDLER_IDS`): `{ Product: { before: 'some-handler-id' } }`. Vendure takes one id per side
+   * and silently ignores an id that is not registered. For a handler the host owns, declaring
    * `after: CHANGE_HISTORY_HANDLER_IDS.Product` on that handler is the equivalent.
    */
-  handlerOrder?: Partial<Record<ChangeHistoryCoreEntityType, { before?: string; after?: string }>>;
+  handlerOrder?: ChangeHistoryHandlerOrder;
+  /**
+   * What a reader needs besides `ReadChangeHistory` to read the entries of an entity type: any one of the
+   * listed permissions, in the entry's channel. Merged over `CHANGE_HISTORY_READ_PERMISSIONS` (the core
+   * types); give your own types theirs (`{ ProductOrder: ['ReadCatalog'] }`). A type nobody lists, and one
+   * given `[]`, needs `ReadChangeHistory` only.
+   */
+  readPermissions?: Record<string, string | string[]>;
   /**
    * `'auto'` (default): committed-row on postgres / aurora-postgres / mysql / aurora-mysql / mariadb, no
    * before-state on SQLite and any other driver (boot warning). Or a strategy instance.
@@ -272,7 +300,9 @@ export interface ResolvedChangeHistoryPluginOptions {
   entities: Partial<Record<ChangeHistoryCoreEntityType, ChangeHistoryEntityOverrides>>;
   fieldExtractors: ChangeHistoryFieldExtractor[];
   actorResolvers: ChangeHistoryActorResolver[];
-  handlerOrder: Partial<Record<ChangeHistoryCoreEntityType, { before?: string; after?: string }>>;
+  handlerOrder: ChangeHistoryHandlerOrder;
+  /** `CHANGE_HISTORY_READ_PERMISSIONS` with the host's entries over it. */
+  readPermissions: Record<string, readonly string[]>;
   beforeState: 'auto' | BeforeStateStrategy;
   maxValueBytes: number;
   retention: ResolvedChangeHistoryRetentionOptions;

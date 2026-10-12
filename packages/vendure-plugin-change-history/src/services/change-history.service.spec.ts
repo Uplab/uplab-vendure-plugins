@@ -6,7 +6,9 @@ import { ChangeHistoryWriter, EntryDraft } from '../capture/entry-writer.service
 import { ChangeHistoryDetail } from '../entities/change-history-detail.entity';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
 import { ChangeHistoryDefinitions } from '../entity-definitions/definitions.service';
+import { CHANGE_HISTORY_READ_PERMISSIONS } from '../constants';
 import { ChangeHistoryReader } from '../read/change-history-reader.service';
+import { readScopeOf } from '../read/read-scope';
 import { ChangeHistoryRunInput, ResolvedChangeHistoryPluginOptions } from '../types';
 import { ChangeHistoryContextService } from './change-history-context.service';
 import { ChangeHistoryService } from './change-history.service';
@@ -48,7 +50,8 @@ function setup(
   options: {
     enabled?: boolean;
     entryId?: string | number;
-    readable?: boolean;
+    /** What the reader says the user may not read of a run's rows; `null`: the run itself. */
+    denied?: string[] | null;
     variants?: Array<{ id: number; productId: number }>;
     runs?: { count: number; page: Array<{ entryId: number }>; entries: Array<{ id: number }>; rows: unknown[] };
   } = {},
@@ -104,7 +107,8 @@ function setup(
     list: vi.fn(async () => ({ items: [], totalItems: 0 })),
     timeline: vi.fn(async () => ({ items: [], pageInfo: { hasNextPage: false } })),
     filterOptions: vi.fn(async () => ({ actors: [] })),
-    readable: vi.fn(async () => options.readable ?? true),
+    deniedDetailTypes: vi.fn(async () => (options.denied === undefined ? [] : options.denied)),
+    scopeOf: vi.fn((ctx: RequestContext) => readScopeOf(ctx, CHANGE_HISTORY_READ_PERMISSIONS)),
   };
   const service = new ChangeHistoryService(
     { enabled: options.enabled ?? true } as ResolvedChangeHistoryPluginOptions,
@@ -139,6 +143,21 @@ describe('ChangeHistoryService.recordRun', () => {
     await service.recordRun(ctxOf(), run({}));
     await service.recordRun(ctxOf(), run({ counts: { updated: 0 }, details: [] }));
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it('keeps what a run was about in meta.subject, the label clipped and the id a string', async () => {
+    const { service, drafts } = setup();
+    await service.recordRun(
+      ctxOf(),
+      run({ counts: { updated: 1 }, details: [], subject: { type: 'Order', id: 1042, label: 'S'.repeat(300) } }),
+    );
+    await service.recordRun(ctxOf(), run({ counts: { updated: 1 }, details: [], subject: { label: 'import.csv' } }));
+    await service.recordRun(ctxOf(), run({ counts: { updated: 1 }, details: [] }));
+    expect(drafts.map((draft) => draft.meta?.subject)).toEqual([
+      { type: 'Order', id: '1042', label: 'S'.repeat(255) },
+      { label: 'import.csv' },
+      undefined,
+    ]);
   });
 
   it('records the detail rows of a run without counts, its parents resolved and a long scope label clipped', async () => {
@@ -223,9 +242,19 @@ describe('ChangeHistoryService reads', () => {
   });
 
   it('lists no detail rows of a run the user may not read', async () => {
-    const { service, findAndCount } = setup({ readable: false });
+    const { service, findAndCount } = setup({ denied: null });
     await expect(service.runDetails(ctxOf(), 1)).resolves.toEqual({ items: [], totalItems: 0 });
     expect(findAndCount).not.toHaveBeenCalled();
+  });
+
+  it('leaves out the detail rows of types the user may not read', async () => {
+    const { service, findAndCount } = setup({ denied: ['Promotion'] });
+    await service.runDetails(ctxOf(), 1);
+    expect(findAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { entryId: 1, entityType: expect.objectContaining({ _type: 'not' }) },
+      }),
+    );
   });
 
   it('pages the detail rows of a readable run', async () => {
@@ -234,7 +263,7 @@ describe('ChangeHistoryService reads', () => {
       items: [{ id: 1 }],
       totalItems: 1,
     });
-    expect(findAndCount).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 500 }));
+    expect(findAndCount).toHaveBeenCalledWith(expect.objectContaining({ where: { entryId: 1 }, skip: 0, take: 500 }));
   });
 
   it("scopes an entity's runs to the channels the user may read, a run without rows getting none", async () => {
@@ -256,9 +285,13 @@ describe('ChangeHistoryService reads', () => {
       totalItems: 2,
     });
     expect(calls).toContainEqual(['innerJoin', [ChangeHistoryEntry, 'run', 'run.id = detail.entryId']]);
+    // The run's channel, and in it only the types the user may read: ReadChangeHistory alone reads none of the core.
     expect(calls).toContainEqual([
       'andWhere',
-      ['run.channelId IN (:...chReadableChannels)', { chReadableChannels: ['3'] }],
+      [
+        '(run.channelId IN (:...chRowC0) AND detail.entityType NOT IN (:...chRowT0))',
+        expect.objectContaining({ chRowC0: ['3'], chRowT0: expect.arrayContaining(['Product', 'ProductVariant']) }),
+      ],
     ]);
   });
 

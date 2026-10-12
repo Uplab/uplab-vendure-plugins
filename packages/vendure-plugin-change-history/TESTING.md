@@ -62,11 +62,18 @@ once; a collection shows its rules batch (members collapsed) and its child colle
 changes. A run of 60 rows gives a timeline item its first 50 with `detailsTotal` and `detailsEntityCount`.
 Run details are labelled, sorted and paged; `entityDeleted` marks a deleted product's entries, whose
 `meta.lastStateFields` carry the kinds and facet value labels; `parentDeleted` is true for a batch head whose
-collection is gone and false for a host parent type; filter options include new values at once. Five entries written in one transaction are paged two at a time without a
-gap — on Postgres they share one timestamp to the microsecond, the R5-2 regression. Every query is refused
-without `ReadChangeHistory` and allowed with it alone; an administrator holding it in one channel only sees
-that channel's entries in the feed, one entry, a timeline, run details and filter options, while a SuperAdmin
-sees all. Unit specs cover the cursor, the batch loader, the primary-database read and the channel scope.
+collection is gone and false for a host parent type; filter options include new values at once; a pre-release
+API-key label reads as the owner's plain name. Five entries written in one transaction are paged two at a time
+without a gap — on Postgres they share one timestamp to the microsecond, the R5-2 regression. A batch of 300
+members written in one transaction is paged 20 at a time, by `batchMembers` and by the feed, sorted either way,
+with every member exactly once (on Postgres, without the `id` tie-break, 294 distinct ids came back). A batch
+without a label reads with `entityLabel: null`. Every query is refused without `ReadChangeHistory` and allowed
+with it alone; an administrator holding it in one channel only sees that channel's entries in the feed, one
+entry, a timeline, run details and filter options, while a SuperAdmin sees all. A reader with `ReadCatalog` but
+not `ReadPromotion`, nor the `ReadSettings` a host type of the suite asks for, gets none of those entries in
+the feed, one entry, batch members and counts, derived counts, timelines, run rows and filter options, and all
+of the product, batch, run and unlisted host-type entries. Unit specs cover the cursor, the batch loader, the
+primary-database read, the read scope and the stable sort.
 
 Unit specs of the capture side cover the per-transaction lock (one piece of work after another on one
 transaction, nested work at once, nothing held back outside a transaction), the savepoint journal of the
