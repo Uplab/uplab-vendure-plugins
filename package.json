@@ -12,7 +12,7 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "packageManager": "pnpm@11.23.0",
+  "packageManager": "pnpm@11.28.5",
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" build",
     "typecheck": "pnpm -r --filter \"./packages/*\" typecheck",
@@ -34,23 +34,23 @@
     "@changesets/changelog-github": "^1.0.0",
     "@changesets/cli": "^2.29.7",
     "@eslint/js": "^9.39.1",
-    "@swc/core": "^1.14.1",
-    "@types/node": "^22.15.3",
+    "@swc/core": "^1.16.1",
+    "@types/node": "^22.20.1",
     "@vendure/core": "3.7.2",
     "@vendure/testing": "3.7.2",
     "@vitest/coverage-v8": "^4.0.0",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.11.0",
-    "knip": "^6.32.2",
-    "prettier": "^3.6.2",
+    "knip": "^6.40.0",
+    "prettier": "^3.9.6",
     "publint": "^0.3.24",
     "rimraf": "^6.0.1",
-    "sql.js": "1.10.3",
+    "sql.js": "1.14.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.46.4",
-    "unplugin-swc": "^1.5.7",
+    "typescript-eslint": "^8.67.0",
+    "unplugin-swc": "^1.6.0",
     "vitest": "^4.0.0"
   }
 }
