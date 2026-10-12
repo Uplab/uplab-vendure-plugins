@@ -9,6 +9,8 @@ import { setLocale } from '../testing/i18n';
 import { RecentChangesWidget } from './recent-changes-widget';
 
 const query = vi.hoisted(() => ({
+  /** The dashboard's language for dates: the times are formatted for it, as the dashboard does. */
+  dateLocale: 'uk-UA',
   fetching: false,
   queryFn: undefined as undefined | (() => unknown),
   api: [] as unknown[][],
@@ -24,6 +26,11 @@ vi.mock('@vendure/dashboard', async () => {
         return Promise.resolve({});
       },
     },
+    useLocalFormat: () => ({
+      ...base.useLocalFormat(),
+      formatDate: (value: string, options: Intl.DateTimeFormatOptions) =>
+        new Intl.DateTimeFormat(query.dateLocale, options).format(new Date(value)),
+    }),
     // The widget's own query: its request is kept so that a test can read the variables it sends.
     useQuery: (options: { queryKey: readonly unknown[]; enabled?: boolean; queryFn: () => unknown }) => {
       if (options.queryKey[0] === 'change-history-recent') {
@@ -64,6 +71,7 @@ beforeEach(() => setLocale('uk'));
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  query.dateLocale = 'uk-UA';
   query.fetching = false;
   query.queryFn = undefined;
   query.api.length = 0;
@@ -82,8 +90,8 @@ const lines = (items: Array<ReturnType<typeof entry>>) =>
     return key[0] === 'change-history-entry' ? { data: dialogData(entry({ id: String(key[1]) })) } : undefined;
   });
 
-/** The time cell of each line. */
-const times = () => screen.getAllByRole('listitem').map((item) => item.querySelector('span') as HTMLElement);
+/** The time of each line: a button that opens the line's entry. */
+const times = () => screen.getAllByRole('listitem').map((item) => item.querySelector('button') as HTMLButtonElement);
 
 /** The Insights page's period (see the dashboard mock), as whole local days. */
 const PERIOD = periodBounds(new Date('2026-10-01T00:00:00Z'), new Date('2026-10-12T00:00:00Z'));
@@ -145,22 +153,45 @@ describe('RecentChangesWidget', () => {
     });
   });
 
-  it('keeps the time column narrow when every line is today’s', () => {
+  it('sizes the time column by the longest time in the dashboard’s language, «10:10 AM» included', () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 9, 12, 18, 0) });
+    query.dateLocale = 'en-US';
     lines([
-      entry({ id: '1', createdAt: new Date(2026, 9, 12, 9, 0).toISOString() }),
+      entry({ id: '1', createdAt: new Date(2026, 9, 12, 10, 10).toISOString() }),
       entry({ id: '2', createdAt: new Date(2026, 9, 12, 8, 0).toISOString() }),
     ]);
-    expect(times().map((time) => time.className.split(' ')[0])).toEqual(['w-[2.75rem]', 'w-[2.75rem]']);
+    expect(times().map((time) => time.textContent)).toEqual(['10:10 AM', '8:00 AM']);
+    // One column for every line (a subgrid of the list), as wide as its longest time: no fixed width to outgrow.
+    expect(screen.getByRole('list').className).toContain('grid-cols-[auto_minmax(0,1fr)]');
+    for (const line of screen.getAllByRole('listitem')) {
+      expect(line.className).toContain('col-span-2');
+      expect(line.className).toContain('grid-cols-subgrid');
+    }
+    for (const time of times()) {
+      expect(time.className).not.toMatch(/(^|\s)w-/);
+      expect(time.className).toContain('whitespace-nowrap');
+    }
   });
 
-  it('widens the time column for day and time once a line is older than today', () => {
+  it('shows today’s changes by time and older ones by day and time', () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 9, 12, 18, 0) });
     lines([
       entry({ id: '1', createdAt: new Date(2026, 9, 12, 9, 0).toISOString() }),
       entry({ id: '2', createdAt: new Date(2026, 9, 11, 8, 0).toISOString() }),
     ]);
-    expect(times().map((time) => time.className.split(' ')[0])).toEqual(['w-[5.5rem]', 'w-[5.5rem]']);
+    expect(times().map((time) => time.textContent)).toEqual(['09:00', '11.10, 08:00']);
+  });
+
+  it('opens a line’s entry from the keyboard: its time is a focusable button', () => {
+    lines([entry({ id: '7', entityLabel: 'Oversize tee' })]);
+    const [time] = times();
+    expect(time.type).toBe('button');
+    expect(time.className).toContain('focus-visible:ring-2');
+    time.focus();
+    expect(document.activeElement).toBe(time);
+    // Enter and Space press a focused button: the browser turns them into a click.
+    fireEvent.click(time);
+    expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
   it('greys out system lines, not people’s', () => {

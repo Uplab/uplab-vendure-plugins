@@ -10,7 +10,7 @@ import {
   useWidgetFilters,
 } from '@vendure/dashboard';
 import { RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { ActorName, actorOf } from '../components/actor';
 import { EntryDialog } from '../components/entry-dialog';
 import { QueryError } from '../components/query-error';
@@ -46,8 +46,6 @@ export function RecentChangesWidget() {
   });
   const items = data?.changeHistoryEntries.items ?? [];
   const isToday = (createdAt: string) => new Date(createdAt).toDateString() === new Date().toDateString();
-  // The time column fits its format: «08:55» when every line is today's, else «12.10, 08:55».
-  const timeWidth = items.every((entry) => isToday(entry.createdAt)) ? 'w-[2.75rem]' : 'w-[5.5rem]';
   return (
     <DashboardBaseWidget
       id={RECENT_CHANGES_WIDGET_ID}
@@ -76,18 +74,27 @@ export function RecentChangesWidget() {
               <Trans context="change-history">No changes in this period.</Trans>
             </div>
           )}
-          <ul className="divide-y">
+          {/* The time column is as wide as its longest time in the dashboard's language («08:55», «10:10 AM»,
+              «12.10, 08:55»): the lines share it as a subgrid. */}
+          <ul className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 divide-y">
             {items.map((entry) => {
               const actor = actorOf(entry, labels);
+              const open = (event: MouseEvent) => {
+                event.stopPropagation();
+                setEntryId(entry.id);
+              };
               return (
                 <li
                   key={entry.id}
-                  className={`flex cursor-pointer gap-3 px-1 py-1.5 text-sm hover:bg-muted/40 ${actor.tone === 'system' ? 'bg-muted/20' : ''}`}
-                  onClick={() => setEntryId(entry.id)}
+                  className={`col-span-2 grid cursor-pointer grid-cols-subgrid gap-x-3 px-1 py-1.5 text-sm hover:bg-muted/40 ${actor.tone === 'system' ? 'bg-muted/20' : ''}`}
+                  onClick={open}
                 >
-                  {/* Today's changes by time; older ones by day and time, so one day's changes stay apart. */}
-                  <span
-                    className={`${timeWidth} shrink-0 whitespace-nowrap text-xs leading-5 tabular-nums text-muted-foreground`}
+                  {/* Today's changes by time; older ones by day and time, so one day's changes stay apart. The
+                      time opens the entry from the keyboard too, as in the feed. */}
+                  <button
+                    type="button"
+                    className="self-start whitespace-nowrap rounded-sm text-left text-xs leading-5 tabular-nums text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={open}
                   >
                     {formatDate(
                       entry.createdAt,
@@ -95,7 +102,7 @@ export function RecentChangesWidget() {
                         ? { timeStyle: 'short' }
                         : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' },
                     )}
-                  </span>
+                  </button>
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-1.5">
                       <ActorName actor={actor} className="font-medium" />
