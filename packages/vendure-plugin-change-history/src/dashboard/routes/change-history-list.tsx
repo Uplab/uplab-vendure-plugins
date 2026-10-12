@@ -390,7 +390,15 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
             />
           )}
           {/* After a failed request the table's «No results» would claim there were no changes: it is hidden. */}
-          <div onClick={openRow} className={`[&_tbody_tr]:cursor-pointer ${feedQuery.error ? '[&_tbody]:hidden' : ''}`}>
+          {/*
+            The column widths follow this box (a container query), not the viewport: a host's sidebar and padding
+            decide how wide the feed is. Short labels stay on one line where there is room; long ones (a host's
+            types, actions and sources) wrap, so the table never gets wider than its box.
+          */}
+          <div
+            onClick={openRow}
+            className={`@container [&_tbody_tr]:cursor-pointer ${feedQuery.error ? '[&_tbody]:hidden' : ''}`}
+          >
             <PaginatedListDataTable
               key={tableKey}
               listQuery={changeHistoryEntriesDocument}
@@ -464,7 +472,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                     return (
                       <Cell
                         id={row.original.id}
-                        className="min-w-[8rem] max-w-[12rem] whitespace-normal"
+                        className="min-w-[6rem] max-w-[9rem] whitespace-normal @min-[1100px]:min-w-[8rem] @min-[1100px]:max-w-[12rem]"
                         title={actor.name}
                       >
                         <ActorName actor={actor} className="max-w-full" wrap />
@@ -479,7 +487,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="min-w-[5rem] max-w-[7.5rem] whitespace-normal min-[1280px]:max-w-none min-[1280px]:whitespace-nowrap"
+                      className="min-w-[5rem] max-w-[7.5rem] whitespace-normal break-words @min-[1150px]:max-w-[11rem]"
                     >
                       <EntryType entry={row.original} />
                     </Cell>
@@ -493,7 +501,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="flex max-w-[12rem] min-w-0 min-[1280px]:max-w-[14rem] min-[1400px]:max-w-[16rem]"
+                      className="flex min-w-0 max-w-[11rem] @min-[960px]:max-w-[13rem] @min-[1100px]:max-w-[14rem] @min-[1300px]:max-w-[16rem]"
                       title={row.original.entityLabel ?? undefined}
                     >
                       <EntryObject entry={row.original} cut />
@@ -507,7 +515,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="min-w-[6rem] max-w-[9rem] whitespace-normal min-[1280px]:max-w-[13rem] min-[1280px]:truncate min-[1280px]:whitespace-nowrap"
+                      className="min-w-[6rem] max-w-[8rem] whitespace-normal break-words @min-[1100px]:max-w-[10rem] @min-[1250px]:max-w-[13rem]"
                     >
                       <EntryAction entry={row.original} />
                     </Cell>
@@ -523,7 +531,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="line-clamp-3 min-w-[11rem] whitespace-normal break-words min-[1400px]:min-w-[12rem]"
+                      className="line-clamp-3 min-w-[8rem] whitespace-normal break-words @min-[1000px]:min-w-[10rem] @min-[1200px]:min-w-[12rem]"
                     >
                       <EntrySummary entry={row.original} />
                     </Cell>
