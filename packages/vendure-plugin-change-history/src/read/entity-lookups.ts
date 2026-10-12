@@ -10,7 +10,7 @@ import {
   Type,
 } from '@vendure/core';
 import { EntityManager, In } from 'typeorm';
-import { DETAIL_CHUNK_SIZE } from '../constants';
+import { chunks } from '../common/utils';
 import { labelsOf } from '../entity-definitions/labels';
 
 /** The recorded types that are core tables, with the relation that prefixes their label. */
@@ -46,14 +46,6 @@ function idsByType(manager: EntityManager, refs: EntityRef[]): Array<[string, Ty
       /int|number/i.test(keyType) ? /^\d+$/.test(id) : keyType === 'uuid' ? UUID.test(id) : true,
     );
     result.push([type, entity, usable, parent]);
-  }
-  return result;
-}
-
-function chunks<T>(items: T[]): T[][] {
-  const result: T[][] = [];
-  for (let i = 0; i < items.length; i += DETAIL_CHUNK_SIZE) {
-    result.push(items.slice(i, i + DETAIL_CHUNK_SIZE));
   }
   return result;
 }

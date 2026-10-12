@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ID, Logger, RequestContext, TransactionalConnection, VendureEvent } from '@vendure/core';
+import { clip } from '../common/utils';
 import { CHANGE_HISTORY_ACTIONS, CHANGE_HISTORY_ENTITY_TYPES, DETAIL_CHUNK_SIZE, loggerCtx } from '../constants';
 import { ChangeHistoryEntry } from '../entities/change-history-entry.entity';
 import { BatchState, ChangeHistoryContextService } from '../services/change-history-context.service';
@@ -26,8 +27,6 @@ export interface EntryDraft {
 
 /** Listens to the entries a write saved (the read side's caches). */
 export type SavedEntriesListener = (entries: ChangeHistoryEntry[]) => void;
-
-const clip = (value: string, length: number) => (value.length > length ? value.slice(0, length) : value);
 
 /**
  * The one place entries are inserted. Runs in `withTransaction(ctx)` — a savepoint inside the caller's

@@ -15,6 +15,7 @@ import {
   Type,
 } from '@vendure/core';
 import { CustomFieldConfig } from '@vendure/core';
+import { byNumericId } from '../common/utils';
 import { customFieldSpecs } from '../custom-fields/custom-field-specs';
 import { ChangeHistoryFieldChange, ResolvedChangeHistoryPluginOptions } from '../types';
 import { CatalogEntityDefinition, CatalogRow, ColumnField, LabelLoader } from './catalog-definition';
@@ -27,8 +28,6 @@ const labels =
 
 /** An id column as the string the history stores for references. */
 const idString = (value: unknown) => (value == null ? null : String(value));
-
-const byNumericId = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
 
 /** Sorted ids of a many-to-many relation. */
 const idsOf = (key: string) => (row: CatalogRow) =>
