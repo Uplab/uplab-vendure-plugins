@@ -198,6 +198,39 @@ export const changeHistoryFilterOptionsDocument = typedDocument<
   }
 `);
 
+export interface OperationDefinition {
+  code: string;
+  description: string;
+  args: Array<{ name: string; type: string; list: boolean; label: string | null; ui: Record<string, unknown> | null }>;
+}
+
+const operationDefinitionsDocument = <Field extends string>(field: Field) =>
+  typedDocument<Record<Field, OperationDefinition[]>, Record<string, never>>(`
+    query ChangeHistoryOperationDefinitions_${field} {
+      ${field} {
+        code
+        description
+        args {
+          name
+          type
+          list
+          label
+          ui
+        }
+      }
+    }
+  `);
+
+/**
+ * The configurable operations a filter, condition or action value can name: each list is read on its own,
+ * so a role that may not read one (promotions) still gets the others.
+ */
+export const operationDefinitionDocuments = {
+  collectionFilters: operationDefinitionsDocument('collectionFilters'),
+  promotionConditions: operationDefinitionsDocument('promotionConditions'),
+  promotionActions: operationDefinitionsDocument('promotionActions'),
+};
+
 /** Previews of the assets in an `assets` / `ref` change; a deleted asset is simply missing. */
 export const changeHistoryAssetPreviewsDocument = typedDocument<
   { assets: { items: Array<{ id: string; name: string; preview: string }> } },

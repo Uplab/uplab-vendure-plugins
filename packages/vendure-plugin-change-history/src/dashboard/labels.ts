@@ -29,8 +29,8 @@ export const FIELD_LABELS: Record<string, BuiltInLabel> = {
   sku: label('field.sku', 'SKU'),
   price: label('field.price', 'Price'),
   prices: label('field.prices', 'Price'),
-  featuredAsset: label('field.featuredAsset', 'Featured image'),
-  assets: label('field.assets', 'Images'),
+  featuredAsset: label('field.featuredAsset', 'Featured asset'),
+  assets: label('field.assets', 'Assets'),
   facetValues: label('field.facetValues', 'Facet values'),
   optionGroups: label('field.optionGroups', 'Option groups'),
   options: label('field.options', 'Options'),
@@ -116,8 +116,23 @@ const SOURCE_LABELS: Record<string, BuiltInSource> = {
   unknown_system: { label: label('source.unknown_system', 'System'), tone: 'system' },
 };
 
+/** Batch kinds read like actions (the feed shows them in the Action column): lowercase, capitalized in titles. */
 const BATCH_KIND_LABELS: Record<string, BuiltInLabel> = {
-  collection_rules: label('batch.collection_rules', 'Collection contents updated'),
+  collection_rules: label('batch.collection_rules', 'collection contents updated'),
+};
+
+/** Values of core enum fields, keyed by `<entity type>.<field>` or by the field alone. */
+const ENUM_LABELS: Record<string, Record<string, BuiltInLabel>> = {
+  trackInventory: {
+    TRUE: label('enum.GlobalFlag.TRUE', 'Yes'),
+    FALSE: label('enum.GlobalFlag.FALSE', 'No'),
+    INHERIT: label('enum.GlobalFlag.INHERIT', 'Inherit from global settings'),
+  },
+  'Asset.type': {
+    IMAGE: label('enum.AssetType.IMAGE', 'Image'),
+    VIDEO: label('enum.AssetType.VIDEO', 'Video'),
+    BINARY: label('enum.AssetType.BINARY', 'Binary'),
+  },
 };
 
 /** Keys of the `counts` of a run, of a collection-rules batch and of a host action (a reorder's `moved` / `total`). */
@@ -143,6 +158,7 @@ export const ALL_BUILT_IN_LABELS: BuiltInLabel[] = [
   ...Object.values(SOURCE_LABELS).map((source) => source.label),
   ...Object.values(BATCH_KIND_LABELS),
   ...Object.values(COUNT_LABELS),
+  ...Object.values(ENUM_LABELS).flatMap((values) => Object.values(values)),
 ];
 
 const LANGUAGE_SUFFIX = /^[a-z]{2}(_[A-Za-z]{2,4})?$/;
@@ -159,15 +175,30 @@ export function splitLanguage(key: string): { base: string; language?: string } 
   return { base: key };
 }
 
-/** `customFields.discountStartAt` → `Discount start at`: the last resort for a field nobody labelled. */
-export function humanizeKey(key: string): string {
-  const last = key.replace(/^customFields\./, '');
-  const words = last
+/**
+ * `customFields.discountStartAt` → `discount start at`, `syncERPStock` → `sync ERP stock`: the words of a key,
+ * lowercase except acronyms (a word written in capitals keeps them).
+ */
+function keyWords(key: string): string {
+  return key
+    .replace(/^customFields\./, '')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_.-]+/g, ' ')
-    .trim()
-    .toLowerCase();
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .split(/[\s_.-]+/)
+    .filter(Boolean)
+    .map((word) => (word.length > 1 && word === word.toUpperCase() && /[A-Z]/.test(word) ? word : word.toLowerCase()))
+    .join(' ');
+}
+
+/** `customFields.discountStartAt` → `Discount start at`: the last resort for a field or type nobody labelled. */
+export function humanizeKey(key: string): string {
+  const words = keyWords(key);
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : key;
+}
+
+/** `products_reordered` → `products reordered`: the last resort for an action, a batch kind or a count. */
+export function humanizePhrase(key: string): string {
+  return keyWords(key) || key;
 }
 
 /** A field's label and the language of a translatable one (shown as «Name (uk)»). */
@@ -190,7 +221,7 @@ export function fieldLabelOf(
 }
 
 export function entityTypeLabelOf(registry: ChangeHistoryRegistry, type: string): ChangeHistoryLabel {
-  return registry.entityTypes.get(type)?.label ?? ENTITY_TYPE_LABELS[type] ?? type;
+  return registry.entityTypes.get(type)?.label ?? ENTITY_TYPE_LABELS[type] ?? humanizeKey(type);
 }
 
 export function entityTypePluralLabelOf(type: string | undefined): BuiltInLabel {
@@ -198,11 +229,25 @@ export function entityTypePluralLabelOf(type: string | undefined): BuiltInLabel 
 }
 
 export function actionLabelOf(registry: ChangeHistoryRegistry, action: string): ChangeHistoryLabel {
-  return registry.actions.get(action)?.label ?? ACTION_LABELS[action] ?? action.replace(/_/g, ' ');
+  return registry.actions.get(action)?.label ?? ACTION_LABELS[action] ?? humanizePhrase(action);
 }
 
+/** The label of a batch kind the host registered or the package knows; `undefined` for any other kind. */
+export function knownBatchKindLabelOf(registry: ChangeHistoryRegistry, kind: string): ChangeHistoryLabel | undefined {
+  return registry.batchKinds.get(kind)?.label ?? BATCH_KIND_LABELS[kind];
+}
+
+/** A batch kind's label; a kind nobody labelled reads «bulk operation», never the raw key (`archive`). */
 export function batchKindLabelOf(registry: ChangeHistoryRegistry, kind: string): ChangeHistoryLabel {
-  return registry.batchKinds.get(kind)?.label ?? BATCH_KIND_LABELS[kind] ?? humanizeKey(kind);
+  return knownBatchKindLabelOf(registry, kind) ?? actionLabelOf(registry, 'batch');
+}
+
+/**
+ * The label of a core enum value (`trackInventory: INHERIT`, an asset's `type: IMAGE`), or `undefined` for a
+ * value the package does not know.
+ */
+export function enumValueLabelOf(entityType: string, key: string, value: string): BuiltInLabel | undefined {
+  return (ENUM_LABELS[`${entityType}.${key}`] ?? ENUM_LABELS[key])?.[value];
 }
 
 /**
@@ -226,7 +271,7 @@ export function sourceOf(
 }
 
 export function countLabelOf(registry: ChangeHistoryRegistry, source: string, key: string): ChangeHistoryLabel {
-  return registry.sources.get(source)?.countLabels?.[key] ?? COUNT_LABELS[key] ?? key.replace(/_/g, ' ');
+  return registry.sources.get(source)?.countLabels?.[key] ?? COUNT_LABELS[key] ?? humanizePhrase(key);
 }
 
 /** The batch kind of a member entry: `batchId` is `<kind>:<uuid>`. */

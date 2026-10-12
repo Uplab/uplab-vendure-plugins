@@ -49,8 +49,8 @@ function DefaultDetailRenderer({ rows, entry, mode }: ChangeHistoryDetailRendere
         <tbody>
           {rows.map((row) => (
             <tr key={row.id} className="border-b border-border/50 last:border-0">
-              <td className="w-1/4 py-1 pr-3 text-muted-foreground break-words">
-                {showObject && <span className="mr-2 font-mono text-xs text-foreground">{objectOf(row)}</span>}
+              <td className="w-[30%] py-1 pr-3 text-muted-foreground break-words">
+                {showObject && <span className="mr-2 text-xs text-foreground">{objectOf(row)}</span>}
                 {row.scopeLabel ?? row.scope ?? ''}
               </td>
               <td className="py-1 pr-3">
@@ -70,23 +70,25 @@ function DefaultDetailRenderer({ rows, entry, mode }: ChangeHistoryDetailRendere
       </table>
     );
   }
+  // The header stays on top while the window scrolls through a long run.
+  const th = 'bg-background py-1 font-normal';
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="border-b text-left text-xs text-muted-foreground">
-          <th className="py-1 pr-3 font-normal">
+    <table className="w-full border-collapse text-sm">
+      <thead className="sticky -top-px z-10 bg-background shadow-[0_1px_0_var(--border)]">
+        <tr className="text-left text-xs text-muted-foreground">
+          <th className={`${th} pr-3`}>
             <Trans context="change-history">SKU / ID</Trans>
           </th>
-          <th className="py-1 pr-3 font-normal">
+          <th className={`${th} pr-3`}>
             <Trans context="change-history">Name</Trans>
           </th>
-          <th className="py-1 pr-3 font-normal">
+          <th className={`${th} pr-3`}>
             <Trans context="change-history">Scope</Trans>
           </th>
-          <th className="py-1 pr-3 text-right font-normal">
+          <th className={`${th} pr-3 text-right`}>
             <Trans context="change-history">Was</Trans>
           </th>
-          <th className="py-1 text-right font-normal">
+          <th className={`${th} text-right`}>
             <Trans context="change-history">Became</Trans>
           </th>
         </tr>
@@ -94,10 +96,10 @@ function DefaultDetailRenderer({ rows, entry, mode }: ChangeHistoryDetailRendere
       <tbody>
         {rows.map((row) => (
           <tr key={row.id} className="border-b border-border/50 last:border-0">
-            <td className="py-1 pr-3 font-mono text-xs">{row.sku ?? row.entityId}</td>
+            <td className="py-1 pr-3 text-xs whitespace-nowrap">{row.sku ?? row.entityId}</td>
             <td className="py-1 pr-3">{row.entityLabel ?? <span className="text-muted-foreground">—</span>}</td>
-            <td className="py-1 pr-3">{row.scopeLabel ?? row.scope ?? '—'}</td>
-            <td className="py-1 pr-3 text-right">{plain(row.from)}</td>
+            <td className="py-1 pr-3 whitespace-nowrap">{row.scopeLabel ?? row.scope ?? '—'}</td>
+            <td className="py-1 pr-3 text-right whitespace-nowrap">{plain(row.from)}</td>
             <td className="py-1 text-right whitespace-nowrap">
               {plain(row.to)}
               <Delta row={row} />

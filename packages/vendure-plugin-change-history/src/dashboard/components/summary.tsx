@@ -1,7 +1,17 @@
 import { Trans } from '@lingui/react/macro';
 import { Badge } from '@vendure/dashboard';
 import { Layers } from 'lucide-react';
-import { batchTotal, countEntries, countsLine, durationSeconds, formatDelta, numericDelta } from '../format';
+import {
+  batchTotal,
+  countEntries,
+  countsLine,
+  durationSeconds,
+  formatDelta,
+  numericDelta,
+  orderCreatedKeys,
+  refLabel,
+} from '../format';
+import { batchKindOf } from '../labels';
 import type { ChangeHistoryEntryData, ChangeHistoryFieldChange } from '../registry';
 import { EntityLink } from './entity-link';
 import { useLabels } from './use-labels';
@@ -23,8 +33,17 @@ export function batchSubject(entry: ChangeHistoryEntryData): ChangeHistoryEntryD
   };
 }
 
-const kindOf = (entry: ChangeHistoryEntryData) =>
-  typeof entry.meta?.kind === 'string' ? entry.meta.kind : entry.entityType;
+/** A batch head's kind: `meta.kind`, else the kind in its `batchId` (`<kind>:<uuid>`). */
+export const batchKindOfEntry = (entry: ChangeHistoryEntryData): string =>
+  typeof entry.meta?.kind === 'string' ? entry.meta.kind : (batchKindOf(entry.batchId) ?? entry.entityType);
+
+/**
+ * A batch's own label («Scheduled action #3»), or `undefined` when it has none: a host that passed no label
+ * stored the kind (`archive`) there, which is not shown.
+ */
+export function batchOwnLabel(entry: ChangeHistoryEntryData): string | undefined {
+  return entry.entityLabel && entry.entityLabel !== batchKindOfEntry(entry) ? entry.entityLabel : undefined;
+}
 
 /** «Product», «Variant», …; a batch with a parent shows its parent's type. */
 export function EntryType({ entry }: { entry: ChangeHistoryEntryData }) {
@@ -36,20 +55,36 @@ export function EntryType({ entry }: { entry: ChangeHistoryEntryData }) {
 /** The action; a batch head says what kind of batch it is. */
 export function EntryAction({ entry }: { entry: ChangeHistoryEntryData }) {
   const labels = useLabels();
-  return <span>{entry.entityType === 'Batch' ? labels.batchKind(kindOf(entry)) : labels.action(entry.action)}</span>;
+  return (
+    <span>
+      {entry.entityType === 'Batch' ? labels.batchKind(batchKindOfEntry(entry)) : labels.action(entry.action)}
+    </span>
+  );
 }
 
-/** The object of a feed row: a link to the entity, the batch's size, or nothing for a run. */
-export function EntryObject({ entry }: { entry: ChangeHistoryEntryData }) {
+/**
+ * The object of a feed row: a link to the entity, the batch's subject and size, or what a run was about (its
+ * recorded label: «stock sync after order #1042»). `cut` lets a narrow cell shorten the name, never a
+ * variant's SKU.
+ */
+export function EntryObject({ entry, cut = false }: { entry: ChangeHistoryEntryData; cut?: boolean }) {
   if (entry.entityType === 'Run') {
-    return <span className="text-muted-foreground">—</span>;
+    return entry.entityLabel ? (
+      <span className={cut ? 'block truncate' : undefined}>{entry.entityLabel}</span>
+    ) : (
+      <span className="text-muted-foreground">—</span>
+    );
   }
   if (entry.entityType === 'Batch') {
     const subject = batchSubject(entry);
     const total = batchTotal(entry.batchCounts);
     return (
-      <span className="inline-flex items-center gap-1.5">
-        {subject && <EntityLink entry={subject} />}
+      <span className="inline-flex max-w-full items-center gap-1.5">
+        {subject ? (
+          <EntityLink entry={subject} cut={cut} />
+        ) : (
+          batchOwnLabel(entry) && <span className={cut ? 'truncate' : undefined}>{batchOwnLabel(entry)}</span>
+        )}
         {total > 0 && (
           <Badge variant="outline" className="gap-1 font-normal">
             <Layers className="h-3 w-3" />
@@ -59,10 +94,13 @@ export function EntryObject({ entry }: { entry: ChangeHistoryEntryData }) {
       </span>
     );
   }
-  return <EntityLink entry={entry} />;
+  return <EntityLink entry={entry} cut={cut} />;
 }
 
-/** «updated 37, zeroed 2 · 4 s» — a run's counts with the source's labels. */
+/** «updated: 37» — a count after its label, so that a noun («errors») reads as well as a participle. */
+const countText = (label: string, count: number) => `${label}: ${count}`;
+
+/** «updated: 37, zeroed: 2 · 4 s» — a run's counts with the source's labels. */
 export function RunCounts({
   entry,
   includeZero = false,
@@ -77,7 +115,7 @@ export function RunCounts({
   const seconds = durationSeconds(entry.meta?.durationMs);
   return (
     <span>
-      {counts.map(([key, count]) => `${labels.count(entry.source, key)} ${count}`).join(separator)}
+      {counts.map(([key, count]) => countText(labels.count(entry.source, key), count)).join(separator)}
       {seconds !== undefined && (
         <span className="text-muted-foreground">
           {counts.length > 0 && ' · '}
@@ -94,14 +132,14 @@ export function hasCounts(entry: ChangeHistoryEntryData): boolean {
   return parts.length > 0 || total !== undefined;
 }
 
-/** «moved 3 (total 12)»: the counts of a host action with the source's labels, the total last. */
+/** «moved: 3 (total: 12)»: the counts of a host action with the source's labels, the total last. */
 export function EntryCounts({ entry }: { entry: ChangeHistoryEntryData }) {
   const labels = useLabels();
   const { parts, total } = countsLine(entry.meta?.counts);
-  const totalText = total !== undefined ? `${labels.count(entry.source, 'total')} ${total}` : '';
+  const totalText = total !== undefined ? countText(labels.count(entry.source, 'total'), total) : '';
   return (
     <span>
-      {parts.map(([key, count]) => `${labels.count(entry.source, key)} ${count}`).join(', ')}
+      {parts.map(([key, count]) => countText(labels.count(entry.source, key), count)).join(', ')}
       {totalText && (parts.length > 0 ? ` (${totalText})` : totalText)}
     </span>
   );
@@ -125,7 +163,7 @@ export function BatchSummary({ entry }: { entry: ChangeHistoryEntryData }) {
   return (
     <span>
       {(entry.batchCounts ?? [])
-        .map((count) => `${labels.type(count.entityType)} · ${labels.action(count.action)}: ${count.count}`)
+        .map((count) => `${labels.type(count.entityType)} · ${countText(labels.action(count.action), count.count)}`)
         .join(', ')}
     </span>
   );
@@ -150,12 +188,24 @@ function ChangesSummary({
   const labels = useLabels();
   const text = useValueText();
   const keys = Object.keys(changes);
-  if (keys.length === 1 && !LIST_KINDS.has(changes[keys[0]].kind ?? 'text') && !changes[keys[0]].stripped) {
-    const change = changes[keys[0]];
-    const delta = change.kind === 'stock' ? numericDelta(change.from, change.to) : undefined;
+  const only = keys.length === 1 ? changes[keys[0]] : undefined;
+  if (only && only.kind === 'refs' && !only.stripped) {
+    // «Facet values: +Color: White, −Color: Black»
+    const ids = (list: string[] | undefined, sign: string) =>
+      (list ?? []).map((id) => `${sign}${refLabel(only.labels, id)}`);
     return (
       <span>
-        {labels.field(entry.entityType, keys[0], change)}: {text(change.from, change)} → {text(change.to, change)}
+        {labels.field(entry.entityType, keys[0], only)}:{' '}
+        {[...ids(only.added, '+'), ...ids(only.removed, '−')].join(', ')}
+      </span>
+    );
+  }
+  if (only && !LIST_KINDS.has(only.kind ?? 'text') && !only.stripped) {
+    const field = { entityType: entry.entityType, fieldKey: keys[0] };
+    const delta = only.kind === 'stock' ? numericDelta(only.from, only.to) : undefined;
+    return (
+      <span>
+        {labels.field(entry.entityType, keys[0], only)}: {text(only.from, only, field)} → {text(only.to, only, field)}
         {delta !== undefined && delta !== 0 && ` (${formatDelta(delta)})`}
       </span>
     );
@@ -165,6 +215,32 @@ function ChangesSummary({
     <span>
       {names.join(', ')}
       {keys.length > MAX_FIELDS && ', …'}
+    </span>
+  );
+}
+
+/** «Name (en): Tee» — what a created entity is called, from the values it was created with. */
+function CreatedSummary({
+  entry,
+  changes,
+}: {
+  entry: ChangeHistoryEntryData;
+  changes: Record<string, ChangeHistoryFieldChange>;
+}) {
+  const labels = useLabels();
+  const text = useValueText();
+  const key = orderCreatedKeys(Object.keys(changes)).find((candidate) => {
+    const change = changes[candidate];
+    return !LIST_KINDS.has(change.kind ?? 'text') && !change.stripped && text(change.to, change) !== '—';
+  });
+  if (!key) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const change = changes[key];
+  return (
+    <span>
+      {labels.field(entry.entityType, key, change)}:{' '}
+      {text(change.to, change, { entityType: entry.entityType, fieldKey: key })}
     </span>
   );
 }
@@ -189,6 +265,14 @@ export function EntrySummary({ entry }: { entry: ChangeHistoryEntryData }) {
     return (
       <span>
         <ChangesSummary entry={entry} changes={changes} />
+        {derived}
+      </span>
+    );
+  }
+  if (entry.action === 'created' && Object.keys(changes).length > 0) {
+    return (
+      <span>
+        <CreatedSummary entry={entry} changes={changes} />
         {derived}
       </span>
     );

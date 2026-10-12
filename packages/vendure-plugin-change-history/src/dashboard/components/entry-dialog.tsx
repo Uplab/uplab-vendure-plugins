@@ -1,4 +1,4 @@
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   api,
   Button,
@@ -13,14 +13,18 @@ import {
   useQuery,
 } from '@vendure/dashboard';
 import { ArrowLeft, ArrowRight, Info } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode, type RefObject } from 'react';
+import { batchTotal, capitalizeFirst, repeatsShown } from '../format';
 import { changeHistoryEntryDocument, changeHistoryRunDetailsDocument } from '../graphql';
 import type { ChangeHistoryEntryData } from '../registry';
-import { actorOf, EntryBadges } from './actor';
+import { actorOf, EntryBadges, runLabelOf } from './actor';
 import { DetailRows } from './details';
 import { DeletedBadge, EntityLink, useEntityRoute } from './entity-link';
+import { QueryError } from './query-error';
 import {
   BatchSummary,
+  batchKindOfEntry,
+  batchOwnLabel,
   batchSubject,
   EntryAction,
   EntryCounts,
@@ -31,8 +35,8 @@ import {
   RunCounts,
 } from './summary';
 import { EntityTimeline } from './timeline';
-import { useLabels } from './use-labels';
-import { CreatedValues, FieldChangesTable, LastStateValue } from './values';
+import { useLabels, type Labels } from './use-labels';
+import { CreatedGrid, FieldChangesTable, GridRow, LastStateValue, UnboundedValues, ValuesGrid } from './values';
 
 const LIST_PAGE = 20;
 const RUN_PAGE = 100;
@@ -49,18 +53,35 @@ function Pager({
   total: number;
   onChange: (skip: number) => void;
 }) {
+  const { t } = useLingui();
   if (total <= take) {
     return null;
   }
+  const previous = t({ message: 'Previous page', context: 'change-history' });
+  const next = t({ message: 'Next page', context: 'change-history' });
   return (
     <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
       <span>
         {skip + 1}–{Math.min(skip + take, total)} / {total}
       </span>
-      <Button variant="outline" size="icon-xs" disabled={skip === 0} onClick={() => onChange(Math.max(0, skip - take))}>
+      <Button
+        variant="outline"
+        size="icon-xs"
+        aria-label={previous}
+        title={previous}
+        disabled={skip === 0}
+        onClick={() => onChange(Math.max(0, skip - take))}
+      >
         <ArrowLeft />
       </Button>
-      <Button variant="outline" size="icon-xs" disabled={skip + take >= total} onClick={() => onChange(skip + take)}>
+      <Button
+        variant="outline"
+        size="icon-xs"
+        aria-label={next}
+        title={next}
+        disabled={skip + take >= total}
+        onClick={() => onChange(skip + take)}
+      >
         <ArrowRight />
       </Button>
     </div>
@@ -108,7 +129,7 @@ function EntryRows({ entries }: { entries: ChangeHistoryEntryData[] }) {
 
 function RunDetails({ entry }: { entry: ChangeHistoryEntryData }) {
   const [skip, setSkip] = useState(0);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['change-history-run-details', entry.id, skip],
     queryFn: () => api.query(changeHistoryRunDetailsDocument, { entryId: entry.id, skip, take: RUN_PAGE }),
     placeholderData: keepPreviousData,
@@ -116,6 +137,9 @@ function RunDetails({ entry }: { entry: ChangeHistoryEntryData }) {
   const page = data?.changeHistoryRunDetails;
   if (isLoading) {
     return <Skeleton className="h-24 w-full" />;
+  }
+  if (isError) {
+    return <QueryError error={error} onRetry={() => refetch()} retrying={isFetching} />;
   }
   if (!page || page.totalItems === 0) {
     return entry.isCompacted ? null : (
@@ -144,39 +168,95 @@ function LastState({ entry }: { entry: ChangeHistoryEntryData }) {
   );
   return (
     <Section title={<Trans context="change-history">Last state</Trans>}>
-      <dl className="grid grid-cols-[minmax(8rem,1fr)_3fr] gap-x-3 gap-y-1 text-sm">
+      <ValuesGrid>
         {values.map(([key, value]) => {
           const stripped = value && typeof value === 'object' && (value as { stripped?: boolean }).stripped;
           return (
-            <div key={key} className="contents">
-              <dt className="text-muted-foreground">{labels.field(entry.entityType, key)}</dt>
-              <dd className="min-w-0 break-words">
-                {stripped ? (
-                  '…'
-                ) : (
-                  <LastStateValue
-                    entityType={entry.entityType}
-                    fieldKey={key}
-                    value={value}
-                    fields={entry.meta?.lastStateFields}
-                  />
-                )}
-              </dd>
-            </div>
+            <GridRow key={key} label={labels.field(entry.entityType, key)}>
+              {stripped ? (
+                '…'
+              ) : (
+                <LastStateValue
+                  entityType={entry.entityType}
+                  fieldKey={key}
+                  value={value}
+                  fields={entry.meta?.lastStateFields}
+                />
+              )}
+            </GridRow>
           );
         })}
-      </dl>
+      </ValuesGrid>
     </Section>
   );
 }
 
-function DialogBody({ entryId, onFullHistory }: { entryId: string; onFullHistory: () => void }) {
+/** The collection or channel a membership entry names; the other entries have nothing here. */
+function Membership({ entry }: { entry: ChangeHistoryEntryData }) {
+  const labels = useLabels();
+  if ((entry.action === 'collection_added' || entry.action === 'collection_removed') && entry.parentId) {
+    const name = typeof entry.meta?.collectionLabel === 'string' ? entry.meta.collectionLabel : entry.parentId;
+    return (
+      <ValuesGrid>
+        <GridRow label={labels.type('Collection')}>
+          <EntityLink
+            entry={{
+              ...entry,
+              entityType: 'Collection',
+              entityId: entry.parentId,
+              entityLabel: name,
+              entityDeleted: entry.parentDeleted === true,
+            }}
+          />
+        </GridRow>
+      </ValuesGrid>
+    );
+  }
+  if (entry.action === 'channel_assigned' || entry.action === 'channel_removed') {
+    return (
+      <ValuesGrid>
+        <GridRow label={<Trans context="change-history">Channel</Trans>}>
+          {typeof entry.meta?.channelCode === 'string' ? entry.meta.channelCode : '—'}
+        </GridRow>
+      </ValuesGrid>
+    );
+  }
+  return null;
+}
+
+/**
+ * The window's title. A run: its label. A batch: its subject («Collection «Sale»»), else its own label
+ * («Scheduled action #3»), else its kind's label, else «Bulk operation» — never the raw kind (`archive`)
+ * that a host stored as the label of an unlabelled batch.
+ */
+function titleOf(entry: ChangeHistoryEntryData, labels: Labels): { text: string; subject: ChangeHistoryEntryData } {
+  const subject = batchSubject(entry) ?? entry;
+  if (entry.entityType === 'Run') {
+    return { text: runLabelOf(entry, actorOf(entry, labels)), subject };
+  }
+  if (entry.entityType === 'Batch' && subject === entry) {
+    const own = batchOwnLabel(entry);
+    const known = labels.knownBatchKind(batchKindOfEntry(entry));
+    return { text: capitalizeFirst(own ?? known ?? labels.type('Batch')), subject };
+  }
+  return { text: `${labels.type(subject.entityType)} «${subject.entityLabel ?? subject.entityId}»`, subject };
+}
+
+function DialogBody({
+  entryId,
+  onFullHistory,
+  focusRef,
+}: {
+  entryId: string;
+  onFullHistory: () => void;
+  focusRef: RefObject<HTMLDivElement | null>;
+}) {
   const labels = useLabels();
   const { formatDate } = useLocalFormat();
   const entityRoute = useEntityRoute();
   const [derivedSkip, setDerivedSkip] = useState(0);
   const [memberSkip, setMemberSkip] = useState(0);
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['change-history-entry', entryId, derivedSkip, memberSkip],
     queryFn: () =>
       api.query(changeHistoryEntryDocument, {
@@ -187,169 +267,214 @@ function DialogBody({ entryId, onFullHistory }: { entryId: string; onFullHistory
     placeholderData: keepPreviousData,
   });
   if (isLoading) {
-    return <Skeleton className="h-32 w-full" />;
+    return (
+      <div ref={focusRef} tabIndex={-1} className="outline-none">
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
   }
   if (isError) {
-    return <div className="text-sm text-destructive">{error instanceof Error ? error.message : String(error)}</div>;
+    return (
+      <div ref={focusRef} tabIndex={-1} className="pr-8 outline-none">
+        <QueryError error={error} onRetry={() => refetch()} retrying={isFetching} />
+      </div>
+    );
   }
   const entry = data?.changeHistoryEntry;
   if (!entry) {
     return (
-      <div className="text-sm text-muted-foreground">
+      <div ref={focusRef} tabIndex={-1} className="text-sm text-muted-foreground outline-none">
         <Trans context="change-history">This entry no longer exists.</Trans>
       </div>
     );
   }
   const actor = actorOf(entry, labels);
-  const subject = batchSubject(entry) ?? entry;
+  const { text: title, subject } = titleOf(entry, labels);
   const changes = entry.changes ?? {};
   const hasChanges = Object.keys(changes).length > 0;
   const route = entityRoute(subject);
   const isRun = entry.entityType === 'Run';
   const isBatch = entry.entityType === 'Batch';
   const deleted = entry.entityDeleted || (entry.action === 'deleted' && !isRun && !isBatch);
+  // Each name once on the header: the scheduled action that ran itself is title, actor, kind and source.
+  const shown = [title];
+  const show = (text: string) => {
+    if (repeatsShown(text, shown)) {
+      return false;
+    }
+    shown.push(text);
+    return true;
+  };
+  const actionText = isBatch ? labels.batchKind(batchKindOfEntry(entry)) : '';
+  const showActor = !isRun && show(actor.name);
+  const showAction = !isBatch || show(actionText);
+  const showSource = show(actor.source.label);
+  const memberType = entry.batchCounts?.length === 1 ? entry.batchCounts[0].entityType : undefined;
   return (
-    <div className="space-y-5">
-      <DialogHeader>
+    <>
+      <DialogHeader ref={focusRef} tabIndex={-1} className="shrink-0 pr-8 outline-none">
         <DialogTitle className="flex flex-wrap items-center gap-2">
-          {isRun ? (
-            <span>{actor.name}</span>
-          ) : (
-            <>
-              <span>
-                {labels.type(subject.entityType)} «{subject.entityLabel ?? subject.entityId}»
-              </span>
-              {deleted ? (
-                <DeletedBadge />
-              ) : (
-                route && (
-                  <EntityLink entry={subject} className="text-sm font-normal text-primary">
-                    <Trans context="change-history">open</Trans> →
-                  </EntityLink>
-                )
-              )}
-            </>
-          )}
+          <span>{title}</span>
+          {!isRun &&
+            (deleted ? (
+              <DeletedBadge />
+            ) : (
+              route && (
+                <EntityLink entry={subject} className="text-sm font-normal">
+                  <Trans context="change-history">open</Trans> →
+                </EntityLink>
+              )
+            ))}
         </DialogTitle>
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
-          {!isRun && <span className="text-foreground">{actor.name}</span>}
-          {!isRun && <span>·</span>}
-          <EntryAction entry={entry} />
-          <span>·</span>
+          {showActor && <span className="text-foreground">{actor.name}</span>}
+          {showActor && <span>·</span>}
+          {showAction && (
+            <>
+              <EntryAction entry={entry} />
+              <span>·</span>
+            </>
+          )}
           <span>{formatDate(entry.createdAt, { dateStyle: 'short', timeStyle: 'medium' })}</span>
-          <span>·</span>
-          <span>
-            <Trans context="change-history">Source:</Trans> {actor.source.label}
-          </span>
-          {/* A scheduled action's badge is its source's label, already on the line. */}
-          <EntryBadges actor={actor} shown={[actor.source.label]} />
+          {showSource && (
+            <>
+              <span>·</span>
+              <span>
+                <Trans context="change-history">Source:</Trans> {actor.source.label}
+              </span>
+            </>
+          )}
+          <EntryBadges actor={actor} shown={shown} />
         </div>
       </DialogHeader>
 
-      {entry.isCompacted && (
-        <div className="flex gap-2 rounded-md border border-dashed p-2 text-xs text-muted-foreground">
-          <Info className="h-4 w-4 shrink-0" />
-          <Trans context="change-history">
-            Detailed values are kept for a limited time; the complete record of this entry is in the archive.
-          </Trans>
-        </div>
-      )}
-
-      {isRun && (
-        <>
-          <div className="text-sm">
-            <RunCounts entry={entry} includeZero separator=" · " />
-          </div>
-          <RunDetails entry={entry} />
-        </>
-      )}
-
-      {isBatch && (
-        <Section
-          title={
-            <>
-              <EntryAction entry={entry} /> · <BatchSummary entry={entry} />
-            </>
-          }
-        >
-          {entry.batchMembers.items.length > 0 ? (
-            <>
-              <EntryRows entries={entry.batchMembers.items} />
-              <Pager
-                skip={memberSkip}
-                take={LIST_PAGE}
-                total={entry.batchMembers.totalItems}
-                onChange={setMemberSkip}
-              />
-            </>
-          ) : null}
-        </Section>
-      )}
-
-      {hasChanges && entry.action === 'created' && <CreatedValues entityType={entry.entityType} changes={changes} />}
-      {hasChanges && entry.action !== 'created' && (
-        <FieldChangesTable entityType={entry.entityType} changes={changes} />
-      )}
-      {!hasChanges && !isRun && !isBatch && hasCounts(entry) && (
-        <div className="text-sm">
-          <EntryCounts entry={entry} />
-        </div>
-      )}
-      {!hasChanges && !!entry.meta?.noBefore && entry.action === 'updated' && (
-        <div className="text-sm text-muted-foreground">
-          <Trans context="change-history">details unavailable</Trans>
-        </div>
-      )}
-
-      {entry.action === 'deleted' && <LastState entry={entry} />}
-
-      {entry.derivedCount > 0 && (
-        <Section
-          title={
-            <>
-              <Trans context="change-history">Derived changes:</Trans> {entry.derivedCount}
-            </>
-          }
-        >
-          {entry.derivedEntries.items.length > 0 && (
-            <div className="space-y-3">
-              {entry.derivedEntries.items.map((derived) => (
-                <div key={derived.id} className="space-y-1">
-                  <div className="text-sm">
-                    {labels.type(derived.entityType)} <EntityLink entry={derived} /> ·{' '}
-                    <span className="text-muted-foreground">
-                      <EntryAction entry={derived} />
-                    </span>
-                  </div>
-                  {derived.changes && Object.keys(derived.changes).length > 0 && (
-                    <FieldChangesTable entityType={derived.entityType} changes={derived.changes} showHeader={false} />
-                  )}
-                </div>
-              ))}
-              <Pager
-                skip={derivedSkip}
-                take={LIST_PAGE}
-                total={entry.derivedEntries.totalItems}
-                onChange={setDerivedSkip}
-              />
+      <div className="-mx-6 min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-1">
+        <UnboundedValues>
+          {entry.isCompacted && (
+            <div className="flex gap-2 rounded-md border border-dashed p-2 text-xs text-muted-foreground">
+              <Info className="h-4 w-4 shrink-0" />
+              <Trans context="change-history">
+                Detailed values are kept for a limited time; the complete record of this entry is in the archive.
+              </Trans>
             </div>
           )}
-        </Section>
-      )}
+
+          {isRun && (
+            <>
+              <div className="text-sm">
+                <RunCounts entry={entry} includeZero separator=" · " />
+              </div>
+              <RunDetails entry={entry} />
+            </>
+          )}
+
+          {isBatch && (
+            <Section
+              title={
+                <>
+                  {labels.typePlural(memberType)}: {batchTotal(entry.batchCounts)}
+                  {Array.isArray(entry.meta?.fields) && entry.meta.fields.length > 0 && (
+                    <span className="font-normal text-muted-foreground">
+                      {' · '}
+                      <BatchSummary entry={entry} />
+                    </span>
+                  )}
+                </>
+              }
+            >
+              {entry.batchMembers.items.length > 0 ? (
+                <>
+                  <EntryRows entries={entry.batchMembers.items} />
+                  <Pager
+                    skip={memberSkip}
+                    take={LIST_PAGE}
+                    total={entry.batchMembers.totalItems}
+                    onChange={setMemberSkip}
+                  />
+                </>
+              ) : null}
+            </Section>
+          )}
+
+          <Membership entry={entry} />
+          {hasChanges && entry.action === 'created' && <CreatedGrid entityType={entry.entityType} changes={changes} />}
+          {hasChanges && entry.action !== 'created' && (
+            <FieldChangesTable entityType={entry.entityType} changes={changes} />
+          )}
+          {!hasChanges && !isRun && !isBatch && hasCounts(entry) && (
+            <div className="text-sm">
+              <EntryCounts entry={entry} />
+            </div>
+          )}
+          {!hasChanges && !!entry.meta?.noBefore && entry.action === 'updated' && (
+            <div className="text-sm text-muted-foreground">
+              <Trans context="change-history">details unavailable</Trans>
+            </div>
+          )}
+
+          {entry.action === 'deleted' && <LastState entry={entry} />}
+
+          {entry.derivedCount > 0 && (
+            <Section
+              title={
+                <>
+                  <Trans context="change-history">Derived changes:</Trans> {entry.derivedCount}
+                </>
+              }
+            >
+              {entry.derivedEntries.items.length > 0 && (
+                <div className="space-y-3">
+                  {entry.derivedEntries.items.map((derived) => (
+                    <div key={derived.id} className="space-y-1">
+                      <div className="text-sm">
+                        {labels.type(derived.entityType)}{' '}
+                        <EntityLink entry={derived} deletedBadge={derived.action !== 'deleted'} /> ·{' '}
+                        <span className="text-muted-foreground">
+                          <EntryAction entry={derived} />
+                        </span>
+                      </div>
+                      {derived.changes &&
+                        Object.keys(derived.changes).length > 0 &&
+                        (derived.action === 'created' ? (
+                          <CreatedGrid entityType={derived.entityType} changes={derived.changes} />
+                        ) : (
+                          <FieldChangesTable
+                            entityType={derived.entityType}
+                            changes={derived.changes}
+                            showHeader={false}
+                          />
+                        ))}
+                    </div>
+                  ))}
+                  <Pager
+                    skip={derivedSkip}
+                    take={LIST_PAGE}
+                    total={entry.derivedEntries.totalItems}
+                    onChange={setDerivedSkip}
+                  />
+                </div>
+              )}
+            </Section>
+          )}
+        </UnboundedValues>
+      </div>
 
       {deleted && (
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="outline" onClick={onFullHistory}>
             <Trans context="change-history">Full history</Trans>
           </Button>
         </DialogFooter>
       )}
-    </div>
+    </>
   );
 }
 
 /** The entry window: opened from a feed row, a widget line or an entry link. */
 export function EntryDialog({ entryId, onClose }: { entryId: string | undefined; onClose: () => void }) {
+  const { t } = useLingui();
+  const labels = useLabels();
+  const focusRef = useRef<HTMLDivElement>(null);
   const [history, setHistory] = useState<{ entityType: string; entityId: string; label: string } | undefined>();
   const { data } = useQuery({
     queryKey: ['change-history-entry', entryId, 0, 0],
@@ -368,32 +493,45 @@ export function EntryDialog({ entryId, onClose }: { entryId: string | undefined;
   };
   return (
     <Dialog open={!!entryId} onOpenChange={(open) => !open && close()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+      {/* The header stays while the body scrolls; focus lands on the header, not on the close button. */}
+      <DialogContent className="flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-4xl" initialFocus={focusRef}>
         {entryId && !history && (
           <DialogBody
             entryId={entryId}
-            onFullHistory={() =>
-              entry &&
+            focusRef={focusRef}
+            onFullHistory={() => {
+              if (!entry) {
+                return;
+              }
+              const subject = batchSubject(entry) ?? entry;
               setHistory({
-                entityType: batchSubject(entry)?.entityType ?? entry.entityType,
-                entityId: batchSubject(entry)?.entityId ?? entry.entityId,
-                label: entry.entityLabel ?? entry.entityId,
-              })
-            }
+                entityType: subject.entityType,
+                entityId: subject.entityId,
+                label: titleOf(entry, labels).text,
+              });
+            }}
           />
         )}
         {history && (
-          <div className="space-y-3">
-            <DialogHeader>
+          <>
+            <DialogHeader ref={focusRef} tabIndex={-1} className="shrink-0 pr-8 outline-none">
               <DialogTitle className="flex items-center gap-2">
-                <Button variant="ghost" size="icon-sm" onClick={() => setHistory(undefined)}>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t({ message: 'Back', context: 'change-history' })}
+                  title={t({ message: 'Back', context: 'change-history' })}
+                  onClick={() => setHistory(undefined)}
+                >
                   <ArrowLeft />
                 </Button>
                 <Trans context="change-history">Full history</Trans> · {history.label}
               </DialogTitle>
             </DialogHeader>
-            <EntityTimeline subject={history} />
-          </div>
+            <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6">
+              <EntityTimeline subject={history} />
+            </div>
+          </>
         )}
       </DialogContent>
     </Dialog>

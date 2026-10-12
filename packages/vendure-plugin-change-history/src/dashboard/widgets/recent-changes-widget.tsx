@@ -13,7 +13,8 @@ import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { ActorName, actorOf } from '../components/actor';
 import { EntryDialog } from '../components/entry-dialog';
-import { EntryAction, EntryObject, EntrySummary } from '../components/summary';
+import { QueryError } from '../components/query-error';
+import { EntryAction, EntryObject, EntrySummary, EntryType } from '../components/summary';
 import { useLabels } from '../components/use-labels';
 import { feedFilter, feedSearchParams, periodBounds, titleWhenCut } from '../format';
 import { changeHistoryEntriesDocument } from '../graphql';
@@ -32,7 +33,7 @@ export function RecentChangesWidget() {
   const [entryId, setEntryId] = useState<string>();
   // Whole days: the Insights picker gives local midnights, which would leave the last day out.
   const { from, to } = periodBounds(dateRange.from, dateRange.to);
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
     queryKey: ['change-history-recent', from, to],
     queryFn: () =>
       api.query(changeHistoryEntriesDocument, {
@@ -49,7 +50,14 @@ export function RecentChangesWidget() {
       id={RECENT_CHANGES_WIDGET_ID}
       title={t({ message: 'Recent changes', context: 'change-history' })}
       actions={
-        <Button variant="ghost" size="icon-sm" disabled={isFetching} onClick={() => refetch()}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t({ message: 'Refresh', context: 'change-history' })}
+          title={t({ message: 'Refresh', context: 'change-history' })}
+          disabled={isFetching}
+          onClick={() => refetch()}
+        >
           <RefreshCw className={isFetching ? 'animate-spin' : undefined} />
         </Button>
       }
@@ -57,7 +65,10 @@ export function RecentChangesWidget() {
       <div className="flex h-full flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
           {isLoading && <Skeleton className="h-24 w-full" />}
-          {!isLoading && items.length === 0 && (
+          {isError && (
+            <QueryError className="justify-center py-6" error={error} onRetry={() => refetch()} retrying={isFetching} />
+          )}
+          {!isLoading && !isError && items.length === 0 && (
             <div className="py-6 text-center text-sm text-muted-foreground">
               <Trans context="change-history">No changes in this period.</Trans>
             </div>
@@ -71,25 +82,26 @@ export function RecentChangesWidget() {
                   className={`flex cursor-pointer gap-3 px-1 py-1.5 text-sm hover:bg-muted/40 ${actor.tone === 'system' ? 'bg-muted/20' : ''}`}
                   onClick={() => setEntryId(entry.id)}
                 >
-                  <span className="w-12 shrink-0 text-muted-foreground">
+                  {/* Today's changes by time; older ones by day and time, so one day's changes stay apart. */}
+                  <span className="w-[5.5rem] shrink-0 whitespace-nowrap text-xs leading-5 text-muted-foreground">
                     {formatDate(
                       entry.createdAt,
                       new Date(entry.createdAt).toDateString() === new Date().toDateString()
                         ? { timeStyle: 'short' }
-                        : { day: '2-digit', month: '2-digit' },
+                        : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' },
                     )}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-1.5">
                       <ActorName actor={actor} className="font-medium" />
-                      {entry.entityType !== 'Run' && (
-                        <>
-                          <span className="text-muted-foreground">·</span>
-                          <span className="truncate">
-                            <EntryObject entry={entry} />
-                          </span>
-                        </>
-                      )}
+                      <span className="text-muted-foreground">·</span>
+                      {/* «Collection Sale», not just «Sale»: the type tells a collection from a promotion. */}
+                      <span className="shrink-0 text-muted-foreground">
+                        <EntryType entry={entry} />
+                      </span>
+                      <span className="flex min-w-0">
+                        <EntryObject entry={entry} cut />
+                      </span>
                     </div>
                     {/* Up to two lines of what changed, the whole line in the tooltip when it is longer. */}
                     <div

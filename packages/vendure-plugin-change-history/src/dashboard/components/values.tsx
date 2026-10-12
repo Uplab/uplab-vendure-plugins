@@ -1,19 +1,35 @@
+import { useLingui as useLinguiContext } from '@lingui/react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { api, useChannel, useLocalFormat, useQuery, VendureImage } from '@vendure/dashboard';
-import { useState, type ReactNode } from 'react';
-import { changeHistoryAssetPreviewsDocument } from '../graphql';
+import { api, useChannel, useLocalFormat, useQuery, useServerConfig, VendureImage } from '@vendure/dashboard';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import {
+  argumentList,
+  capitalizeFirst,
   clipText,
+  diffLines,
+  diffWindow,
+  fillDescription,
   flatEntries,
+  formatBytes,
   formatDelta,
   idList,
+  isOperationList,
   jsonDiff,
   jsonLines,
   lastStateChange,
   numericDelta,
+  operationLines,
+  orderCreatedKeys,
+  refLabel,
+  richTextDiff,
   stripHtml,
+  withFacetValueLabels,
+  type DescribedOperation,
   type DiffLine,
+  type OperationValue,
 } from '../format';
+import { humanizeKey } from '../labels';
+import { changeHistoryAssetPreviewsDocument, operationDefinitionDocuments, type OperationDefinition } from '../graphql';
 import type { ChangeHistoryFieldChange, ChangeHistoryValueRendererProps } from '../registry';
 import { useLabels } from './use-labels';
 
@@ -23,6 +39,17 @@ const SIDE_CHIP: Record<Side, string> = {
   from: 'rounded bg-red-50 px-1 text-red-800 dark:bg-red-950/60 dark:text-red-200',
   to: 'rounded bg-green-50 px-1 text-green-800 dark:bg-green-950/60 dark:text-green-200',
 };
+
+/**
+ * Whether long values sit in a box of their own height (the timeline, where a block holds many items) or
+ * take the room they need (the entry window, which scrolls as a whole).
+ */
+const BoundedValues = createContext(true);
+
+/** Long values in `children` take the room they need: the surrounding window scrolls. */
+export function UnboundedValues({ children }: { children: ReactNode }) {
+  return <BoundedValues.Provider value={false}>{children}</BoundedValues.Provider>;
+}
 
 function Empty() {
   return <span className="text-muted-foreground">—</span>;
@@ -39,15 +66,59 @@ function isBlank(value: unknown): boolean {
 /** Core's invisible root collection: the parent of a top-level collection, shown as no parent. */
 const ROOT_COLLECTION = '__root_collection__';
 
+/** The field a value belongs to: an enum, a custom field's options and a file size read from it. */
+export interface FieldRef {
+  entityType: string;
+  fieldKey: string;
+}
+
+interface CustomFieldOption {
+  value: string;
+  label?: Array<{ languageCode: string; value: string }> | null;
+}
+
+/** The option labels of a string custom field with `options`, in the dashboard's language. */
+function useOptionLabels() {
+  const serverConfig = useServerConfig() as
+    | {
+        entityCustomFields?: Array<{
+          entityName: string;
+          customFields?: Array<{ name: string; options?: CustomFieldOption[] | null }>;
+        }>;
+      }
+    | undefined;
+  const { i18n } = useLinguiContext();
+  return (field: FieldRef | undefined, value: string): string | undefined => {
+    if (!field?.fieldKey.startsWith('customFields.')) {
+      return undefined;
+    }
+    const name = field.fieldKey.slice('customFields.'.length).replace(/\.[a-z]{2}(_[A-Za-z]{2,4})?$/, '');
+    const option = serverConfig?.entityCustomFields
+      ?.find((entity) => entity.entityName === field.entityType)
+      ?.customFields?.find((config) => config.name === name)
+      ?.options?.find((candidate) => candidate.value === value);
+    const labels = option?.label ?? [];
+    const language = i18n.locale.split(/[-_]/)[0];
+    return (
+      labels.find((label) => label.languageCode === i18n.locale)?.value ??
+      labels.find((label) => label.languageCode === language)?.value ??
+      labels.find((label) => label.languageCode === 'en')?.value ??
+      labels[0]?.value
+    );
+  };
+}
+
 /** One value as text: what the feed's summary and a deleted entity's last state show. */
 export function useValueText() {
   const { t } = useLingui();
-  const { formatCurrency, formatDate } = useLocalFormat();
+  const labels = useLabels();
+  const optionLabel = useOptionLabels();
+  const { formatCurrency, formatDate, formatNumber } = useLocalFormat();
   const { activeChannel } = useChannel();
   const currency = activeChannel?.defaultCurrencyCode ?? 'USD';
   const yes = t({ message: 'Yes', context: 'change-history' });
   const no = t({ message: 'No', context: 'change-history' });
-  return (value: unknown, change: ChangeHistoryFieldChange | undefined): string => {
+  return (value: unknown, change: ChangeHistoryFieldChange | undefined, field?: FieldRef): string => {
     if (isBlank(value) || value === ROOT_COLLECTION) {
       return '—';
     }
@@ -70,15 +141,28 @@ export function useValueText() {
     }
     if (kind === 'ref' || kind === 'refs' || kind === 'assets') {
       return idList(value)
-        .map((id) => change?.labels?.[id] ?? `#${id}`)
+        .map((id) => refLabel(change?.labels, id))
         .map((label) => (label === ROOT_COLLECTION ? '—' : label))
         .join(', ');
+    }
+    if (kind === 'enum' && typeof value === 'string') {
+      return (
+        (field && labels.enumValue(field.entityType, field.fieldKey, value)) ??
+        optionLabel(field, value) ??
+        humanizeKey(value.toLowerCase())
+      );
     }
     if (kind === 'richtext' && typeof value === 'string') {
       return clipText(stripHtml(value), 80).text;
     }
     if (typeof value === 'boolean') {
       return value ? yes : no;
+    }
+    if (typeof value === 'number' && field?.entityType === 'Asset' && field.fieldKey === 'fileSize') {
+      return formatBytes(value, formatNumber);
+    }
+    if (typeof value === 'number') {
+      return formatNumber(value);
     }
     const flat = flatEntries(value);
     if (flat) {
@@ -94,7 +178,10 @@ export function useValueText() {
   };
 }
 
-function BoolValue({ value, side }: { value: unknown; side: Side }) {
+type BuiltInProps = ChangeHistoryValueRendererProps;
+
+function BoolValue({ change, side }: BuiltInProps) {
+  const value = change[side];
   if (typeof value !== 'boolean') {
     return isBlank(value) ? <Empty /> : <Chip side={side}>{String(value)}</Chip>;
   }
@@ -105,7 +192,7 @@ function BoolValue({ value, side }: { value: unknown; side: Side }) {
   );
 }
 
-function ScalarValue({ change, side }: { change: ChangeHistoryFieldChange; side: Side }) {
+function ScalarValue({ change, side, entityType, fieldKey }: BuiltInProps) {
   const text = useValueText();
   const value = change[side];
   if (isBlank(value)) {
@@ -113,7 +200,7 @@ function ScalarValue({ change, side }: { change: ChangeHistoryFieldChange; side:
   }
   return (
     <>
-      <Chip side={side}>{text(value, change)}</Chip>
+      <Chip side={side}>{text(value, change, { entityType, fieldKey })}</Chip>
       {change.truncated && (
         <span className="ml-1 text-xs text-muted-foreground">
           <Trans context="change-history">(shortened)</Trans>
@@ -123,19 +210,26 @@ function ScalarValue({ change, side }: { change: ChangeHistoryFieldChange; side:
   );
 }
 
-function RefsValue({ change, side }: { change: ChangeHistoryFieldChange; side: Side }) {
-  // A set change: what left on the "was" side, what came on the "became" side.
-  const ids = side === 'from' ? (change.removed ?? []) : (change.added ?? []);
-  if (ids.length === 0) {
+/**
+ * A set change (facet values, option groups): what was removed and what was added, each marked — the set's
+ * other members are not recorded, so neither side claims the entity had nothing.
+ */
+function RefsChange({ change }: { change: ChangeHistoryFieldChange }) {
+  const removed = change.removed ?? [];
+  const added = change.added ?? [];
+  const chips = (ids: string[], side: Side, sign: string) =>
+    ids.map((id) => (
+      <Chip key={`${side}-${id}`} side={side}>
+        {sign} {refLabel(change.labels, id)}
+      </Chip>
+    ));
+  if (removed.length === 0 && added.length === 0) {
     return <Empty />;
   }
   return (
     <span className="inline-flex flex-wrap gap-1">
-      {ids.map((id) => (
-        <Chip key={id} side={side}>
-          {change.labels?.[id] ?? `#${id}`}
-        </Chip>
-      ))}
+      {chips(removed, 'from', '−')}
+      {chips(added, 'to', '+')}
     </span>
   );
 }
@@ -157,16 +251,21 @@ function AssetsValue({ change, side }: { change: ChangeHistoryFieldChange; side:
   if (ids.length === 0) {
     return <Empty />;
   }
+  const counts = [
+    change.added?.length ? `+${change.added.length}` : '',
+    change.removed?.length ? `−${change.removed.length}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       {ids.map((id) => {
         const asset = previews.get(id);
-        const name = change.labels?.[id] ?? asset?.name ?? `#${id}`;
-        const ring = highlight.has(id)
-          ? side === 'from'
-            ? 'ring-2 ring-red-400'
-            : 'ring-2 ring-green-500'
-          : 'ring-1 ring-border';
+        const name = change.labels?.[id] ?? asset?.name ?? refLabel(undefined, id);
+        let ring = 'ring-1 ring-border';
+        if (highlight.has(id)) {
+          ring = side === 'from' ? 'ring-2 ring-red-400' : 'ring-2 ring-green-500';
+        }
         return (
           <span key={id} title={name} className={`inline-block h-10 w-10 overflow-hidden rounded ${ring}`}>
             {asset ? (
@@ -179,33 +278,79 @@ function AssetsValue({ change, side }: { change: ChangeHistoryFieldChange; side:
           </span>
         );
       })}
-      {side === 'to' && (change.added?.length || change.removed?.length || change.reordered !== undefined) ? (
+      {/* The order is news only when it changed; added and removed images show as counts. */}
+      {side === 'to' && (counts || change.reordered) ? (
         <span className="text-xs text-muted-foreground">
-          {change.added?.length ? `+${change.added.length} ` : ''}
-          {change.removed?.length ? `−${change.removed.length} ` : ''}
-          {change.reordered ? (
-            <Trans context="change-history">order changed</Trans>
-          ) : (
-            <Trans context="change-history">order unchanged</Trans>
-          )}
+          {counts}
+          {counts && change.reordered ? ' · ' : ''}
+          {change.reordered && <Trans context="change-history">order changed</Trans>}
         </span>
       ) : null}
     </span>
   );
 }
 
+/** Words of one side of a diff, the changed ones marked, unchanged stretches as «…» unless shown in full. */
+function DiffWords({ words, side, full }: { words: DiffLine[]; side: Side; full: boolean }) {
+  // Neighbouring words of one kind read as one run: a changed phrase is one mark, not a mark per word.
+  const runs: Array<DiffLine | { gap: true }> = [];
+  for (const segment of full ? words : diffWindow(words, 8)) {
+    const last = runs.at(-1);
+    if (last && !('gap' in last) && !('gap' in segment) && last.changed === segment.changed) {
+      last.text = `${last.text} ${segment.text}`;
+    } else {
+      runs.push('gap' in segment ? segment : { ...segment });
+    }
+  }
+  return (
+    <>
+      {runs.map((run, index) => {
+        const space = index > 0 ? ' ' : '';
+        if ('gap' in run) {
+          return (
+            <span key={index} className="text-muted-foreground">
+              {space}…
+            </span>
+          );
+        }
+        return (
+          <span key={index}>
+            {space}
+            {run.changed ? <span className={SIDE_CHIP[side]}>{run.text}</span> : run.text}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * Rich text as plain text. Both sides of a change show the words around what changed, marked; «show in
+ * full» shows the whole texts. A value without the other side (a last state) is clipped instead.
+ */
 function RichTextValue({ change, side }: { change: ChangeHistoryFieldChange; side: Side }) {
   const [open, setOpen] = useState(false);
   const value = change[side];
   if (typeof value !== 'string' || stripHtml(value) === '') {
     return <Empty />;
   }
+  const other = change[side === 'from' ? 'to' : 'from'];
   const text = stripHtml(value);
-  const clipped = clipText(text, 120);
+  let body: ReactNode;
+  let cut: boolean;
+  if (typeof other === 'string' && stripHtml(other) !== '') {
+    const words = richTextDiff(change)[side];
+    cut = diffWindow(words, 8).some((segment) => 'gap' in segment);
+    body = <DiffWords words={words} side={side} full={open} />;
+  } else {
+    const clipped = clipText(text, 120);
+    cut = clipped.clipped;
+    body = open ? text : clipped.text;
+  }
   return (
     <span className="whitespace-pre-wrap break-words">
-      «{open ? text : clipped.text}»
-      {clipped.clipped && (
+      «{body}»
+      {cut && (
         <button type="button" className="ml-1 text-primary hover:underline" onClick={() => setOpen(!open)}>
           {open ? (
             <Trans context="change-history">show less</Trans>
@@ -218,38 +363,153 @@ function RichTextValue({ change, side }: { change: ChangeHistoryFieldChange; sid
   );
 }
 
-function JsonLines({ lines, side }: { lines: DiffLine[]; side?: Side }) {
+/** Lines of a value; `mono` for JSON, plain text for `key: value` and operation lines. */
+function ValueLines({ lines, side, mono = true }: { lines: DiffLine[]; side?: Side; mono?: boolean }) {
+  const bounded = useContext(BoundedValues);
   if (lines.length === 0) {
     return <Empty />;
   }
+  const box = mono
+    ? 'rounded border bg-muted/40 p-2 font-mono text-xs leading-relaxed'
+    : 'space-y-0.5 text-sm leading-snug';
   return (
-    <pre className="max-h-80 overflow-auto rounded border bg-muted/40 p-2 text-xs leading-relaxed whitespace-pre-wrap break-words">
-      {lines.map((line, index) => (
-        <div key={index} className={line.changed && side ? SIDE_CHIP[side] : undefined}>
-          {line.text || ' '}
-        </div>
-      ))}
-    </pre>
+    <div className={`${box} ${bounded ? 'max-h-80 overflow-auto' : ''} whitespace-pre-wrap break-words`}>
+      {lines.map((line, index) => {
+        // An operation's argument lines are indented under its title, wrapped lines included.
+        const indented = !mono && line.text.startsWith('    ');
+        const chip = line.changed && side ? SIDE_CHIP[side] : '';
+        return (
+          <div key={index} className={`${chip} ${indented ? 'pl-4' : ''}`}>
+            {(indented ? line.text.trimStart() : line.text) || ' '}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
-function JsonValue({ change, side }: { change: ChangeHistoryFieldChange; side: Side }) {
-  return <JsonLines lines={jsonDiff(change)[side]} side={side} />;
+/** Every operation the server offers, by code: filters, conditions and actions, each list read on its own. */
+function useOperationDefinitionList(field: keyof typeof operationDefinitionDocuments, enabled: boolean) {
+  return useQuery({
+    queryKey: ['change-history-operation-definitions', field],
+    queryFn: () => api.query(operationDefinitionDocuments[field], {}),
+    enabled,
+    staleTime: 10 * 60_000,
+    retry: false,
+  }).data as Record<string, OperationDefinition[]> | undefined;
 }
 
-function StockValue({ change, side }: { change: ChangeHistoryFieldChange; side: Side }) {
+function useOperationDefinitions(enabled: boolean): Map<string, OperationDefinition> {
+  const lists = [
+    useOperationDefinitionList('collectionFilters', enabled),
+    useOperationDefinitionList('promotionConditions', enabled),
+    useOperationDefinitionList('promotionActions', enabled),
+  ];
+  const definitions = new Map<string, OperationDefinition>();
+  for (const list of lists.flatMap((data) => Object.values(data ?? {}))) {
+    for (const definition of list) {
+      definitions.set(definition.code, definition);
+    }
+  }
+  return definitions;
+}
+
+/** How a filter, condition or action reads: its description and `label: value` per argument. */
+function useDescribeOperation(enabled: boolean) {
+  const { t } = useLingui();
+  const definitions = useOperationDefinitions(enabled);
+  const { formatCurrency, formatDate } = useLocalFormat();
+  const { activeChannel } = useChannel();
+  const currency = activeChannel?.defaultCurrencyCode ?? 'USD';
+  const one = (raw: unknown, definition: OperationDefinition['args'][number] | undefined): string => {
+    if (raw === null || raw === undefined || raw === '') {
+      return '—';
+    }
+    const ui = definition?.ui ?? {};
+    if (definition?.type === 'boolean' || raw === 'true' || raw === 'false' || typeof raw === 'boolean') {
+      if (raw === 'true' || raw === true) {
+        return t({ message: 'Yes', context: 'change-history' });
+      }
+      if (raw === 'false' || raw === false) {
+        return t({ message: 'No', context: 'change-history' });
+      }
+    }
+    if (ui.component === 'currency-form-input' && Number.isFinite(Number(raw))) {
+      return formatCurrency(Number(raw), currency);
+    }
+    if (definition?.type === 'datetime' && typeof raw === 'string' && !Number.isNaN(Date.parse(raw))) {
+      return formatDate(raw, { dateStyle: 'short', timeStyle: 'short' });
+    }
+    return typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+  };
+  return (operation: OperationValue): DescribedOperation => {
+    const definition = definitions.get(operation.code);
+    const args = operation.args.map(({ name, value }) => {
+      const argument = definition?.args.find((candidate) => candidate.name === name);
+      const list = argument?.list || Array.isArray(value) ? argumentList(value) : undefined;
+      const text = list ? list.map((item) => one(item, argument)).join(', ') || '—' : one(value, argument);
+      // A unit (`%`) follows the value on its own line; a description has it after the placeholder already.
+      const suffix = typeof argument?.ui?.suffix === 'string' && text !== '—' ? argument.ui.suffix : '';
+      return { name, label: argument?.label || humanizeKey(name), text, suffixed: text + suffix };
+    });
+    // «If order total is greater than { amount }» reads with the amount in it; the other arguments follow.
+    const { text, used } = fillDescription(
+      definition?.description || humanizeKey(operation.code),
+      Object.fromEntries(args.map((arg) => [arg.name, arg.text])),
+    );
+    return {
+      title: capitalizeFirst(text),
+      args: args.filter((arg) => !used.includes(arg.name)).map((arg) => [arg.label, arg.suffixed]),
+    };
+  };
+}
+
+/** A list of filters, conditions or actions as their descriptions and arguments, the changed lines marked. */
+function OperationsValue({
+  change,
+  side,
+  plain = false,
+}: {
+  change: ChangeHistoryFieldChange;
+  side: Side;
+  plain?: boolean;
+}) {
+  const describe = useDescribeOperation(true);
+  const lines = (value: unknown) =>
+    isOperationList(value)
+      ? operationLines(withFacetValueLabels(value, change.labels) as OperationValue[], describe)
+      : [];
+  if (plain) {
+    return <ValueLines lines={lines(change[side]).map((text) => ({ text, changed: false }))} mono={false} />;
+  }
+  const diff = diffLines(lines(change.from), lines(change.to));
+  return <ValueLines lines={diff[side]} side={side} mono={false} />;
+}
+
+/** Whether a JSON change is best read as `key: value` lines (a focal point, a per-location number). */
+const isFlat = (value: unknown) => value == null || flatEntries(value) !== undefined;
+
+function JsonValue({ change, side }: { change: ChangeHistoryFieldChange; side: Side }) {
+  if ((isOperationList(change.from) || change.from == null) && (isOperationList(change.to) || change.to == null)) {
+    return <OperationsValue change={change} side={side} />;
+  }
+  const flat = isFlat(change.from) && isFlat(change.to);
+  return <ValueLines lines={jsonDiff(change)[side]} side={side} mono={!flat} />;
+}
+
+function StockValue(props: BuiltInProps) {
+  const { change, side } = props;
   const delta = side === 'to' ? numericDelta(change.from, change.to) : undefined;
   return (
     <>
-      <ScalarValue change={change} side={side} />
+      <ScalarValue {...props} />
       {delta !== undefined && delta !== 0 && <span className="ml-1 text-muted-foreground">({formatDelta(delta)})</span>}
     </>
   );
 }
 
-const BUILT_IN: Record<string, (props: { change: ChangeHistoryFieldChange; side: Side }) => ReactNode> = {
-  bool: ({ change, side }) => <BoolValue value={change[side]} side={side} />,
-  refs: RefsValue,
+const BUILT_IN: Record<string, (props: BuiltInProps) => ReactNode> = {
+  bool: BoolValue,
   assets: AssetsValue,
   richtext: RichTextValue,
   json: JsonValue,
@@ -264,18 +524,19 @@ function ValueSide(props: ChangeHistoryValueRendererProps) {
   if (Host) {
     return <Host {...props} />;
   }
-  const BuiltIn = BUILT_IN[kind];
-  return BuiltIn ? <BuiltIn change={props.change} side={props.side} /> : <ScalarValue {...props} />;
+  const BuiltIn = BUILT_IN[kind] ?? ScalarValue;
+  return <BuiltIn {...props} />;
 }
 
 function StrippedValue({ change }: { change: ChangeHistoryFieldChange }) {
+  const { formatNumber } = useLocalFormat();
   return (
     <span className="text-muted-foreground">
       <Trans context="change-history">changed</Trans>
       {typeof change.fromLength === 'number' && typeof change.toLength === 'number' && (
         <>
           {' '}
-          ({change.fromLength.toLocaleString()} → {change.toLength.toLocaleString()}{' '}
+          ({formatNumber(change.fromLength)} → {formatNumber(change.toLength)}{' '}
           <Trans context="change-history">characters</Trans>)
         </>
       )}
@@ -283,7 +544,14 @@ function StrippedValue({ change }: { change: ChangeHistoryFieldChange }) {
   );
 }
 
-/** «Field · Was · Became», one row per changed field. */
+/** Whether a set change is drawn across both value columns (removed and added in one cell). */
+const spansBoth = (change: ChangeHistoryFieldChange, hasHost: boolean) =>
+  change.stripped || (change.kind === 'refs' && !hasHost);
+
+/**
+ * «Field · Was · Became», one row per changed field. The timeline leaves the header out (`showHeader`):
+ * the red and green sides say which is which, and a block holds many items.
+ */
 export function FieldChangesTable({
   entityType,
   changes,
@@ -300,10 +568,15 @@ export function FieldChangesTable({
   }
   return (
     <table className="w-full table-fixed border-collapse text-sm">
+      <colgroup>
+        <col className="w-[30%] min-w-[9rem]" />
+        <col />
+        <col />
+      </colgroup>
       {showHeader && (
         <thead>
           <tr className="border-b text-left text-xs text-muted-foreground">
-            <th className="w-1/4 py-1 pr-3 font-normal">
+            <th className="py-1 pr-3 font-normal">
               <Trans context="change-history">Field</Trans>
             </th>
             <th className="py-1 pr-3 font-normal">
@@ -318,12 +591,13 @@ export function FieldChangesTable({
       <tbody>
         {keys.map((key) => {
           const change = changes[key];
+          const both = spansBoth(change, !!labels.valueRenderer(change.kind ?? 'text'));
           return (
             <tr key={key} className="border-b border-border/50 align-top last:border-0">
               <td className="py-1.5 pr-3 text-muted-foreground break-words">{labels.field(entityType, key, change)}</td>
-              {change.stripped ? (
-                <td colSpan={2} className="py-1.5">
-                  <StrippedValue change={change} />
+              {both ? (
+                <td colSpan={2} className="py-1.5 break-words">
+                  {change.stripped ? <StrippedValue change={change} /> : <RefsChange change={change} />}
                 </td>
               ) : (
                 <>
@@ -345,7 +619,25 @@ export function FieldChangesTable({
 
 const CREATED_PREVIEW = 6;
 
-/** A created entity's values in one line («Name (uk) «Tee», Enabled ✗, …»), the rest behind a toggle. */
+const createdValueOf = (change: ChangeHistoryFieldChange) =>
+  change.kind === 'refs' ? (change.added ?? []) : change.to;
+
+/** The keys of a created entity's values worth showing, name / slug / enabled first. */
+function useCreatedKeys(entityType: string, changes: Record<string, ChangeHistoryFieldChange>): string[] {
+  const text = useValueText();
+  return orderCreatedKeys(
+    Object.keys(changes).filter((key) => {
+      const change = changes[key];
+      const value = createdValueOf(change);
+      return (
+        change.stripped ||
+        (!isBlank(value) && value !== ROOT_COLLECTION && text(value, change, { entityType, fieldKey: key }) !== '—')
+      );
+    }),
+  );
+}
+
+/** A created entity's values in one line («Name (uk) Tee, Enabled Yes, …»), the rest behind a toggle. */
 export function CreatedValues({
   entityType,
   changes,
@@ -353,15 +645,11 @@ export function CreatedValues({
   entityType: string;
   changes: Record<string, ChangeHistoryFieldChange>;
 }) {
+  const { t } = useLingui();
   const labels = useLabels();
   const text = useValueText();
   const [open, setOpen] = useState(false);
-  const valueOf = (change: ChangeHistoryFieldChange) => (change.kind === 'refs' ? (change.added ?? []) : change.to);
-  // Only the values it was created with; a long JSON value (filters, conditions) is named, not printed.
-  const keys = Object.keys(changes).filter((key) => {
-    const value = valueOf(changes[key]);
-    return changes[key].stripped || (!isBlank(value) && value !== ROOT_COLLECTION && text(value, changes[key]) !== '—');
-  });
+  const keys = useCreatedKeys(entityType, changes);
   if (keys.length === 0) {
     return null;
   }
@@ -370,17 +658,29 @@ export function CreatedValues({
     <div className="text-sm text-muted-foreground">
       {shown.map((key, index) => {
         const change = changes[key];
+        // A long JSON value (filters, conditions) is named, not printed.
         const short = change.stripped || change.kind === 'json';
         return (
           <span key={key}>
             {index > 0 && ', '}
             {labels.field(entityType, key, change)}
-            {!short && <span className="text-foreground"> {text(valueOf(change), change)}</span>}
+            {!short && (
+              <span className="text-foreground">
+                {' '}
+                {text(createdValueOf(change), change, { entityType, fieldKey: key })}
+              </span>
+            )}
           </span>
         );
       })}
       {keys.length > CREATED_PREVIEW && (
-        <button type="button" className="ml-1 text-primary hover:underline" onClick={() => setOpen(!open)}>
+        <button
+          type="button"
+          className="ml-1 text-primary hover:underline"
+          aria-label={open ? undefined : t({ message: 'show all fields', context: 'change-history' })}
+          title={open ? undefined : t({ message: 'show all fields', context: 'change-history' })}
+          onClick={() => setOpen(!open)}
+        >
           {open ? <Trans context="change-history">show less</Trans> : '…'}
         </button>
       )}
@@ -388,38 +688,96 @@ export function CreatedValues({
   );
 }
 
+/** «Field — value» rows, the field names in a column: a created entity's values and a deleted one's last state. */
+export function ValuesGrid({ children }: { children: ReactNode }) {
+  return <dl className="grid grid-cols-[minmax(8rem,1fr)_3fr] gap-x-3 gap-y-1.5 text-sm">{children}</dl>;
+}
+
+export function GridRow({ label, children }: { label: ReactNode; children: ReactNode }) {
+  return (
+    <div className="contents">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words">{children}</dd>
+    </div>
+  );
+}
+
+/** A created entity's values as a grid in the entry window: name, slug and enabled first. */
+export function CreatedGrid({
+  entityType,
+  changes,
+}: {
+  entityType: string;
+  changes: Record<string, ChangeHistoryFieldChange>;
+}) {
+  const labels = useLabels();
+  const keys = useCreatedKeys(entityType, changes);
+  if (keys.length === 0) {
+    return null;
+  }
+  return (
+    <ValuesGrid>
+      {keys.map((key) => {
+        const change = changes[key];
+        return (
+          <GridRow key={key} label={labels.field(entityType, key, change)}>
+            {change.stripped ? (
+              <StrippedValue change={change} />
+            ) : (
+              <LastStateValue entityType={entityType} fieldKey={key} value={createdValueOf(change)} change={change} />
+            )}
+          </GridRow>
+        );
+      })}
+    </ValuesGrid>
+  );
+}
+
 /**
- * One value of a deleted entity's last state, rendered like the «became» side of a diff without its colour:
- * the host's renderer for its kind, images as thumbnails, rich text as clipped text, JSON as lines, everything
- * else as formatted text (money, dates, references by name).
+ * One value of a deleted entity's last state (or of a created entity), rendered like the «became» side of a
+ * diff without its colour: the host's renderer for its kind, images as thumbnails, rich text as clipped
+ * text, JSON as lines, everything else as formatted text (money, dates, references by name).
  */
 export function LastStateValue({
   entityType,
   fieldKey,
   value,
   fields,
+  change: given,
 }: {
   entityType: string;
   fieldKey: string;
   value: unknown;
-  fields: unknown;
+  fields?: unknown;
+  /** The change the value comes from (a created entity's); else it is read from `fields`. */
+  change?: ChangeHistoryFieldChange;
 }) {
   const labels = useLabels();
   const text = useValueText();
-  const change = lastStateChange(fieldKey, value, fields);
+  const change: ChangeHistoryFieldChange = given
+    ? { ...given, from: undefined, to: value }
+    : lastStateChange(fieldKey, value, fields);
   const kind = change.kind ?? 'text';
   const Host = labels.valueRenderer(kind);
   if (Host) {
     return <Host change={change} fieldKey={fieldKey} entityType={entityType} side="to" />;
   }
   if (kind === 'json') {
-    return <JsonLines lines={jsonLines(value, change.labels).map((line) => ({ text: line, changed: false }))} />;
+    if (isOperationList(value)) {
+      return <OperationsValue change={change} side="to" plain />;
+    }
+    return (
+      <ValueLines
+        lines={jsonLines(value, change.labels).map((line) => ({ text: line, changed: false }))}
+        mono={!isFlat(value)}
+      />
+    );
   }
   if (kind === 'richtext') {
     return <RichTextValue change={change} side="to" />;
   }
   if (kind === 'assets') {
-    return <AssetsValue change={change} side="to" />;
+    return <AssetsValue change={{ ...change, added: [], removed: [] }} side="to" />;
   }
-  return <span>{clipText(text(value, change), 300).text}</span>;
+  return <span>{clipText(text(value, change, { entityType, fieldKey }), 300).text}</span>;
 }

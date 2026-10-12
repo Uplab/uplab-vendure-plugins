@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
+  actorLabelText,
+  actorOptionLabel,
+  apiKeyOwnerName,
+  argumentList,
   batchTotal,
+  capitalizeFirst,
+  clampPage,
+  diffWindow,
+  entryParam,
+  fillDescription,
+  formatBytes,
+  isForbiddenError,
+  isOperationList,
+  operationLines,
+  orderCreatedKeys,
+  refLabel,
+  repeatsShown,
+  richTextDiff,
+  splitTrailingCode,
+  withFacetValueLabels,
+  wordDiff,
   builtInRoute,
   clipText,
   COLLAPSE_BATCHES_FILTER,
@@ -237,6 +257,26 @@ describe('values', () => {
     expect(longer.to.filter((line) => line.changed).map((line) => line.text)).toEqual(['tail']);
   });
 
+  it('does not mark a line that only gained the comma before a new last element', () => {
+    const change = {
+      kind: 'json',
+      from: [{ code: 'f', args: [{ name: 'ids', value: ['Color: Black'] }] }],
+      to: [{ code: 'f', args: [{ name: 'ids', value: ['Color: Black', 'Color: White'] }] }],
+    };
+    const diff = jsonDiff(change);
+    expect(diff.from.filter((line) => line.changed)).toEqual([]);
+    expect(diff.to.filter((line) => line.changed).map((line) => line.text.trim())).toEqual(['"Color: White"']);
+    // A structural line that only gained a comma is unchanged too.
+    const objects = diffLines(['  {', '    "a": 1', '  }'], ['  {', '    "a": 1', '  },', '  {', '    "a": 2', '  }']);
+    expect(objects.from.some((line) => line.changed)).toBe(false);
+    expect(objects.to.map((line) => line.changed)).toEqual([false, false, false, true, true, true]);
+    // The same in the linear fallback for long texts.
+    const long = Array.from({ length: 600 }, (_, i) => `"${i}",`);
+    const ends = diffLines([...long, '"last"'], [...long, '"last",', '"new"']);
+    expect(ends.from.some((line) => line.changed)).toBe(false);
+    expect(ends.to.filter((line) => line.changed).map((line) => line.text)).toEqual(['"new"']);
+  });
+
   it('computes the diff of a JSON change once per change', () => {
     const change = { kind: 'json', from: { a: [1] }, to: { a: [2] } };
     const first = jsonDiff(change);
@@ -384,8 +424,25 @@ describe('the feed URL', () => {
       hideSystem: true,
       from: 'a',
       to: 'b',
-      entry: '3',
+      // A number, so that the router writes `?entry=3`, not `?entry=%223%22`.
+      entry: 3,
     });
+    expect(feedSearchParams({ collapseBatches: true, hideSystem: false, entry: 'a1b2' }).entry).toBe('a1b2');
+  });
+
+  it('writes a numeric entry id as a number and any other id as it is', () => {
+    expect(entryParam('65')).toBe(65);
+    expect(entryParam('065')).toBe('065');
+    expect(entryParam('6f9c2a7e-1b2c')).toBe('6f9c2a7e-1b2c');
+    expect(entryParam('12345678901234567890')).toBe('12345678901234567890');
+    expect(entryParam(undefined)).toBeUndefined();
+  });
+
+  it('moves a page past the end to the last page', () => {
+    expect(clampPage(6, 20, 57)).toBe(3);
+    expect(clampPage(2, 20, 57)).toBe(2);
+    expect(clampPage(4, 20, 0)).toBe(1);
+    expect(clampPage(0, 0, 10)).toBe(1);
   });
 });
 
@@ -450,5 +507,168 @@ describe('titleWhenCut', () => {
     const fits = element({ scrollHeight: 61, scrollWidth: 301 }, 'Price');
     titleWhenCut(fits);
     expect(fits.title).toBe('');
+  });
+});
+
+describe('display helpers', () => {
+  it("shows an API key owner's name without the English suffix older entries stored", () => {
+    expect(apiKeyOwnerName('Feed Admin (API key)')).toBe('Feed Admin');
+    expect(apiKeyOwnerName('Feed Admin (api KEY) ')).toBe('Feed Admin');
+    expect(apiKeyOwnerName('Feed Admin')).toBe('Feed Admin');
+    expect(actorLabelText('api_key', 'Feed Admin (API key)')).toBe('Feed Admin');
+    // Only an API key's label loses it: a person may be called anything.
+    expect(actorLabelText('admin', 'Bot (API key)')).toBe('Bot (API key)');
+    expect(actorLabelText('admin', null)).toBeUndefined();
+    expect(actorLabelText('admin', '')).toBeUndefined();
+  });
+
+  it("marks an API key's owner in the «Who» filter once, in the dashboard's language", () => {
+    expect(actorOptionLabel({ type: 'api_key', label: 'Feed Admin (API key)' }, 'API-ключ')).toBe(
+      'Feed Admin (API-ключ)',
+    );
+    expect(actorOptionLabel({ type: 'api_key', label: 'Feed Admin' }, 'API key')).toBe('Feed Admin (API key)');
+    expect(actorOptionLabel({ type: 'admin', label: 'Іван Петренко' }, 'API-ключ')).toBe('Іван Петренко');
+  });
+
+  it('capitalizes the first letter only', () => {
+    expect(capitalizeFirst('оновлено')).toBe('Оновлено');
+    expect(capitalizeFirst('collection contents updated')).toBe('Collection contents updated');
+    expect(capitalizeFirst('')).toBe('');
+  });
+
+  it('splits a trailing code off a label', () => {
+    expect(splitTrailingCode('Oversize tee S (TS-OVS-BLK-S)')).toEqual({
+      name: 'Oversize tee S',
+      code: 'TS-OVS-BLK-S',
+    });
+    expect(splitTrailingCode('Oversize tee')).toEqual({ name: 'Oversize tee' });
+    expect(splitTrailingCode('(only code)')).toEqual({ name: '(only code)' });
+    expect(splitTrailingCode('Tee ()')).toEqual({ name: 'Tee ()' });
+    expect(splitTrailingCode('Tee (a (b))')).toEqual({ name: 'Tee (a (b))' });
+  });
+
+  it('formats a file size', () => {
+    const plain = (value: number) => String(value);
+    expect(formatBytes(70, plain)).toBe('70 B');
+    expect(formatBytes(1536, plain)).toBe('1.5 KB');
+    expect(formatBytes(5 * 1024 * 1024, plain)).toBe('5 MB');
+  });
+
+  it('puts what names a created entity first', () => {
+    expect(orderCreatedKeys(['assets', 'enabled', 'description.en', 'slug.en', 'name.en', 'sku'])).toEqual([
+      'name.en',
+      'sku',
+      'slug.en',
+      'enabled',
+      'assets',
+      'description.en',
+    ]);
+  });
+
+  it('labels the ids of a reference change', () => {
+    expect(refLabel({ 2: 'Color: White' }, '2')).toBe('Color: White');
+    expect(refLabel(undefined, '12')).toBe('#12');
+    expect(refLabel({}, 'lookbook')).toBe('lookbook');
+  });
+
+  it('tells a missing permission from a broken request', () => {
+    expect(isForbiddenError(new Error('You are not currently authorized to perform this action'))).toBe(true);
+    expect(isForbiddenError({ response: { errors: [{ extensions: { code: 'FORBIDDEN' } }] } })).toBe(true);
+    expect(isForbiddenError(new Error('Failed to fetch'))).toBe(false);
+    expect(isForbiddenError(undefined)).toBe(false);
+  });
+
+  it('finds a text the line already shows, whole or as the start of a longer one', () => {
+    expect(repeatsShown('Відкладена дія', ['Відкладена дія #3'])).toBe(true);
+    expect(repeatsShown('відкладена  дія', ['Відкладена дія'])).toBe(true);
+    expect(repeatsShown('Super Admin', ['Відкладена дія #3'])).toBe(false);
+    expect(repeatsShown('Відкладена', ['Відкладенадія'])).toBe(false);
+    expect(repeatsShown(' ', ['x'])).toBe(false);
+  });
+});
+
+describe('the rich-text diff', () => {
+  it('marks the changed words', () => {
+    const { from, to } = wordDiff('dense 220 g cotton', 'dense 240 g cotton. Pre-shrunk');
+    expect(from.filter((word) => word.changed).map((word) => word.text)).toEqual(['220', 'cotton']);
+    expect(to.filter((word) => word.changed).map((word) => word.text)).toEqual(['240', 'cotton.', 'Pre-shrunk']);
+  });
+
+  it('reads a change of markup as plain text, once per change', () => {
+    const change = { kind: 'richtext', from: '<p>A <b>220</b> tee</p>', to: '<p>A 240 tee</p>' };
+    const diff = richTextDiff(change);
+    expect(richTextDiff(change)).toBe(diff);
+    expect(diff.to.filter((word) => word.changed).map((word) => word.text)).toEqual(['240']);
+    expect(richTextDiff({ kind: 'richtext', from: null, to: '<p>New</p>' }).to).toEqual([
+      { text: 'New', changed: true },
+    ]);
+  });
+
+  it('keeps the words around each change and leaves long unchanged stretches out', () => {
+    const words = (marks: string) => [...marks].map((mark, index) => ({ text: String(index), changed: mark === 'x' }));
+    const texts = (segments: ReturnType<typeof diffWindow>) =>
+      segments.map((segment) => ('gap' in segment ? '…' : segment.text)).join(' ');
+    expect(texts(diffWindow(words('.........x.........'), 2))).toBe('… 7 8 9 10 11 …');
+    // A gap shorter than four words is not worth a «…».
+    expect(texts(diffWindow(words('x....x'), 1))).toBe('0 1 2 3 4 5');
+    expect(texts(diffWindow(words('x......x'), 1))).toBe('0 1 … 6 7');
+    // Without a change: the start.
+    expect(texts(diffWindow(words('......'), 1))).toBe('0 1 …');
+    expect(diffWindow([], 3)).toEqual([]);
+  });
+});
+
+describe('configurable operations', () => {
+  const filters = [
+    {
+      code: 'facet-value-filter',
+      args: [
+        { name: 'facetValueIds', value: '["1","2"]' },
+        { name: 'containsAny', value: 'true' },
+      ],
+    },
+  ];
+
+  it('recognises a list of operations', () => {
+    expect(isOperationList(filters)).toBe(true);
+    expect(isOperationList([])).toBe(false);
+    expect(isOperationList([{ code: 'x' }])).toBe(false);
+    expect(isOperationList([{ code: 'x', args: [{ value: 1 }] }])).toBe(false);
+    expect(isOperationList({ code: 'x', args: [] })).toBe(false);
+  });
+
+  it('reads as a title and an indented line per argument', () => {
+    const labelled = withFacetValueLabels(filters, { 1: 'Color: Black', 2: 'Color: White' });
+    expect(isOperationList(labelled)).toBe(true);
+    const lines = operationLines(isOperationList(labelled) ? labelled : [], (op) => ({
+      title: op.code,
+      args: op.args.map((arg): [string, string] => [arg.name, String(arg.value)]),
+    }));
+    expect(lines).toEqual([
+      'facet-value-filter',
+      '    facetValueIds: Color: Black,Color: White',
+      '    containsAny: true',
+    ]);
+    expect(operationLines(null, () => ({ title: '', args: [] }))).toEqual([]);
+  });
+
+  it('fills the placeholders of a description', () => {
+    expect(fillDescription('If order total is greater than { amount }', { amount: '1 500,00 ₴', tax: 'No' })).toEqual({
+      text: 'If order total is greater than 1 500,00 ₴',
+      used: ['amount'],
+    });
+    expect(fillDescription('Buy {minimum} of {other}', { minimum: '2' })).toEqual({
+      text: 'Buy 2 of {other}',
+      used: ['minimum'],
+    });
+  });
+
+  it('reads a list argument', () => {
+    expect(argumentList('["1","2"]')).toEqual(['1', '2']);
+    expect(argumentList(['a'])).toEqual(['a']);
+    expect(argumentList('[oops')).toBeUndefined();
+    expect(argumentList('{"a":1}')).toBeUndefined();
+    expect(argumentList('[1')).toBeUndefined();
+    expect(argumentList(3)).toBeUndefined();
   });
 });

@@ -60,17 +60,17 @@ msgstr "Ціна"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.featuredAsset"
-msgstr "Головне зображення"
+msgstr "Обраний ресурс"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.assets"
-msgstr "Зображення"
+msgstr "Ресурси"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.facetValues"
-msgstr "Характеристики"
+msgstr "Значення фасетів"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -90,32 +90,32 @@ msgstr "Податкова категорія"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.trackInventory"
-msgstr "Облік залишків"
+msgstr "Відстеження запасів"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.outOfStockThreshold"
-msgstr "Поріг відсутності"
+msgstr "Поріг відсутності на складі"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.useGlobalOutOfStockThreshold"
-msgstr "Глобальний поріг відсутності"
+msgstr "Глобальний поріг відсутності на складі"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.stock"
-msgstr "Склад"
+msgstr "Запас"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.isPrivate"
-msgstr "Приватна"
+msgstr "Приватний"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.inheritFilters"
-msgstr "Успадковувати фільтри"
+msgstr "Успадкувати фільтри"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -140,27 +140,27 @@ msgstr "Код"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.startsAt"
-msgstr "Діє з"
+msgstr "Починається"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.endsAt"
-msgstr "Діє до"
+msgstr "Закінчується"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.couponCode"
-msgstr "Промокод"
+msgstr "Код купона"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.perCustomerUsageLimit"
-msgstr "Ліміт на клієнта"
+msgstr "Ліміт використання на клієнта"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.usageLimit"
-msgstr "Ліміт використань"
+msgstr "Ліміт використання"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -225,17 +225,17 @@ msgstr "Колекція"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.type.Facet"
-msgstr "Характеристика"
+msgstr "Фасет"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.type.FacetValue"
-msgstr "Значення характеристики"
+msgstr "Значення фасета"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.type.Asset"
-msgstr "Зображення"
+msgstr "Ресурс"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -270,17 +270,17 @@ msgstr "Колекції"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.types.Facet"
-msgstr "Характеристики"
+msgstr "Фасети"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.types.FacetValue"
-msgstr "Значення характеристик"
+msgstr "Значення фасетів"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.types.Asset"
-msgstr "Зображення"
+msgstr "Ресурси"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -385,12 +385,12 @@ msgstr "Система"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.batch.collection_rules"
-msgstr "оновлено склад колекції"
+msgstr "оновлено вміст колекції"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.count.created"
-msgstr "додано"
+msgstr "створено"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -405,7 +405,7 @@ msgstr "видалено"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.count.failed"
-msgstr "помилок"
+msgstr "помилки"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -427,6 +427,66 @@ msgstr "переміщено"
 msgid "change-history.count.total"
 msgstr "усього"
 
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.GlobalFlag.TRUE"
+msgstr "Відстежувати"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.GlobalFlag.FALSE"
+msgstr "Не відстежувати"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.GlobalFlag.INHERIT"
+msgstr "Успадкувати з глобальних налаштувань"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.AssetType.IMAGE"
+msgstr "Зображення"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.AssetType.VIDEO"
+msgstr "Відео"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.AssetType.BINARY"
+msgstr "Бінарний"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.actorLabel"
+msgstr "Хто"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.entityType"
+msgstr "Тип"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.entityLabel"
+msgstr "Об’єкт"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.action"
+msgstr "Дія"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.summary"
+msgstr "Зміни"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.source"
+msgstr "Джерело"
+
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
 msgid "(shortened)"
@@ -444,9 +504,16 @@ msgid "All changes"
 msgstr "Усі зміни"
 
 #: src/dashboard/components/actor.tsx
+#: src/dashboard/components/actor.tsx
 msgctxt "change-history"
 msgid "API key"
 msgstr "API-ключ"
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Back"
+msgstr "Назад"
 
 #: src/dashboard/components/details.tsx
 #: src/dashboard/components/values.tsx
@@ -466,6 +533,12 @@ msgctxt "change-history"
 msgid "changed"
 msgstr "змінено"
 
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "Channel"
+msgstr "Канал"
+
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
 msgid "characters"
@@ -484,17 +557,17 @@ msgstr "згорнути"
 #: src/dashboard/routes/change-history-list.tsx
 msgctxt "change-history"
 msgid "Collapse bulk operations"
-msgstr "Згортати масові операції"
+msgstr "Згорнути масові операції"
 
 #: src/dashboard/components/entity-link.tsx
 msgctxt "change-history"
-msgid "deleted"
-msgstr "видалено"
+msgid "Deleted"
+msgstr "Видалено"
 
 #: src/dashboard/components/timeline.tsx
 msgctxt "change-history"
-msgid "derived"
-msgstr "похідна"
+msgid "Derived"
+msgstr "Похідна"
 
 #: src/dashboard/components/entry-dialog.tsx
 #: src/dashboard/components/summary.tsx
@@ -547,6 +620,12 @@ msgctxt "change-history"
 msgid "Name"
 msgstr "Назва"
 
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Next page"
+msgstr "Наступна сторінка"
+
+#: src/dashboard/components/values.tsx
 #: src/dashboard/components/values.tsx
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
@@ -574,7 +653,6 @@ msgid "Object"
 msgstr "Об’єкт"
 
 #: src/dashboard/components/entry-dialog.tsx
-#: src/dashboard/components/timeline.tsx
 msgctxt "change-history"
 msgid "open"
 msgstr "відкрити"
@@ -584,15 +662,26 @@ msgctxt "change-history"
 msgid "order changed"
 msgstr "порядок змінено"
 
-#: src/dashboard/components/values.tsx
+#: src/dashboard/components/entry-dialog.tsx
 msgctxt "change-history"
-msgid "order unchanged"
-msgstr "порядок без змін"
+msgid "Previous page"
+msgstr "Попередня сторінка"
 
 #: src/dashboard/widgets/recent-changes-widget.tsx
 msgctxt "change-history"
 msgid "Recent changes"
 msgstr "Останні зміни"
+
+#: src/dashboard/widgets/recent-changes-widget.tsx
+#: src/dashboard/widgets/recent-changes-widget.tsx
+msgctxt "change-history"
+msgid "Refresh"
+msgstr "Оновити"
+
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "Retry"
+msgstr "Повторити"
 
 #: src/dashboard/components/summary.tsx
 msgctxt "change-history"
@@ -602,12 +691,18 @@ msgstr "с"
 #: src/dashboard/components/details.tsx
 msgctxt "change-history"
 msgid "Scope"
-msgstr "Склад"
+msgstr "Область"
 
 #: src/dashboard/components/timeline.tsx
 msgctxt "change-history"
 msgid "show all"
 msgstr "показати всі"
+
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "show all fields"
+msgstr "показати всі поля"
 
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
@@ -644,7 +739,12 @@ msgstr "Джерело:"
 #: src/dashboard/components/actor.tsx
 msgctxt "change-history"
 msgid "System change"
-msgstr "системна зміна"
+msgstr "Системна зміна"
+
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "The change history could not be loaded."
+msgstr "Не вдалося завантажити історію змін."
 
 #: src/dashboard/components/entry-dialog.tsx
 msgctxt "change-history"
@@ -682,6 +782,12 @@ msgstr "Хто"
 
 #: src/dashboard/components/values.tsx
 #: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
 msgctxt "change-history"
 msgid "Yes"
 msgstr "Так"
+
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "You do not have permission to view this history."
+msgstr "Немає прав на перегляд цієї історії."

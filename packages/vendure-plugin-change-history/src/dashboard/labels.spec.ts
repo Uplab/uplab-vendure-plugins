@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -11,7 +11,10 @@ import {
   entityTypePluralLabelOf,
   FIELD_LABELS,
   fieldLabelOf,
+  enumValueLabelOf,
   humanizeKey,
+  humanizePhrase,
+  knownBatchKindLabelOf,
   OBJECTS_LABEL,
   sourceOf,
   splitLanguage,
@@ -43,6 +46,14 @@ describe('humanizeKey', () => {
     expect(humanizeKey('customFields.discountStartAt')).toBe('Discount start at');
     expect(humanizeKey('stock_threshold')).toBe('Stock threshold');
     expect(humanizeKey('')).toBe('');
+  });
+
+  it('keeps acronyms as they are written', () => {
+    expect(humanizeKey('syncERPStock')).toBe('Sync ERP stock');
+    expect(humanizeKey('ProductOrder')).toBe('Product order');
+    expect(humanizePhrase('products_reordered')).toBe('products reordered');
+    expect(humanizePhrase('ERP_sync')).toBe('ERP sync');
+    expect(humanizePhrase('')).toBe('');
   });
 });
 
@@ -87,6 +98,7 @@ describe('type, action, batch and count labels', () => {
     expect(entityTypeLabelOf(registry, 'ProductOrder')).toBe('Product order');
     expect(entityTypeLabelOf(registry, 'Product')).toEqual({ id: 'change-history.type.Product', message: 'Product' });
     expect(entityTypeLabelOf(registry, 'Thing')).toBe('Thing');
+    expect(entityTypeLabelOf(registry, 'StockThreshold')).toBe('Stock threshold');
 
     expect(actionLabelOf(registry, 'archived')).toBe('archived');
     expect(actionLabelOf(registry, 'stock_adjusted')).toEqual({
@@ -99,11 +111,24 @@ describe('type, action, batch and count labels', () => {
     expect(batchKindLabelOf(registry, 'collection_rules')).toMatchObject({
       id: 'change-history.batch.collection_rules',
     });
-    expect(batchKindLabelOf(registry, 'odoo_import')).toBe('Odoo import');
+    // A kind nobody labelled reads as a bulk operation, never as its raw key.
+    expect(batchKindLabelOf(registry, 'odoo_import')).toMatchObject({ id: 'change-history.action.batch' });
+    expect(knownBatchKindLabelOf(registry, 'odoo_import')).toBeUndefined();
+    expect(knownBatchKindLabelOf(registry, 'bulk_edit')).toBe('bulk edit');
 
     expect(countLabelOf(registry, 'erp', 'zeroed')).toBe('zeroed');
     expect(countLabelOf(registry, 'erp', 'updated')).toMatchObject({ id: 'change-history.count.updated' });
     expect(countLabelOf(registry, 'other', 'skipped_items')).toBe('skipped items');
+  });
+
+  it('labels the values of core enums', () => {
+    expect(enumValueLabelOf('ProductVariant', 'trackInventory', 'INHERIT')).toMatchObject({
+      id: 'change-history.enum.GlobalFlag.INHERIT',
+    });
+    expect(enumValueLabelOf('Asset', 'type', 'IMAGE')).toMatchObject({ id: 'change-history.enum.AssetType.IMAGE' });
+    // `type` is an asset's file type only.
+    expect(enumValueLabelOf('Product', 'type', 'IMAGE')).toBeUndefined();
+    expect(enumValueLabelOf('ProductVariant', 'trackInventory', 'SOMETIMES')).toBeUndefined();
   });
 
   it('gives plural nouns for the run count line', () => {
@@ -169,6 +194,32 @@ describe('the catalogs', () => {
     expect(entries(catalog('en')).get('|change-history.field.facetValues')).toBe(FIELD_LABELS.facetValues.message);
   });
 
+  it('translate every message the components use, and only those', () => {
+    const sources = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((item) => {
+        if (item.isDirectory()) {
+          return sources(join(dir, item.name));
+        }
+        return item.name.endsWith('.tsx') && !item.name.endsWith('.spec.tsx')
+          ? [readFileSync(join(dir, item.name), 'utf8')]
+          : [];
+      });
+    const used = new Set<string>();
+    for (const source of sources(__dirname)) {
+      for (const match of source.matchAll(/<Trans context="change-history">([\s\S]*?)<\/Trans>/g)) {
+        used.add(`change-history|${match[1].replace(/\s+/g, ' ').trim()}`);
+      }
+      for (const match of source.matchAll(/message: '([^']*)', context: 'change-history'/g)) {
+        used.add(`change-history|${match[1]}`);
+      }
+    }
+    expect(used.size).toBeGreaterThan(40);
+    for (const lang of ['en', 'uk']) {
+      const contexted = [...entries(catalog(lang)).keys()].filter((key) => key.startsWith('change-history|'));
+      expect(contexted.sort(), lang).toEqual([...used].sort());
+    }
+  });
+
   it('spell Ukrainian words in Cyrillic only (no Latin look-alikes such as H, i, o, c)', () => {
     const uk = entries(catalog('uk'));
     // «Ні» is U+041D U+0456 and looks exactly like Latin "Hi": compare code points, not glyphs.
@@ -191,7 +242,11 @@ describe('the catalogs', () => {
     expect([...uk.keys()].sort()).toEqual([...en.keys()].sort());
     for (const [key, translation] of uk) {
       expect(translation, key).not.toBe('');
-      expect(key.startsWith('change-history|') || key.startsWith('|change-history.'), key).toBe(true);
+      // The column settings menu translates `fieldName.<column>`: the feed's own columns are in the catalogs.
+      expect(
+        key.startsWith('change-history|') || key.startsWith('|change-history.') || key.startsWith('|fieldName.'),
+        key,
+      ).toBe(true);
       expect(translation, key).not.toMatch(/[{}]/);
     }
   });

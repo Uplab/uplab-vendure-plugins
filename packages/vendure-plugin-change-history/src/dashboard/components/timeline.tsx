@@ -2,18 +2,30 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { api, Button, HistoryEntryDate, Skeleton, useInfiniteQuery, useQuery } from '@vendure/dashboard';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { batchTotal, capitalizeFirst } from '../format';
 import { changeHistoryEntityTimelineDocument, changeHistoryEntriesDocument } from '../graphql';
 import { batchKindOf } from '../labels';
 import type { ChangeHistoryDetailData, ChangeHistoryEntryData } from '../registry';
-import { actorOf, EntryBadges, TONE_ICON_CLASSES, type EntryBadge } from './actor';
+import { actorOf, EntryBadges, runLabelOf, TONE_ICON_CLASSES, type EntryBadge } from './actor';
 import { DetailRows } from './details';
 import { EntityLink } from './entity-link';
 import { EntryDialog } from './entry-dialog';
-import { BatchSummary, batchSubject, EntryAction, EntryCounts, EntrySummary, hasCounts } from './summary';
+import { QueryError } from './query-error';
+import {
+  BatchSummary,
+  batchKindOfEntry,
+  batchSubject,
+  EntryAction,
+  EntryCounts,
+  EntrySummary,
+  hasCounts,
+} from './summary';
 import { useLabels } from './use-labels';
 import { CreatedValues, FieldChangesTable } from './values';
 
 const PAGE_SIZE = 20;
+/** Batch members and derived entries shown inline; the rest open in the entry window, which pages. */
+const INLINE_LIMIT = 50;
 
 export interface TimelineSubject {
   entityType: string;
@@ -27,6 +39,7 @@ function Toggle({ open, onClick, children }: { open: boolean; onClick: () => voi
   return (
     <button
       type="button"
+      aria-expanded={open}
       onClick={onClick}
       className="inline-flex items-center gap-0.5 text-sm text-primary hover:underline"
     >
@@ -36,16 +49,47 @@ function Toggle({ open, onClick, children }: { open: boolean; onClick: () => voi
   );
 }
 
-/** The round icon, the title line and the time of one timeline item; `extra` follows the badges. */
+/** «Expand» / «Collapse» (the same words wherever something folds open in place). */
+function ExpandToggle({ open, onClick, children }: { open: boolean; onClick: () => void; children?: ReactNode }) {
+  return (
+    <Toggle open={open} onClick={onClick}>
+      {open ? <Trans context="change-history">collapse</Trans> : <Trans context="change-history">expand</Trans>}
+      {children}
+    </Toggle>
+  );
+}
+
+/** «show all (240)»: the whole list, paged, in the entry window. */
+function ShowAll({ entryId, total }: { entryId: string; total: number }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className="mt-1 text-sm text-primary hover:underline" onClick={() => setOpen(true)}>
+        <Trans context="change-history">show all</Trans> ({total})
+      </button>
+      <EntryDialog entryId={open ? entryId : undefined} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
+const Dot = () => <span className="text-muted-foreground">·</span>;
+
+/**
+ * The round icon, the title line and the time of one timeline item. The line reads what happened first,
+ * then who and when: «Updated · Jane Doe · 4 hours ago» — in Ukrainian the impersonal «Оновлено» cannot
+ * follow the name.
+ */
 function ItemFrame({
   entry,
-  title,
+  lead,
+  showActor = true,
   badges,
   extra,
   children,
 }: {
   entry: ChangeHistoryEntryData;
-  title: ReactNode;
+  lead: ReactNode;
+  showActor?: boolean;
   badges?: Array<EntryBadge | false | null | undefined>;
   extra?: ReactNode;
   children?: ReactNode;
@@ -62,8 +106,16 @@ function ItemFrame({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
-          <span className={`font-medium ${actor.tone === 'system' ? 'text-muted-foreground' : ''}`}>{actor.name}</span>
-          {title}
+          {lead}
+          {showActor && (
+            <>
+              <Dot />
+              <span className={actor.tone === 'system' ? 'text-muted-foreground' : 'text-foreground'}>
+                {actor.name}
+              </span>
+            </>
+          )}
+          <Dot />
           <HistoryEntryDate
             date={entry.createdAt}
             className="cursor-help text-xs text-muted-foreground underline decoration-dotted underline-offset-2"
@@ -80,11 +132,11 @@ function ItemFrame({
 /** Entries derived from one (the variants a product save rewrote), loaded when unfolded. */
 function DerivedEntries({ entry }: { entry: ChangeHistoryEntryData }) {
   const [open, setOpen] = useState(false);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['change-history-derived', entry.id],
     queryFn: () =>
       api.query(changeHistoryEntriesDocument, {
-        options: { take: 50, filter: { derivedFromId: { eq: entry.id } }, sort: { createdAt: 'ASC' } },
+        options: { take: INLINE_LIMIT, filter: { derivedFromId: { eq: entry.id } }, sort: { createdAt: 'ASC' } },
       }),
     enabled: open,
   });
@@ -95,6 +147,8 @@ function DerivedEntries({ entry }: { entry: ChangeHistoryEntryData }) {
       </div>
     );
   }
+  const items = data?.changeHistoryEntries.items ?? [];
+  const total = data?.changeHistoryEntries.totalItems ?? 0;
   return (
     <div className="mt-1">
       <Toggle open={open} onClick={() => setOpen(!open)}>
@@ -103,19 +157,25 @@ function DerivedEntries({ entry }: { entry: ChangeHistoryEntryData }) {
       {open && (
         <div className="mt-1 space-y-2 border-l pl-3">
           {isLoading && <Skeleton className="h-6 w-full" />}
-          {data?.changeHistoryEntries.items.map((derived) => (
+          {isError && <QueryError error={error} onRetry={() => refetch()} retrying={isFetching} />}
+          {items.map((derived) => (
             <div key={derived.id}>
               <div className="text-sm">
-                <EntityLink entry={derived} className="font-mono text-xs" /> ·{' '}
+                <EntityLink entry={derived} deletedBadge={derived.action !== 'deleted'} /> ·{' '}
                 <span className="text-muted-foreground">
                   <EntryAction entry={derived} />
                 </span>
               </div>
-              {derived.changes && Object.keys(derived.changes).length > 0 && (
-                <FieldChangesTable entityType={derived.entityType} changes={derived.changes} showHeader={false} />
-              )}
+              {derived.changes &&
+                Object.keys(derived.changes).length > 0 &&
+                (derived.action === 'created' ? (
+                  <CreatedValues entityType={derived.entityType} changes={derived.changes} />
+                ) : (
+                  <FieldChangesTable entityType={derived.entityType} changes={derived.changes} showHeader={false} />
+                ))}
             </div>
           ))}
+          {total > items.length && <ShowAll entryId={entry.id} total={total} />}
         </div>
       )}
     </div>
@@ -124,46 +184,54 @@ function DerivedEntries({ entry }: { entry: ChangeHistoryEntryData }) {
 
 /** A batch head: the counts, and its members when unfolded. */
 function BatchItem({ entry }: { entry: ChangeHistoryEntryData }) {
+  const labels = useLabels();
   const [open, setOpen] = useState(false);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['change-history-batch-members', entry.id],
     queryFn: () =>
       api.query(changeHistoryEntriesDocument, {
-        options: { take: 50, filter: { batchId: { eq: entry.batchId } }, sort: { createdAt: 'ASC' } },
+        options: {
+          // The head is in the batch too: one more than the members shown.
+          take: INLINE_LIMIT + 1,
+          filter: { batchId: { eq: entry.batchId } },
+          sort: { createdAt: 'ASC' },
+        },
       }),
     enabled: open && !!entry.batchId,
   });
   const members = (data?.changeHistoryEntries.items ?? []).filter((member) => member.entityType !== 'Batch');
+  const total = Math.max(batchTotal(entry.batchCounts), (data?.changeHistoryEntries.totalItems ?? 1) - 1);
   const subject = batchSubject(entry);
   return (
     <ItemFrame
       entry={entry}
-      title={
-        <span className="text-muted-foreground">
-          <EntryAction entry={entry} />
+      lead={
+        <>
+          <span className="font-medium">{capitalizeFirst(labels.batchKind(batchKindOfEntry(entry)))}</span>
           {subject && (
             <>
-              {' · '}
+              <Dot />
               <EntityLink entry={subject} />
             </>
           )}
-        </span>
+        </>
       }
     >
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <BatchSummary entry={entry} />
-        {!entry.isCompacted && (
-          <Toggle open={open} onClick={() => setOpen(!open)}>
-            <Trans context="change-history">open</Trans>
-          </Toggle>
-        )}
+        {!entry.isCompacted && <ExpandToggle open={open} onClick={() => setOpen(!open)} />}
       </div>
       {open && (
         <ul className="mt-1 space-y-0.5 border-l pl-3 text-sm">
           {isLoading && <Skeleton className="h-6 w-full" />}
+          {isError && (
+            <li>
+              <QueryError error={error} onRetry={() => refetch()} retrying={isFetching} />
+            </li>
+          )}
           {members.map((member) => (
             <li key={member.id}>
-              <EntityLink entry={member} /> ·{' '}
+              <EntityLink entry={member} deletedBadge={member.action !== 'deleted'} /> ·{' '}
               <span className="text-muted-foreground">
                 <EntryAction entry={member} />
               </span>
@@ -175,27 +243,14 @@ function BatchItem({ entry }: { entry: ChangeHistoryEntryData }) {
               )}
             </li>
           ))}
-          {(data?.changeHistoryEntries.totalItems ?? 0) > 50 && <li className="text-muted-foreground">…</li>}
+          {!isLoading && !isError && total > members.length && (
+            <li>
+              <ShowAll entryId={entry.id} total={total} />
+            </li>
+          )}
         </ul>
       )}
     </ItemFrame>
-  );
-}
-
-/** «show all (240)»: the whole run, paged, in the entry window — the item carries its first rows only. */
-function AllRows({ entry, shown }: { entry: TimelineEntry; shown: number }) {
-  const [open, setOpen] = useState(false);
-  const total = entry.detailsTotal ?? 0;
-  if (total <= shown) {
-    return null;
-  }
-  return (
-    <>
-      <button type="button" className="mt-1 text-sm text-primary hover:underline" onClick={() => setOpen(true)}>
-        <Trans context="change-history">show all</Trans> ({total})
-      </button>
-      <EntryDialog entryId={open ? entry.id : undefined} onClose={() => setOpen(false)} />
-    </>
   );
 }
 
@@ -205,38 +260,43 @@ function AllRows({ entry, shown }: { entry: TimelineEntry; shown: number }) {
  * rows only; the rest open in the entry window.
  */
 function RunItem({ entry, subject }: { entry: TimelineEntry; subject: TimelineSubject }) {
+  const labels = useLabels();
   const rows = entry.details ?? [];
   const onlySubject = rows.every((row) => row.entityType === subject.entityType && row.entityId === subject.entityId);
   const [open, setOpen] = useState(false);
+  const lead = <span className="font-medium">{runLabelOf(entry, actorOf(entry, labels))}</span>;
+  const total = entry.detailsTotal ?? 0;
   if (rows.length === 0) {
-    return <ItemFrame entry={entry} title={null} />;
+    return <ItemFrame entry={entry} lead={lead} showActor={false} />;
   }
+  const all = total > rows.length ? <ShowAll entryId={entry.id} total={total} /> : null;
   if (onlySubject) {
     return (
-      <ItemFrame entry={entry} title={null}>
+      <ItemFrame entry={entry} lead={lead} showActor={false}>
         <DetailRows rows={rows} entry={entry} mode="timeline" />
-        <AllRows entry={entry} shown={rows.length} />
+        {all}
       </ItemFrame>
     );
   }
   return (
     <ItemFrame
       entry={entry}
-      title={
-        <span className="text-muted-foreground">
-          <DetailRows rows={rows} entry={entry} mode="summary" />
-        </span>
+      lead={
+        <>
+          {lead}
+          <Dot />
+          <span className="text-muted-foreground">
+            <DetailRows rows={rows} entry={entry} mode="summary" />
+          </span>
+        </>
       }
-      extra={
-        <Toggle open={open} onClick={() => setOpen(!open)}>
-          {open ? <Trans context="change-history">collapse</Trans> : <Trans context="change-history">expand</Trans>}
-        </Toggle>
-      }
+      showActor={false}
+      extra={<ExpandToggle open={open} onClick={() => setOpen(!open)} />}
     >
       {open ? (
         <>
           <DetailRows rows={rows} entry={entry} mode="timeline" />
-          <AllRows entry={entry} shown={rows.length} />
+          {all}
         </>
       ) : null}
     </ItemFrame>
@@ -255,53 +315,48 @@ function EntryItem({ entry, subject }: { entry: ChangeHistoryEntryData; subject:
   return (
     <ItemFrame
       entry={entry}
-      title={
-        <span className="text-muted-foreground">
-          {labels.action(entry.action)}
+      lead={
+        <>
+          <span className="font-medium">{capitalizeFirst(labels.action(entry.action))}</span>
           {membership && entry.parentId && (
-            <>
-              {' '}
-              <EntityLink
-                entry={{
-                  ...entry,
-                  entityType: 'Collection',
-                  entityId: entry.parentId,
-                  entityDeleted: entry.parentDeleted === true,
-                }}
-                className="text-foreground"
-              >
-                «{typeof entry.meta?.collectionLabel === 'string' ? entry.meta.collectionLabel : entry.parentId}»
-              </EntityLink>
-            </>
+            <EntityLink
+              entry={{
+                ...entry,
+                entityType: 'Collection',
+                entityId: entry.parentId,
+                entityDeleted: entry.parentDeleted === true,
+              }}
+            >
+              «{typeof entry.meta?.collectionLabel === 'string' ? entry.meta.collectionLabel : entry.parentId}»
+            </EntityLink>
           )}
           {isOther && !membership && (
             <>
-              {' · '}
-              <span className="text-foreground">
-                {labels.type(entry.entityType)} <EntityLink entry={entry} />
+              <Dot />
+              <span>
+                {labels.type(entry.entityType)} <EntityLink entry={entry} deletedBadge={entry.action !== 'deleted'} />
               </span>
             </>
           )}
-        </span>
+        </>
       }
       badges={[
-        !!entry.derivedFromId && { key: 'derived', text: t({ message: 'derived', context: 'change-history' }) },
+        !!entry.derivedFromId && { key: 'derived', text: t({ message: 'Derived', context: 'change-history' }) },
         !!batchKind && batchKind !== 'collection_rules' && { key: 'batch', text: labels.batchKind(batchKind) },
-        entry.action === 'deleted' &&
-          !isOther && {
-            key: 'deleted',
-            variant: 'destructive',
-            text: t({ message: 'deleted', context: 'change-history' }),
-          },
       ]}
     >
       {hasChanges && entry.action === 'created' && <CreatedValues entityType={entry.entityType} changes={changes} />}
       {hasChanges && entry.action !== 'created' && (
-        <FieldChangesTable entityType={entry.entityType} changes={changes} />
+        <FieldChangesTable entityType={entry.entityType} changes={changes} showHeader={false} />
       )}
       {!hasChanges && hasCounts(entry) && (
         <div className="text-sm">
           <EntryCounts entry={entry} />
+        </div>
+      )}
+      {!hasChanges && entry.action.startsWith('channel_') && typeof entry.meta?.channelCode === 'string' && (
+        <div className="text-sm text-muted-foreground">
+          <Trans context="change-history">Channel</Trans>: {entry.meta.channelCode}
         </div>
       )}
       {!hasChanges && !!entry.meta?.noBefore && entry.action !== 'created' && entry.action !== 'deleted' && (
@@ -326,19 +381,20 @@ function TimelineItem({ entry, subject }: { entry: TimelineEntry; subject: Timel
 
 /** One entity's history, newest first, 20 items a page with «Show more» by cursor. */
 export function EntityTimeline({ subject, refreshKey }: { subject: TimelineSubject; refreshKey?: unknown }) {
-  const { data, isLoading, isError, error, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['change-history-timeline', subject.entityType, subject.entityId, refreshKey],
-    queryFn: ({ pageParam }: { pageParam: string | null }) =>
-      api.query(changeHistoryEntityTimelineDocument, {
-        entityType: subject.entityType,
-        entityId: subject.entityId,
-        first: PAGE_SIZE,
-        after: pageParam,
-      }),
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) =>
-      page.changeHistoryEntityTimeline.hasMore ? page.changeHistoryEntityTimeline.endCursor : undefined,
-  });
+  const { data, isLoading, isError, error, refetch, isFetching, hasNextPage, fetchNextPage, isFetchingNextPage } =
+    useInfiniteQuery({
+      queryKey: ['change-history-timeline', subject.entityType, subject.entityId, refreshKey],
+      queryFn: ({ pageParam }: { pageParam: string | null }) =>
+        api.query(changeHistoryEntityTimelineDocument, {
+          entityType: subject.entityType,
+          entityId: subject.entityId,
+          first: PAGE_SIZE,
+          after: pageParam,
+        }),
+      initialPageParam: null as string | null,
+      getNextPageParam: (page) =>
+        page.changeHistoryEntityTimeline.hasMore ? page.changeHistoryEntityTimeline.endCursor : undefined,
+    });
   const items = data?.pages.flatMap((page) => page.changeHistoryEntityTimeline.items) ?? [];
   if (isLoading) {
     return (
@@ -348,8 +404,8 @@ export function EntityTimeline({ subject, refreshKey }: { subject: TimelineSubje
       </div>
     );
   }
-  if (isError) {
-    return <div className="text-sm text-destructive">{error instanceof Error ? error.message : String(error)}</div>;
+  if (isError && items.length === 0) {
+    return <QueryError error={error} onRetry={() => refetch()} retrying={isFetching} />;
   }
   if (items.length === 0) {
     return (
@@ -366,7 +422,8 @@ export function EntityTimeline({ subject, refreshKey }: { subject: TimelineSubje
           <TimelineItem key={entry.id} entry={entry} subject={subject} />
         ))}
       </div>
-      {hasNextPage && (
+      {isError && <QueryError className="mt-2 justify-center" error={error} onRetry={() => fetchNextPage()} />}
+      {hasNextPage && !isError && (
         <div className="mt-2 flex justify-center">
           <Button variant="outline" size="sm" disabled={isFetchingNextPage} onClick={() => fetchNextPage()}>
             <Trans context="change-history">Show more</Trans>

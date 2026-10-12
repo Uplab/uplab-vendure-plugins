@@ -20,13 +20,18 @@ import {
   type DefinedDateRange,
 } from '@vendure/dashboard';
 import { X } from 'lucide-react';
-import { useMemo, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { ActorName, actorOf } from '../components/actor';
 import { EntryDialog } from '../components/entry-dialog';
+import { QueryError } from '../components/query-error';
 import { EntryAction, EntryObject, EntrySummary, EntryType } from '../components/summary';
 import { useLabels } from '../components/use-labels';
 import {
+  actorLabelText,
+  actorOptionLabel,
+  clampPage,
   encodeActor,
+  FEED_QUERY_MARKER,
   feedFilter,
   feedSearchParams,
   parseFeedSearch,
@@ -130,6 +135,69 @@ function Cell({
   );
 }
 
+interface FeedQueryState {
+  error?: unknown;
+  totalItems?: number;
+  fetching: boolean;
+}
+
+/**
+ * The state of the feed's own list query, read from the query cache (the table runs the query and shows
+ * neither its error nor its total): a failed request shows an error with a retry instead of «No results»,
+ * and a page past the end is corrected.
+ */
+function useFeedQueryState(queryClient: ReturnType<typeof useQueryClient>): FeedQueryState & { retry: () => void } {
+  const [state, setState] = useState<FeedQueryState>({ fetching: false });
+  useEffect(() => {
+    const cache = queryClient.getQueryCache();
+    const read = () => {
+      const query = cache
+        .findAll({ predicate: (candidate) => candidate.queryKey.includes(FEED_QUERY_MARKER) })
+        .filter((candidate) => candidate.getObserversCount() > 0)
+        .sort(
+          (a, b) => b.state.dataUpdatedAt + b.state.errorUpdatedAt - (a.state.dataUpdatedAt + a.state.errorUpdatedAt),
+        )[0];
+      const data = query?.state.data as { changeHistoryEntries?: { totalItems?: number } } | undefined;
+      const next: FeedQueryState = {
+        error: query?.state.status === 'error' ? query.state.error : undefined,
+        totalItems: query?.state.status === 'success' ? data?.changeHistoryEntries?.totalItems : undefined,
+        fetching: query?.state.fetchStatus === 'fetching',
+      };
+      setState((previous) =>
+        previous.error === next.error && previous.totalItems === next.totalItems && previous.fetching === next.fetching
+          ? previous
+          : next,
+      );
+    };
+    read();
+    // The cache notifies while another component renders (a query is created in its render): read after it.
+    let scheduled = false;
+    let active = true;
+    const unsubscribe = cache.subscribe((event) => {
+      if (scheduled || !event.query.queryKey.includes(FEED_QUERY_MARKER)) {
+        return;
+      }
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        if (active) {
+          read();
+        }
+      });
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [queryClient]);
+  const retry = () =>
+    void queryClient.refetchQueries({
+      predicate: (candidate) => candidate.queryKey.includes(FEED_QUERY_MARKER),
+      type: 'active',
+    });
+  return { ...state, retry };
+}
+
 function ChangeHistoryListPage({ route }: { route: Route }) {
   const { t } = useLingui();
   const labels = useLabels();
@@ -141,6 +209,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
   const setSearch = (patch: Record<string, unknown>) =>
     navigate({ to: '.' as never, search: ((prev: Record<string, unknown>) => ({ ...prev, ...patch })) as never });
   const setState = (patch: Partial<FeedSearch>) => setSearch(feedSearchParams({ ...state, ...patch }));
+  const openEntry = (id: string) => setState({ entry: id });
   // A switch or the period changes the rows: back to the first page.
   const setFilters = (patch: Partial<FeedSearch>) =>
     setSearch({ ...feedSearchParams({ ...state, ...patch }), page: undefined });
@@ -182,7 +251,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
           sorted(
             (await load()).actors.map((actor) => ({
               value: encodeActor(actor.type, actor.id),
-              label: actor.type === 'api_key' ? `${actor.label} (${labels.source('api_key').label})` : actor.label,
+              label: actorOptionLabel(actor, labels.source('api_key').label),
             })),
           ),
       },
@@ -197,6 +266,16 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
   const emptyRange = useMemo(() => ({}) as DefinedDateRange, []);
 
   const { page, perPage, filters: columnFilters } = parseListSearch(search);
+  const feedQuery = useFeedQueryState(queryClient);
+  // A page past the end (a stale link, a filter that shrank the list) moves to the last page.
+  const lastValidPage =
+    feedQuery.totalItems !== undefined && !feedQuery.fetching ? clampPage(page, perPage, feedQuery.totalItems) : page;
+  useEffect(() => {
+    if (lastValidPage !== page) {
+      setSearch({ page: lastValidPage });
+    }
+    // `setSearch` is a new function on every render; the page numbers are what matters.
+  }, [lastValidPage, page]);
   const sorting =
     typeof search.sort === 'string' && search.sort ? parseSort(search.sort) : [{ id: 'createdAt', desc: true }];
 
@@ -212,7 +291,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
     const cell = target.closest('tr')?.querySelector<HTMLElement>('[data-change-history-entry]');
     const id = cell?.dataset.changeHistoryEntry;
     if (id) {
-      setState({ entry: id });
+      openEntry(id);
     }
   };
 
@@ -232,6 +311,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
               <Button
                 variant="ghost"
                 size="icon-sm"
+                aria-label={t({ message: 'Clear the period', context: 'change-history' })}
                 title={t({ message: 'Clear the period', context: 'change-history' })}
                 onClick={() => setFilters({ from: undefined, to: undefined })}
               >
@@ -261,7 +341,16 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
       </PageActionBar>
       <PageLayout>
         <FullWidthPageBlock blockId="list-table">
-          <div onClick={openRow} className="[&_tbody_tr]:cursor-pointer">
+          {!!feedQuery.error && (
+            <QueryError
+              className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 p-2"
+              error={feedQuery.error}
+              onRetry={feedQuery.retry}
+              retrying={feedQuery.fetching}
+            />
+          )}
+          {/* After a failed request the table's «No results» would claim there were no changes: it is hidden. */}
+          <div onClick={openRow} className={`[&_tbody_tr]:cursor-pointer ${feedQuery.error ? '[&_tbody]:hidden' : ''}`}>
             <PaginatedListDataTable
               listQuery={changeHistoryEntriesDocument}
               page={page}
@@ -277,7 +366,14 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                 JSON.stringify(filters) !== JSON.stringify(columnFilters) &&
                 setSearch({ filters: filters.length ? filters : undefined, page: 1 })
               }
-              transformQueryKey={(key) => [...key, state.collapseBatches, state.hideSystem, state.from, state.to]}
+              transformQueryKey={(key) => [
+                ...key,
+                FEED_QUERY_MARKER,
+                state.collapseBatches,
+                state.hideSystem,
+                state.from,
+                state.to,
+              ]}
               transformVariables={(variables: { options?: ListOptions }) => ({
                 ...variables,
                 options: { ...variables.options, filter: feedFilter(variables.options?.filter, state) },
@@ -305,7 +401,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                       <button
                         type="button"
                         className="whitespace-nowrap text-muted-foreground hover:underline"
-                        onClick={() => setState({ entry: row.original.id })}
+                        onClick={() => openEntry(row.original.id)}
                       >
                         {formatDate(row.original.createdAt, { dateStyle: 'short', timeStyle: 'short' })}
                       </button>
@@ -316,12 +412,16 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   header: () => <Trans context="change-history">Who</Trans>,
                   enableColumnFilter: false,
                   meta: { dependencies: [...ROW_FIELDS] },
-                  // A long name («Odoo: stock refresh after an order») is cut, the whole name in the tooltip.
+                  // A long name («Odoo: stock refresh after an order») takes two lines, the whole name in the tooltip.
                   cell: ({ row }) => {
                     const actor = actorOf(row.original, labels);
                     return (
-                      <Cell id={row.original.id} className="max-w-[10rem]" title={actor.name}>
-                        <ActorName actor={actor} className="max-w-full" />
+                      <Cell
+                        id={row.original.id}
+                        className="min-w-[8rem] max-w-[12rem] whitespace-normal"
+                        title={actor.name}
+                      >
+                        <ActorName actor={actor} className="max-w-full" wrap />
                       </Cell>
                     );
                   },
@@ -340,14 +440,14 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   header: () => <Trans context="change-history">Object</Trans>,
                   enableColumnFilter: false,
                   meta: { dependencies: [...ROW_FIELDS] },
-                  // Long names (a variant with its SKU) are cut, the whole name in the tooltip.
+                  // Long names are cut — a variant's name, never its SKU — the whole name in the tooltip.
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="max-w-[12rem] truncate"
+                      className="flex max-w-[12rem] min-w-0 min-[1400px]:max-w-[16rem]"
                       title={row.original.entityLabel ?? undefined}
                     >
-                      <EntryObject entry={row.original} />
+                      <EntryObject entry={row.original} cut />
                     </Cell>
                   ),
                 },
@@ -381,11 +481,18 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                     <Cell id={row.original.id}>{labels.source(row.original.source, row.original.actorType).label}</Cell>
                   ),
                 },
+                // Only the «Who» filter's column: never shown, and not offered in the column settings (the
+                // «Who» column above shows the same person).
                 actorId: {
                   header: () => <Trans context="change-history">Who</Trans>,
                   enableSorting: false,
+                  enableHiding: false,
                   meta: { dependencies: ['actorType', 'actorLabel'] },
-                  cell: ({ row }) => <Cell id={row.original.id}>{row.original.actorLabel ?? '—'}</Cell>,
+                  cell: ({ row }) => (
+                    <Cell id={row.original.id}>
+                      {actorLabelText(row.original.actorType, row.original.actorLabel) ?? '—'}
+                    </Cell>
+                  ),
                 },
               }}
             />

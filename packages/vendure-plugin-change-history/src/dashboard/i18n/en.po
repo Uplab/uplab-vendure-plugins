@@ -60,12 +60,12 @@ msgstr "Price"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.featuredAsset"
-msgstr "Featured image"
+msgstr "Featured asset"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.assets"
-msgstr "Images"
+msgstr "Assets"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -385,7 +385,7 @@ msgstr "System"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.batch.collection_rules"
-msgstr "Collection contents updated"
+msgstr "collection contents updated"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -427,6 +427,66 @@ msgstr "moved"
 msgid "change-history.count.total"
 msgstr "total"
 
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.GlobalFlag.TRUE"
+msgstr "Track"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.GlobalFlag.FALSE"
+msgstr "Do not track"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.GlobalFlag.INHERIT"
+msgstr "Inherit from global settings"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.AssetType.IMAGE"
+msgstr "Image"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.AssetType.VIDEO"
+msgstr "Video"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.AssetType.BINARY"
+msgstr "Binary"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.actorLabel"
+msgstr "Who"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.entityType"
+msgstr "Type"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.entityLabel"
+msgstr "Object"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.action"
+msgstr "Action"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.summary"
+msgstr "Changes"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.source"
+msgstr "Source"
+
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
 msgid "(shortened)"
@@ -444,9 +504,16 @@ msgid "All changes"
 msgstr "All changes"
 
 #: src/dashboard/components/actor.tsx
+#: src/dashboard/components/actor.tsx
 msgctxt "change-history"
 msgid "API key"
 msgstr "API key"
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Back"
+msgstr "Back"
 
 #: src/dashboard/components/details.tsx
 #: src/dashboard/components/values.tsx
@@ -465,6 +532,12 @@ msgstr "Change history"
 msgctxt "change-history"
 msgid "changed"
 msgstr "changed"
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "Channel"
+msgstr "Channel"
 
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
@@ -488,13 +561,13 @@ msgstr "Collapse bulk operations"
 
 #: src/dashboard/components/entity-link.tsx
 msgctxt "change-history"
-msgid "deleted"
-msgstr "deleted"
+msgid "Deleted"
+msgstr "Deleted"
 
 #: src/dashboard/components/timeline.tsx
 msgctxt "change-history"
-msgid "derived"
-msgstr "derived"
+msgid "Derived"
+msgstr "Derived"
 
 #: src/dashboard/components/entry-dialog.tsx
 #: src/dashboard/components/summary.tsx
@@ -547,6 +620,12 @@ msgctxt "change-history"
 msgid "Name"
 msgstr "Name"
 
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Next page"
+msgstr "Next page"
+
+#: src/dashboard/components/values.tsx
 #: src/dashboard/components/values.tsx
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
@@ -574,7 +653,6 @@ msgid "Object"
 msgstr "Object"
 
 #: src/dashboard/components/entry-dialog.tsx
-#: src/dashboard/components/timeline.tsx
 msgctxt "change-history"
 msgid "open"
 msgstr "open"
@@ -584,15 +662,26 @@ msgctxt "change-history"
 msgid "order changed"
 msgstr "order changed"
 
-#: src/dashboard/components/values.tsx
+#: src/dashboard/components/entry-dialog.tsx
 msgctxt "change-history"
-msgid "order unchanged"
-msgstr "order unchanged"
+msgid "Previous page"
+msgstr "Previous page"
 
 #: src/dashboard/widgets/recent-changes-widget.tsx
 msgctxt "change-history"
 msgid "Recent changes"
 msgstr "Recent changes"
+
+#: src/dashboard/widgets/recent-changes-widget.tsx
+#: src/dashboard/widgets/recent-changes-widget.tsx
+msgctxt "change-history"
+msgid "Refresh"
+msgstr "Refresh"
+
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "Retry"
+msgstr "Retry"
 
 #: src/dashboard/components/summary.tsx
 msgctxt "change-history"
@@ -608,6 +697,12 @@ msgstr "Scope"
 msgctxt "change-history"
 msgid "show all"
 msgstr "show all"
+
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "show all fields"
+msgstr "show all fields"
 
 #: src/dashboard/components/values.tsx
 msgctxt "change-history"
@@ -646,6 +741,11 @@ msgctxt "change-history"
 msgid "System change"
 msgstr "System change"
 
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "The change history could not be loaded."
+msgstr "The change history could not be loaded."
+
 #: src/dashboard/components/entry-dialog.tsx
 msgctxt "change-history"
 msgid "This entry no longer exists."
@@ -682,6 +782,12 @@ msgstr "Who"
 
 #: src/dashboard/components/values.tsx
 #: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
 msgctxt "change-history"
 msgid "Yes"
 msgstr "Yes"
+
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "You do not have permission to view this history."
+msgstr "You do not have permission to view this history."

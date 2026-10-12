@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react/macro';
 import { Badge } from '@vendure/dashboard';
 import { Bot, Clock, KeyRound, User } from 'lucide-react';
 import type { ComponentType } from 'react';
-import { distinctBadges } from '../format';
+import { actorLabelText, capitalizeFirst, distinctBadges } from '../format';
 import type { ChangeHistoryEntryData } from '../registry';
 import type { Labels, ResolvedSource } from './use-labels';
 
@@ -41,16 +41,18 @@ export function actorOf(entry: ChangeHistoryEntryData, labels: Labels): ActorVie
   } else {
     tone = entry.actorType === 'api_key' ? 'api_key' : 'human';
   }
-  let name: string;
-  if (entry.entityType === 'Run') {
-    // A run is labelled when recorded («ERP: stock sync after order #1042»).
-    name = entry.entityLabel ?? source.label;
-  } else if (tone === 'system') {
-    name = source.label;
-  } else {
-    name = entry.actorLabel ?? source.label;
-  }
+  // The system (a run, collection rules) is named by its source; a run's own label («ERP: stock sync after
+  // order #1042») is its object. An API key's owner shows without a stored English suffix.
+  const name =
+    tone === 'system' || entry.entityType === 'Run'
+      ? source.label
+      : (actorLabelText(entry.actorType, entry.actorLabel) ?? source.label);
   return { tone, name, source, Icon: source.icon ?? TONE_ICONS[tone] };
+}
+
+/** What a run is about: its recorded label, else its source's. */
+export function runLabelOf(entry: ChangeHistoryEntryData, actor: ActorView): string {
+  return entry.entityLabel || actor.source.label;
 }
 
 /** One badge of an entry's title line; badges with the same visible text show once. */
@@ -80,40 +82,54 @@ export function EntryBadges({
     api_key: {
       key: 'actor',
       text: t({ message: 'API key', context: 'change-history' }),
-      className: 'border-blue-200 text-blue-700 dark:text-blue-300',
+      className: API_KEY_BADGE,
     },
     scheduled: {
       key: 'actor',
       text: actor.source.label,
-      className: 'border-amber-200 text-amber-700 dark:text-amber-300',
+      className: 'border-amber-200 text-amber-700 dark:border-amber-800 dark:text-amber-300',
     },
     human: undefined,
   };
+  // Every badge reads as a tag: sentence case, whatever case its label was registered in.
   return (
     <>
       {distinctBadges([actorBadges[actor.tone], ...badges], shown).map((badge) => (
         <Badge key={badge.key} variant={badge.variant ?? 'outline'} className={`font-normal ${badge.className ?? ''}`}>
-          {badge.text}
+          {capitalizeFirst(badge.text)}
         </Badge>
       ))}
     </>
   );
 }
 
-/** Icon and name in one line, greyed for the system — the feed's and the widget's «who». */
-export function ActorName({ actor, className }: { actor: ActorView; className?: string }) {
+const API_KEY_BADGE = 'border-blue-200 text-blue-700 dark:border-blue-800 dark:text-blue-300';
+
+/** The localized marker after an API key owner's name: the type is in the entry, never in the stored name. */
+function ApiKeyMarker() {
+  const { t } = useLingui();
+  return (
+    <Badge variant="outline" className={`shrink-0 px-1 py-0 text-[10px] font-normal ${API_KEY_BADGE}`}>
+      {t({ message: 'API key', context: 'change-history' })}
+    </Badge>
+  );
+}
+
+/**
+ * Icon and name in one line, greyed for the system — the feed's and the widget's «who». `wrap` lets a long
+ * name («Odoo: stock refresh after an order») take two lines instead of being cut.
+ */
+export function ActorName({ actor, className, wrap }: { actor: ActorView; className?: string; wrap?: boolean }) {
   const { Icon } = actor;
   return (
     <span
       className={`inline-flex items-center gap-1.5 ${actor.tone === 'system' ? 'text-muted-foreground' : ''} ${className ?? ''}`}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span className="min-w-0 truncate">{actor.name}</span>
-      {actor.tone === 'api_key' && (
-        <Badge variant="outline" className="border-blue-200 px-1 py-0 text-[10px] text-blue-700 dark:text-blue-300">
-          API
-        </Badge>
-      )}
+      <span className={`min-w-0 ${wrap ? 'line-clamp-2 whitespace-normal break-words' : 'truncate'}`}>
+        {actor.name}
+      </span>
+      {actor.tone === 'api_key' && <ApiKeyMarker />}
     </span>
   );
 }
