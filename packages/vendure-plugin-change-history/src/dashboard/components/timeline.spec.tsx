@@ -108,11 +108,55 @@ describe('EntityTimeline', () => {
       ],
       (key) =>
         key[0] === 'change-history-batch-members'
-          ? { data: { changeHistoryEntries: { items: members, totalItems: 121 } } }
+          ? {
+              data: {
+                changeHistoryEntry: {
+                  batchMembers: { items: members, totalItems: 120 },
+                  derivedEntries: { items: [], totalItems: 0 },
+                },
+              },
+            }
           : undefined,
     );
     fireEvent.click(screen.getByRole('button', { name: 'розгорнути' }));
     expect(screen.getByRole('button', { name: 'показати всі (120)' })).toBeTruthy();
+  });
+
+  it('lists the derived entries the reader may see, and offers the rest', () => {
+    timeline([entry({ changes: { name: { kind: 'text', from: 'A', to: 'B' } }, derivedCount: 80 })], (key) =>
+      key[0] === 'change-history-derived'
+        ? {
+            data: {
+              changeHistoryEntry: {
+                derivedEntries: {
+                  items: [entry({ id: '3', entityType: 'ProductVariant', entityLabel: 'Tee S (TS-S)' })],
+                  totalItems: 60,
+                },
+                batchMembers: { items: [], totalItems: 0 },
+              },
+            },
+          }
+        : undefined,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Похідні зміни: 80' }));
+    expect(screen.getByText('Tee S (TS-S)')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'показати всі (60)' })).toBeTruthy();
+  });
+
+  it('links what a run was about', () => {
+    timeline([
+      entry({
+        entityType: 'Run',
+        entityLabel: 'Odoo: залишки після замовлення',
+        action: 'run',
+        source: 'odoo',
+        actorType: 'system',
+        actorLabel: null,
+        meta: { subject: { label: 'SO-1042', type: 'Order', id: 42 } },
+      }),
+    ]);
+    expect(titleLine()).toMatch(/^Odoo: залишки після замовлення·SO-1042·/);
+    expect(screen.getByRole('link', { name: 'SO-1042' }).getAttribute('href')).toBe('/orders/42');
   });
 
   it('shows the run label first, and its source not again', () => {

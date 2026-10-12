@@ -33,6 +33,7 @@ import {
   EntryType,
   hasCounts,
   RunCounts,
+  runSubjectEntry,
 } from './summary';
 import { EntityTimeline } from './timeline';
 import { useLabels, type Labels } from './use-labels';
@@ -361,6 +362,13 @@ function DialogBody({
 
           {isRun && (
             <>
+              {runSubjectEntry(entry) && (
+                <ValuesGrid>
+                  <GridRow label={<Trans context="change-history">Object</Trans>}>
+                    <EntityLink entry={runSubjectEntry(entry)!} />
+                  </GridRow>
+                </ValuesGrid>
+              )}
               <div className="text-sm">
                 <RunCounts entry={entry} includeZero separator=" · " />
               </div>
@@ -372,7 +380,8 @@ function DialogBody({
             <Section
               title={
                 <>
-                  {labels.typePlural(memberType)}: {batchTotal(entry.batchCounts)}
+                  {labels.typePlural(memberType)}:{' '}
+                  {entry.isCompacted ? batchTotal(entry.batchCounts) : entry.batchMembers.totalItems}
                   {Array.isArray(entry.meta?.fields) && entry.meta.fields.length > 0 && (
                     <span className="font-normal text-muted-foreground">
                       {' · '}

@@ -213,7 +213,8 @@ product finds the rows of its variants. A run stores its `counts`, `durationMs` 
 writes its rows in chunks of 500 and keeps at most 5,000 rows (a larger run stores the first 5,000 and counts
 the rest in `meta.detailsOmitted`). A run with no rows and only zero counts writes nothing. Called inside your
 transaction, the run commits or rolls back with it. A run's `subject` is kept in `meta.subject`
-(`{ label, type?, id? }`, the id as a string).
+(`{ label, type?, id? }`, the id as a string); the dashboard shows it as the run's object, linked when its type
+has a page (`Order`, `Customer`, a core catalogue type, or a type you registered with a `route`).
 
 `runBatch` groups what is written inside its callback, following the callback's async context rather than the
 `RequestContext`: two batches started at once on one context (`Promise.all`) stay two batches, and work on the same
@@ -341,7 +342,7 @@ Everything needs the **ReadChangeHistory** permission, and each page shows only 
 (see [Permissions and channels](#permissions-and-channels)). The dashboard is in English and Ukrainian.
 
 - **Feed** — **System → Change history** (`/change-history`). One row per change: time, who, type, object
-  (a link to it, «deleted» when it is gone), action and what changed. Search by name or SKU, filter by type,
+  (a link to it, «deleted» when it is gone; for a run, its subject or label), action and what changed. Search by name or SKU, filter by type,
   action, source and who, pick a period, and two switches: **Collapse bulk operations** (on: a batch is one
   row) and **Hide system changes** (off: collection rules and external runs are listed too). Filters, switches,
   period and the open entry are in the URL, so a view is a link you can send. Clicking a row opens the entry.

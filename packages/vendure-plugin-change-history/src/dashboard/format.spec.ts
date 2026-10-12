@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  runSubjectOf,
   actorLabelText,
   actorOptionLabel,
   apiKeyOwnerName,
@@ -446,8 +447,24 @@ describe('the feed URL', () => {
   });
 });
 
+describe('runSubjectOf', () => {
+  it("reads a run's subject", () => {
+    expect(runSubjectOf({ subject: { label: 'SO-1042', type: 'Order', id: 42 } })).toEqual({
+      label: 'SO-1042',
+      type: 'Order',
+      id: '42',
+    });
+    expect(runSubjectOf({ subject: { label: 'Nightly', type: '', id: '' } })).toEqual({ label: 'Nightly' });
+    expect(runSubjectOf({ subject: { label: '' } })).toBeUndefined();
+    expect(runSubjectOf({ subject: ['x'] })).toBeUndefined();
+    expect(runSubjectOf({})).toBeUndefined();
+    expect(runSubjectOf(null)).toBeUndefined();
+  });
+});
+
 describe('builtInRoute', () => {
   it('links the core detail pages', () => {
+    expect(builtInRoute('Order', '42')).toBe('/orders/42');
     expect(builtInRoute('Product', '1')).toBe('/products/1');
     expect(builtInRoute('ProductVariant', '2')).toBe('/product-variants/2');
     expect(builtInRoute('FacetValue', '5', '1')).toBe('/facets/1/values/5');

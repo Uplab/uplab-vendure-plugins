@@ -64,6 +64,11 @@ describe('EntryDialog', () => {
     expect(document.body.textContent).not.toContain('archive');
     unmount();
 
+    // The server leaves the label out when a host stored the kind there.
+    const { unmount: unmountUnlabelled } = open({ ...batch, entityLabel: null });
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Масова операція');
+    unmountUnlabelled();
+
     getChangeHistoryRegistry().batchKinds.set('archive', { label: 'архівування' });
     open(batch);
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Архівування');
@@ -88,6 +93,32 @@ describe('EntryDialog', () => {
       }),
     );
     expect(header().match(/відкладена дія/gi)).toHaveLength(1);
+  });
+
+  it('links what a run was about', () => {
+    answerQueries((key) => {
+      if (key[0] === 'change-history-entry') {
+        return {
+          data: dialogData(
+            entry({
+              entityType: 'Run',
+              entityLabel: 'ERP: залишки',
+              action: 'run',
+              source: 'erp',
+              actorType: 'system',
+              actorLabel: null,
+              meta: { counts: { updated: 2 }, subject: { label: 'SO-1042', type: 'Order', id: '42' } },
+            }),
+          ),
+        };
+      }
+      return key[0] === 'change-history-run-details'
+        ? { data: { changeHistoryRunDetails: { items: [], totalItems: 0 } } }
+        : undefined;
+    });
+    render(<EntryDialog entryId="7" onClose={() => undefined} />);
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('ERP: залишки');
+    expect(screen.getByRole('link', { name: 'SO-1042' }).getAttribute('href')).toBe('/orders/42');
   });
 
   it('says why the entry could not be loaded and retries, in the dashboard language', () => {

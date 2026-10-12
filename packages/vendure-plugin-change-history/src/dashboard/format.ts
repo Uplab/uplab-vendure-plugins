@@ -562,7 +562,34 @@ const DETAIL_ROUTES: Record<string, string> = {
   Facet: '/facets/',
   Asset: '/assets/',
   Promotion: '/promotions/',
+  // What a run can be about (`meta.subject`): an order of an ERP sync, a customer of a CRM sync.
+  Order: '/orders/',
+  Customer: '/customers/',
 };
+
+/** What a run was about (`recordRun({ subject })`, stored in `meta.subject`). */
+export interface RunSubject {
+  label: string;
+  type?: string;
+  id?: string;
+}
+
+/** A run's `meta.subject`, or `undefined` when it has none (or an unreadable one). */
+export function runSubjectOf(meta: Record<string, unknown> | null | undefined): RunSubject | undefined {
+  const subject = meta?.subject;
+  if (!subject || typeof subject !== 'object' || Array.isArray(subject)) {
+    return undefined;
+  }
+  const { label, type, id } = subject as Record<string, unknown>;
+  if (typeof label !== 'string' || label === '') {
+    return undefined;
+  }
+  return {
+    label,
+    ...(typeof type === 'string' && type ? { type } : {}),
+    ...((typeof id === 'string' || typeof id === 'number') && String(id) !== '' ? { id: String(id) } : {}),
+  };
+}
 
 /** The dashboard page of a core entity, or `undefined` (batches, runs, host types without a route). */
 export function builtInRoute(entityType: string, entityId: string, parentId?: string | null): string | undefined {

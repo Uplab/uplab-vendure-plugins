@@ -10,6 +10,7 @@ import {
   numericDelta,
   orderCreatedKeys,
   refLabel,
+  runSubjectOf,
 } from '../format';
 import { batchKindOf } from '../labels';
 import type { ChangeHistoryEntryData, ChangeHistoryFieldChange } from '../registry';
@@ -36,6 +37,26 @@ export function batchSubject(entry: ChangeHistoryEntryData): ChangeHistoryEntryD
 /** A batch head's kind: `meta.kind`, else the kind in its `batchId` (`<kind>:<uuid>`). */
 export const batchKindOfEntry = (entry: ChangeHistoryEntryData): string =>
   typeof entry.meta?.kind === 'string' ? entry.meta.kind : (batchKindOf(entry.batchId) ?? entry.entityType);
+
+/**
+ * What a run was about (`meta.subject`, e.g. an order) as an entry, so that it links like any entity: to the
+ * host's route for its type, else to a core page (an order), else as text.
+ */
+export function runSubjectEntry(entry: ChangeHistoryEntryData): ChangeHistoryEntryData | undefined {
+  const subject = runSubjectOf(entry.meta);
+  if (!subject) {
+    return undefined;
+  }
+  return {
+    ...entry,
+    // Without a type or an id the subject is a label only: a type nobody routes.
+    entityType: subject.type && subject.id ? subject.type : 'RunSubject',
+    entityId: subject.id ?? '',
+    entityLabel: subject.label,
+    parentId: null,
+    entityDeleted: false,
+  };
+}
 
 /**
  * A batch's own label («Scheduled action #3»), or `undefined` when it has none: a host that passed no label
@@ -69,6 +90,10 @@ export function EntryAction({ entry }: { entry: ChangeHistoryEntryData }) {
  */
 export function EntryObject({ entry, cut = false }: { entry: ChangeHistoryEntryData; cut?: boolean }) {
   if (entry.entityType === 'Run') {
+    const subject = runSubjectEntry(entry);
+    if (subject) {
+      return <EntityLink entry={subject} cut={cut} />;
+    }
     return entry.entityLabel ? (
       <span className={cut ? 'block truncate' : undefined}>{entry.entityLabel}</span>
     ) : (

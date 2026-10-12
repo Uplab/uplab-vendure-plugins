@@ -103,6 +103,18 @@ describe('EntrySummary', () => {
 });
 
 describe('EntryObject', () => {
+  it("links a run's subject, a label without a type as text", () => {
+    const { rerender } = render(
+      <EntryObject
+        entry={entry({ entityType: 'Run', meta: { subject: { label: 'SO-1042', type: 'Order', id: 42 } } })}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'SO-1042' }).getAttribute('href')).toBe('/orders/42');
+    rerender(<EntryObject entry={entry({ entityType: 'Run', meta: { subject: { label: 'Nightly' } } })} />);
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(document.body.textContent).toBe('Nightly');
+  });
+
   it('shows what a run was about', () => {
     render(<EntryObject entry={entry({ entityType: 'Run', entityLabel: 'Odoo: stock after order #1042' })} />);
     expect(document.body.textContent).toBe('Odoo: stock after order #1042');

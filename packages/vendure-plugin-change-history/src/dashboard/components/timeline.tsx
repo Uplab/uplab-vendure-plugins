@@ -2,8 +2,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { api, Button, HistoryEntryDate, Skeleton, useInfiniteQuery, useQuery } from '@vendure/dashboard';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { batchTotal, capitalizeFirst } from '../format';
-import { changeHistoryEntityTimelineDocument, changeHistoryEntriesDocument } from '../graphql';
+import { capitalizeFirst } from '../format';
+import { changeHistoryEntityTimelineDocument, changeHistoryEntryDocument } from '../graphql';
 import { batchKindOf } from '../labels';
 import type { ChangeHistoryDetailData, ChangeHistoryEntryData } from '../registry';
 import { actorOf, EntryBadges, runLabelOf, TONE_ICON_CLASSES, type EntryBadge } from './actor';
@@ -19,6 +19,7 @@ import {
   EntryCounts,
   EntrySummary,
   hasCounts,
+  runSubjectEntry,
 } from './summary';
 import { useLabels } from './use-labels';
 import { CreatedValues, FieldChangesTable } from './values';
@@ -135,8 +136,10 @@ function DerivedEntries({ entry }: { entry: ChangeHistoryEntryData }) {
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['change-history-derived', entry.id],
     queryFn: () =>
-      api.query(changeHistoryEntriesDocument, {
-        options: { take: INLINE_LIMIT, filter: { derivedFromId: { eq: entry.id } }, sort: { createdAt: 'ASC' } },
+      api.query(changeHistoryEntryDocument, {
+        id: entry.id,
+        derivedOptions: { take: INLINE_LIMIT, sort: { createdAt: 'ASC' } },
+        memberOptions: { take: 1 },
       }),
     enabled: open,
   });
@@ -147,8 +150,9 @@ function DerivedEntries({ entry }: { entry: ChangeHistoryEntryData }) {
       </div>
     );
   }
-  const items = data?.changeHistoryEntries.items ?? [];
-  const total = data?.changeHistoryEntries.totalItems ?? 0;
+  // What the reader may see: a derived entry of a type they may not read is not listed, nor counted.
+  const items = data?.changeHistoryEntry?.derivedEntries.items ?? [];
+  const total = data?.changeHistoryEntry?.derivedEntries.totalItems ?? 0;
   return (
     <div className="mt-1">
       <Toggle open={open} onClick={() => setOpen(!open)}>
@@ -189,18 +193,16 @@ function BatchItem({ entry }: { entry: ChangeHistoryEntryData }) {
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['change-history-batch-members', entry.id],
     queryFn: () =>
-      api.query(changeHistoryEntriesDocument, {
-        options: {
-          // The head is in the batch too: one more than the members shown.
-          take: INLINE_LIMIT + 1,
-          filter: { batchId: { eq: entry.batchId } },
-          sort: { createdAt: 'ASC' },
-        },
+      api.query(changeHistoryEntryDocument, {
+        id: entry.id,
+        memberOptions: { take: INLINE_LIMIT, sort: { createdAt: 'ASC' } },
+        derivedOptions: { take: 1 },
       }),
-    enabled: open && !!entry.batchId,
+    enabled: open,
   });
-  const members = (data?.changeHistoryEntries.items ?? []).filter((member) => member.entityType !== 'Batch');
-  const total = Math.max(batchTotal(entry.batchCounts), (data?.changeHistoryEntries.totalItems ?? 1) - 1);
+  // The members the reader may see; the rest of them page in the entry window.
+  const members = data?.changeHistoryEntry?.batchMembers.items ?? [];
+  const total = data?.changeHistoryEntry?.batchMembers.totalItems ?? 0;
   const subject = batchSubject(entry);
   return (
     <ItemFrame
@@ -264,7 +266,18 @@ function RunItem({ entry, subject }: { entry: TimelineEntry; subject: TimelineSu
   const rows = entry.details ?? [];
   const onlySubject = rows.every((row) => row.entityType === subject.entityType && row.entityId === subject.entityId);
   const [open, setOpen] = useState(false);
-  const lead = <span className="font-medium">{runLabelOf(entry, actorOf(entry, labels))}</span>;
+  const about = runSubjectEntry(entry);
+  const lead = (
+    <>
+      <span className="font-medium">{runLabelOf(entry, actorOf(entry, labels))}</span>
+      {about && (
+        <>
+          <Dot />
+          <EntityLink entry={about} />
+        </>
+      )}
+    </>
+  );
   const total = entry.detailsTotal ?? 0;
   if (rows.length === 0) {
     return <ItemFrame entry={entry} lead={lead} showActor={false} />;
