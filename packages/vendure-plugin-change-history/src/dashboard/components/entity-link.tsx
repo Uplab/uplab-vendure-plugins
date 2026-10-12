@@ -34,7 +34,8 @@ const LINK_CLASS = 'text-primary underline-offset-2 hover:underline';
 
 /**
  * A label that keeps a variant's trailing «(SKU)» whole when the cell cuts it: the name shrinks, the code
- * stays.
+ * stays. A code too long for the cell is cut too, leaving the name's first letters; the whole label is the
+ * tooltip.
  */
 function CuttableLabel({ text, keepCode }: { text: ReactNode; keepCode: boolean }) {
   if (!keepCode || typeof text !== 'string') {
@@ -45,9 +46,9 @@ function CuttableLabel({ text, keepCode }: { text: ReactNode; keepCode: boolean 
     return <span className="min-w-0 truncate">{text}</span>;
   }
   return (
-    <span className="inline-flex min-w-0 max-w-full items-baseline gap-[0.3em]">
+    <span className="inline-flex min-w-0 max-w-full items-baseline gap-[0.3em]" title={text}>
       <span className="min-w-0 truncate">{name}</span>
-      <span className="shrink-0">({code})</span>
+      <span className="max-w-[calc(100%-3em)] shrink-0 truncate">({code})</span>
     </span>
   );
 }

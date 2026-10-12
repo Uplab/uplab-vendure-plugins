@@ -80,8 +80,19 @@ describe('EntityLink', () => {
   it("keeps a variant's SKU whole in a narrow cell, and cuts a label without one as a whole", () => {
     const variant = (entityLabel: string) => entry({ entityType: 'ProductVariant', entityLabel });
     const { rerender } = render(<EntityLink entry={variant('Oversize tee S (TS-S)')} cut />);
-    expect(screen.getByText('(TS-S)').getAttribute('class')).toBe('shrink-0');
+    // The code does not shrink: it is cut only past the room the cell leaves it, after the name's first letters.
+    const code = screen.getByText('(TS-S)').getAttribute('class')?.split(' ');
+    expect(code).toEqual(expect.arrayContaining(['shrink-0', 'truncate', 'max-w-[calc(100%-3em)]']));
     expect(screen.getByText('Oversize tee S').getAttribute('class')).toContain('truncate');
+    expect(screen.getByText('Oversize tee S').getAttribute('class')).not.toContain('shrink-0');
+
+    // A long SKU: both parts can be cut, the whole label in the tooltip.
+    const long = 'Oversize tee Basic (TEE-NIGHT-SKY-ORGANIC-WHITE-XL)';
+    rerender(<EntityLink entry={variant(long)} cut />);
+    const label = screen.getByText('(TEE-NIGHT-SKY-ORGANIC-WHITE-XL)');
+    expect(label.getAttribute('class')).toContain('truncate');
+    expect(label.parentElement?.getAttribute('title')).toBe(long);
+    expect(label.parentElement?.getAttribute('class')).toContain('min-w-0 max-w-full');
 
     rerender(<EntityLink entry={variant('Oversize tee S')} cut />);
     expect(screen.getByText('Oversize tee S').getAttribute('class')).toContain('truncate');
