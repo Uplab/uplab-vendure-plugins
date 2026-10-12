@@ -360,7 +360,7 @@ msgstr "bulk operation"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.action.run"
-msgstr "sync"
+msgstr "completed"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts

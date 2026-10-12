@@ -360,7 +360,7 @@ msgstr "масова операція"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.action.run"
-msgstr "синхронізація"
+msgstr "завершено"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts

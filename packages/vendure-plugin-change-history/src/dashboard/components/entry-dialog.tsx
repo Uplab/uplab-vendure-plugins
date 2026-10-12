@@ -392,6 +392,8 @@ function DialogBody({
             </>
           )}
 
+          {/* The collection or channel first: a channel operation names it once, above its members. */}
+          <Membership entry={entry} />
           {isBatch && (
             <Section
               title={
@@ -421,7 +423,6 @@ function DialogBody({
             </Section>
           )}
 
-          <Membership entry={entry} />
           {hasChanges && entry.action === 'created' && <CreatedGrid entityType={entry.entityType} changes={changes} />}
           {hasChanges && entry.action !== 'created' && (
             <FieldChangesTable entityType={entry.entityType} changes={changes} />

@@ -473,7 +473,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="min-w-[5rem] max-w-[7.5rem] whitespace-normal min-[1400px]:max-w-none min-[1400px]:whitespace-nowrap"
+                      className="min-w-[5rem] max-w-[7.5rem] whitespace-normal min-[1280px]:max-w-none min-[1280px]:whitespace-nowrap"
                     >
                       <EntryType entry={row.original} />
                     </Cell>
@@ -501,7 +501,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="min-w-[6rem] max-w-[9rem] whitespace-normal min-[1400px]:max-w-[13rem] min-[1400px]:whitespace-nowrap min-[1400px]:truncate"
+                      className="min-w-[6rem] max-w-[9rem] whitespace-normal min-[1280px]:max-w-[13rem] min-[1280px]:truncate min-[1280px]:whitespace-nowrap"
                     >
                       <EntryAction entry={row.original} />
                     </Cell>

@@ -101,7 +101,7 @@ const ACTION_LABELS: Record<string, BuiltInLabel> = {
   option_group_added: label('action.option_group_added', 'option group added'),
   option_group_removed: label('action.option_group_removed', 'option group removed'),
   batch: label('action.batch', 'bulk operation'),
-  run: label('action.run', 'sync'),
+  run: label('action.run', 'completed'),
 };
 
 interface BuiltInSource {
