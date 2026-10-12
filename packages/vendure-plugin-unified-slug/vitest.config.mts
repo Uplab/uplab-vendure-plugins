@@ -3,7 +3,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.spec.ts', 'e2e/**/*.e2e-spec.ts'],
+    // `*.spec.tsx`: render tests of the dashboard components (jsdom, see src/dashboard/testing).
+    include: ['src/**/*.spec.ts', 'src/**/*.spec.tsx', 'e2e/**/*.e2e-spec.ts'],
     watch: false,
     // Booting a Vendure test server (and generating the sql.js fixture on first run)
     // is well over vitest's default 5s.
@@ -31,6 +32,8 @@ export default defineConfig({
         transform: {
           // https://github.com/vendure-ecommerce/vendure/issues/2099
           useDefineForClassFields: false,
+          // The dashboard components' JSX, for their render tests.
+          react: { runtime: 'automatic' },
         },
       },
     }),
