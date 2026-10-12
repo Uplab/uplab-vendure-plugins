@@ -23,8 +23,10 @@ import {
   numericDelta,
   operationLines,
   orderCreatedKeys,
+  NBSP,
   refLabel,
   richTextDiff,
+  soleEntry,
   stripHtml,
   withFacetValueLabels,
   type DescribedOperation,
@@ -598,6 +600,22 @@ const spansBoth = (change: ChangeHistoryFieldChange, hasHost: boolean) =>
   change.stripped || (change.kind === 'refs' && !hasHost);
 
 /**
+ * The one key of a map of scalars that the built-in value cells would show as `key: value` lines (no host
+ * renderer or text for its kind), when its two sides hold that key alone: the row then names the key with the
+ * field and shows plain values, «Min stock · Kyiv | — | 13», as the feed's «Min stock: Kyiv: — → 13» does.
+ * A map of more keys keeps all its lines, the changed ones marked.
+ */
+function soleKeyOf(change: ChangeHistoryFieldChange, labels: ReturnType<typeof useLabels>) {
+  const kind = change.kind ?? 'text';
+  const builtIn = BUILT_IN[kind] ?? ScalarValue;
+  const scalar = builtIn === ScalarValue || builtIn === StockValue;
+  if (change.stripped || !scalar || labels.valueRenderer(kind) || labels.valueText(kind)) {
+    return undefined;
+  }
+  return soleEntry(change.from, change.to);
+}
+
+/**
  * «Field · Was · Became», one row per changed field. The timeline leaves the header out (`showHeader`):
  * the red and green sides say which is which, and a block holds many items.
  */
@@ -639,11 +657,16 @@ export function FieldChangesTable({
       )}
       <tbody>
         {keys.map((key) => {
-          const change = changes[key];
-          const both = spansBoth(change, !!labels.valueRenderer(change.kind ?? 'text'));
+          const recorded = changes[key];
+          const both = spansBoth(recorded, !!labels.valueRenderer(recorded.kind ?? 'text'));
+          const sole = both ? undefined : soleKeyOf(recorded, labels);
+          const change = sole ? { ...recorded, from: sole.from, to: sole.to } : recorded;
+          const field = labels.field(entityType, key, recorded);
           return (
             <tr key={key} className="border-b border-border/50 align-top last:border-0">
-              <td className="py-1.5 pr-3 text-muted-foreground break-words">{labels.field(entityType, key, change)}</td>
+              <td className="py-1.5 pr-3 text-muted-foreground break-words">
+                {sole ? `${field}${NBSP}· ${sole.key}` : field}
+              </td>
               {both ? (
                 <td colSpan={2} className="py-1.5 break-words">
                   {change.stripped ? <StrippedValue change={change} /> : <RefsChange change={change} />}

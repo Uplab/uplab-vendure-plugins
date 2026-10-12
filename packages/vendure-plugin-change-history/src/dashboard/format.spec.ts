@@ -20,6 +20,7 @@ import {
   refLabel,
   repeatsShown,
   richTextDiff,
+  soleEntry,
   splitTrailingCode,
   withFacetValueLabels,
   wordDiff,
@@ -252,6 +253,17 @@ describe('values', () => {
     expect(changedEntries(null, null)).toBeUndefined();
     expect(changedEntries(['a'], { Kyiv: 2 })).toBeUndefined();
     expect(changedEntries({ Kyiv: 2 }, 'text')).toBeUndefined();
+  });
+
+  it('finds the one key two sides of a map of scalars hold between them, a missing value as null', () => {
+    expect(soleEntry({ Kyiv: null }, { Kyiv: 13 })).toEqual({ key: 'Kyiv', from: null, to: 13 });
+    expect(soleEntry(null, { Kyiv: 13 })).toEqual({ key: 'Kyiv', from: null, to: 13 });
+    expect(soleEntry({ Kyiv: 'a' }, undefined)).toEqual({ key: 'Kyiv', from: 'a', to: null });
+    expect(soleEntry({ Kyiv: 1 }, { Lviv: 1 })).toBeUndefined();
+    expect(soleEntry({ Kyiv: 1, Lviv: 2 }, { Kyiv: 3, Lviv: 2 })).toBeUndefined();
+    expect(soleEntry({ Kyiv: { a: 1 } }, { Kyiv: 2 })).toBeUndefined();
+    expect(soleEntry(null, null)).toBeUndefined();
+    expect(soleEntry(3, 4)).toBeUndefined();
   });
 
   it('marks the lines outside the common subsequence', () => {

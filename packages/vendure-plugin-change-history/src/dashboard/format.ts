@@ -140,6 +140,25 @@ export function changedEntries(from: unknown, to: unknown): Array<[string, strin
 }
 
 /**
+ * The one key of a change of an object of scalars whose two sides hold that key alone between them, with its
+ * value on each side (`null` when a side lacks it); `undefined` for anything else. A sparse per-location map,
+ * `{ Kyiv: null } → { Kyiv: 13 }`, then reads as a field «Min stock · Kyiv» changing from `—` to `13`.
+ */
+export function soleEntry(from: unknown, to: unknown): { key: string; from: unknown; to: unknown } | undefined {
+  if (!changedEntries(from, to)) {
+    return undefined;
+  }
+  const keysOf = (value: unknown) => (value == null ? [] : Object.keys(value));
+  const keys = new Set([...keysOf(from), ...keysOf(to)]);
+  if (keys.size !== 1) {
+    return undefined;
+  }
+  const [key] = keys;
+  const valueOf = (value: unknown) => (value == null ? null : ((value as Record<string, unknown>)[key] ?? null));
+  return { key, from: valueOf(from), to: valueOf(to) };
+}
+
+/**
  * Whether a key names an identifier (`id`, `odooId`, `customFields.erpId`): its numbers are shown as stored,
  * without digit grouping.
  */

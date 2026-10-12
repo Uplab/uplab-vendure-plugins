@@ -391,7 +391,8 @@ changed lines highlighted, facet value ids shown by name; collection filters and
 actions read as their descriptions with `argument: value` lines, money formatted), `stock` (with the delta),
 and a compacted value as «changed (3,412 → 3,587 characters)». An object of plain values (stock thresholds
 per location, a focal point) reads as `key: value` lines, the changed ones marked, whatever its kind when nothing
-renders it; in a one-line summary (the feed, the widget, a
+renders it. When both sides of such a change (not of kind `json`) hold a single key between them, the row names
+the key with the field and shows plain values instead: «Min. stock · Kyiv | — | 13». In a one-line summary (the feed, the widget, a
 batch's member rows) a change of one names only the keys that changed: «Min. stock: Kyiv: 0 → 13». A number
 of kind `id`, or under a key named `id` or ending in `Id`, is shown as stored, without digit grouping. A host action with `meta.counts` shows them with
 the count labels, the `total` last: «moved: 3 (total: 48)». Action, batch kind and count labels read best in

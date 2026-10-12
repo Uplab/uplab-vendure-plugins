@@ -595,14 +595,37 @@ describe('FieldChangesTable: an object of plain values of a kind nothing renders
     delete (globalThis as unknown as Record<symbol, unknown>)[
       Symbol.for('@uplab/vendure-plugin-change-history/registry')
     ];
-    table({ 'customFields.minStock': { kind: 'stockThreshold', from: null, to: { Kyiv: 1 } } });
+    table({ 'customFields.minStock': { kind: 'stockThreshold', from: null, to: { Kyiv: 1, Lviv: 2 } } });
     const [, was, became] = cells();
     expect(was.textContent).toBe('—');
     expect(within(became).getByText('Kyiv: 1').className).toContain('bg-green-50');
+    expect(within(became).getByText('Lviv: 2').className).toContain('bg-green-50');
     cleanup();
     // A change recorded without a kind reads the same.
-    table({ 'customFields.minStock': { from: { Kyiv: 1 }, to: { Kyiv: 2 } } });
+    table({ 'customFields.minStock': { from: { Kyiv: 1, Lviv: 2 }, to: { Kyiv: 2, Lviv: 2 } } });
     expect(within(cells()[2]).getByText('Kyiv: 2').className).toContain('bg-green-50');
+  });
+
+  it('names the key with the field when the two sides hold one key between them, as the feed line does', () => {
+    table({
+      'customFields.minStock': { kind: 'stockThreshold', from: { 'Шоурум Київ': null }, to: { 'Шоурум Київ': 13 } },
+      'customFields.maxStock': { kind: 'stockThreshold', from: null, to: { 'Шоурум Київ': 1500 } },
+      'customFields.reorder': { from: { Kyiv: 4 }, to: null },
+    });
+    expect(cellTexts(0)).toEqual([nb('Min stock~· Шоурум Київ'), '—', '13']);
+    expect(cells(0)[2].querySelector('.bg-green-50')?.textContent).toBe('13');
+    expect(cellTexts(1)).toEqual([nb('Max stock~· Шоурум Київ'), '—', '1,500']);
+    expect(cellTexts(2)).toEqual([nb('Reorder~· Kyiv'), '4', '—']);
+    cleanup();
+    // A stock map keeps the stock's delta; a host's text or renderer of the kind keeps the whole value.
+    table({ stock: { kind: 'stock', from: { Kyiv: 5 }, to: { Kyiv: 13 } } });
+    expect(cellTexts()).toEqual([nb('Запас~· Kyiv'), '5', '13(+8)']);
+    cleanup();
+    registerChangeHistoryValueText('stockThreshold', (value) =>
+      value && typeof value === 'object' ? `${Object.keys(value).length} locations` : undefined,
+    );
+    table({ 'customFields.minStock': { kind: 'stockThreshold', from: { Kyiv: 1 }, to: { Kyiv: 2 } } });
+    expect(cellTexts()).toEqual(['Min stock', '1 locations', '1 locations']);
   });
 });
 
