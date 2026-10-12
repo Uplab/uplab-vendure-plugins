@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Uplab/uplab-vendure-plugins/main/packages/vendure-plugin-change-history/assets/icon.svg" alt="" width="96" height="96">
+</p>
+
 # @uplab/vendure-plugin-change-history
 
 [![npm](https://img.shields.io/npm/v/@uplab/vendure-plugin-change-history.svg)](https://www.npmjs.com/package/@uplab/vendure-plugin-change-history)
