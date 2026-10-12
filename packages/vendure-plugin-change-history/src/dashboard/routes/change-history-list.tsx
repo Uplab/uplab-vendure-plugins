@@ -497,11 +497,12 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   header: () => <Trans context="change-history">Object</Trans>,
                   enableColumnFilter: false,
                   meta: { dependencies: [...ROW_FIELDS] },
-                  // Long names are cut — a variant's name, never its SKU — the whole name in the tooltip.
+                  // Long names are cut — a variant's name, not its SKU — the whole name in the tooltip. From a
+                  // 900 px table on, a normal SKU stays whole beside a «Deleted» badge, in English or Ukrainian.
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="flex min-w-0 max-w-[11rem] @min-[960px]:max-w-[13rem] @min-[1100px]:max-w-[14rem] @min-[1300px]:max-w-[16rem]"
+                      className="flex min-w-0 max-w-[11rem] @min-[900px]:max-w-[14rem] @min-[1300px]:max-w-[16rem]"
                       title={row.original.entityLabel ?? undefined}
                     >
                       <EntryObject entry={row.original} cut />
