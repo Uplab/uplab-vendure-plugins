@@ -100,8 +100,9 @@ describe('EntityLink', () => {
     expect(label.getAttribute('class')).toContain('truncate');
     expect(label.parentElement?.getAttribute('title')).toBe(long);
 
+    // A label without a SKU takes up to two lines, broken between words.
     rerender(<EntityLink entry={variant('Oversize tee S')} cut />);
-    expect(screen.getByText('Oversize tee S').getAttribute('class')).toContain('truncate');
+    expect(screen.getByText('Oversize tee S').getAttribute('class')).toContain('line-clamp-2');
     expect(screen.getByRole('link').getAttribute('class')).toContain('flex min-w-0 max-w-full');
 
     rerender(
@@ -130,6 +131,8 @@ describe('EntityLink', () => {
     // The label shrinks inside the line; the badge does not.
     expect(code.parentElement?.parentElement?.className).toContain('min-w-0');
     expect(screen.getByText('Видалено').parentElement?.className).toBe('shrink-0');
+    // The badge goes under the label when both do not fit on one line.
+    expect(screen.getByText('Видалено').parentElement?.parentElement?.className).toContain('flex-wrap');
   });
 
   it('opens the entity without also opening the row it sits in', () => {

@@ -1,7 +1,7 @@
 import { Trans } from '@lingui/react/macro';
 import { Badge, Link } from '@vendure/dashboard';
 import type { ReactNode } from 'react';
-import { builtInRoute, splitTrailingCode } from '../format';
+import { builtInRoute, splitTrailingCode, titleWhenCut } from '../format';
 import type { ChangeHistoryEntryData } from '../registry';
 import { useLabels } from './use-labels';
 
@@ -33,18 +33,33 @@ export function DeletedBadge() {
 const LINK_CLASS = 'text-primary underline-offset-2 hover:underline';
 
 /**
+ * A name in a cell that cuts it: up to two lines broken between words (a word wider than the cell alone breaks
+ * inside), an ellipsis only past the second line.
+ */
+const TWO_LINES = 'line-clamp-2 min-w-0 max-w-full whitespace-normal break-words';
+
+/** A cut name: two lines at most, the whole name in the tooltip when it is cut. */
+export function CutText({ children }: { children: ReactNode }) {
+  return (
+    <span className={TWO_LINES} onMouseEnter={(event) => titleWhenCut(event.currentTarget)}>
+      {children}
+    </span>
+  );
+}
+
+/**
  * A variant's label in a cell that cuts it: «name (SKU)» on one line when both fit, else the SKU on a line of
  * its own under the name, so neither is crushed to a letter («C. (E2E-FOLD-40-424…»). Each line is cut with an
  * ellipsis only when it alone is wider than the cell (a long name; a code of 30 characters); the whole label
- * is the tooltip. A label without a trailing «(…)» is one line, cut as a whole.
+ * is the tooltip. Any other label takes up to two lines, broken between words (`CutText`).
  */
 function CuttableLabel({ text, keepCode }: { text: ReactNode; keepCode: boolean }) {
   if (!keepCode || typeof text !== 'string') {
-    return <span className="min-w-0 truncate">{text}</span>;
+    return <CutText>{text}</CutText>;
   }
   const { name, code } = splitTrailingCode(text);
   if (!code) {
-    return <span className="min-w-0 truncate">{text}</span>;
+    return <CutText>{text}</CutText>;
   }
   return (
     <span className="inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-[0.3em]" title={text}>
@@ -77,8 +92,10 @@ export function EntityLink({
   const label = cut ? <CuttableLabel text={text} keepCode={entry.entityType === 'ProductVariant'} /> : text;
   if (entry.entityDeleted) {
     return (
-      <span className={`inline-flex max-w-full items-center gap-1.5 ${className ?? ''}`}>
-        <span className="flex min-w-0 text-muted-foreground">{label}</span>
+      // The badge goes under the label when both do not fit on one line, as a variant's SKU does: it never
+      // squeezes the name.
+      <span className={`inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 ${className ?? ''}`}>
+        <span className="flex min-w-0 max-w-full text-muted-foreground">{label}</span>
         {deletedBadge && (
           <span className="shrink-0">
             <DeletedBadge />

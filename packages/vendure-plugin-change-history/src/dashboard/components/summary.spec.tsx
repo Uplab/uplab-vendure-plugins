@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { entry, nb } from '../testing/fixtures';
 import { setLocale } from '../testing/i18n';
@@ -383,9 +383,13 @@ describe('a run row', () => {
     expect(document.body.textContent).toBe('—');
   });
 
-  it('cuts a long run label in a narrow cell', () => {
+  it('gives a long run label two lines in a narrow cell, broken between words, the whole label on hover', () => {
     render(<EntryObject entry={entry({ entityType: 'Run', entityLabel: 'Odoo: stock' })} cut />);
-    expect(screen.getByText('Odoo: stock').getAttribute('class')).toContain('truncate');
+    const label = screen.getByText('Odoo: stock');
+    expect(label.className.split(' ')).toEqual(expect.arrayContaining(['line-clamp-2', 'whitespace-normal']));
+    Object.defineProperties(label, { scrollHeight: { value: 60 }, clientHeight: { value: 40 } });
+    fireEvent.mouseEnter(label);
+    expect(label.title).toBe('Odoo: stock');
   });
 });
 
@@ -437,7 +441,9 @@ describe('a batch row, by what it stands for', () => {
       <EntryObject entry={batch({ batchId: 'scheduled_action:1', entityLabel: 'Scheduled action #3' })} cut />,
     );
     expect(container.textContent).toBe('Scheduled action #3');
-    expect(screen.getByText('Scheduled action #3').getAttribute('class')).toBe('truncate');
+    // Two lines broken between words; the count goes under the name when both do not fit on one line.
+    expect(screen.getByText('Scheduled action #3').getAttribute('class')).toContain('line-clamp-2');
+    expect(screen.getByText('Scheduled action #3').parentElement?.className).toContain('flex-wrap');
     rerender(<EntryObject entry={batch({})} />);
     expect(container.textContent).toBe('');
   });

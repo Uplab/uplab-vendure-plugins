@@ -212,7 +212,7 @@ describe('RecentChangesWidget', () => {
 
   it('gives a cut line of what changed its whole text on hover', () => {
     lines([entry({ id: '7' })]);
-    const changed = screen.getByRole('listitem').querySelector('.line-clamp-2') as HTMLElement;
+    const changed = screen.getByRole('listitem').querySelector('.line-clamp-2.text-xs') as HTMLElement;
     fireEvent.mouseEnter(changed);
     expect(changed.title).toBe('');
     Object.defineProperties(changed, { scrollHeight: { value: 60 }, clientHeight: { value: 40 } });
@@ -221,19 +221,26 @@ describe('RecentChangesWidget', () => {
     expect(changed.title).toContain('оновлено');
   });
 
-  it('caps a long name and type at a share of the line, each whole on hover', () => {
+  it('cuts the name and type only when the two overflow the line, each whole on hover', () => {
     lines([entry({ id: '7', actorLabel: 'Олександра Костянтинопольська' })]);
     const row = screen.getByRole('listitem');
     const name = row.querySelector('[title="Олександра Костянтинопольська"]') as HTMLElement;
-    expect(name.className).toContain('max-w-[50%]');
-    const type = row.querySelector('.max-w-\\[30\\%\\]') as HTMLElement;
+    const type = name.nextElementSibling?.nextElementSibling as HTMLElement;
+    // No share of the line is reserved: both shrink, from their whole width, only when they do not fit.
+    for (const part of [name, type]) {
+      expect(part.className).toContain('min-w-0');
+      expect(part.className).not.toMatch(/max-w-\[\d+%\]|shrink-0/);
+    }
     expect(type.className).toContain('truncate');
     Object.defineProperties(type, { scrollWidth: { value: 120 }, clientWidth: { value: 60 } });
     fireEvent.mouseEnter(type);
     expect(type.title).toBe(type.textContent);
-    // The object starts a line of its own when it does not fit beside them, never squeezed to a letter.
-    expect(name.parentElement?.className.split(' ')).toEqual(expect.arrayContaining(['flex-wrap', 'min-w-0']));
-    expect(name.parentElement?.lastElementChild?.className).toContain('max-w-full');
+    // Who and type keep one line; the object starts a line of its own when it does not fit beside them.
+    const group = name.parentElement as HTMLElement;
+    expect(group.className.split(' ')).toEqual(expect.arrayContaining(['flex', 'min-w-0', 'max-w-full']));
+    expect(group.className).not.toContain('flex-wrap');
+    expect(group.parentElement?.className.split(' ')).toEqual(expect.arrayContaining(['flex-wrap', 'min-w-0']));
+    expect(group.parentElement?.lastElementChild?.className).toContain('max-w-full');
   });
 
   it('links «All changes» to the feed with the default switches and the page’s period', () => {

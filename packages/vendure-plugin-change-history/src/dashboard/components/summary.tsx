@@ -18,7 +18,7 @@ import {
 } from '../format';
 import { batchKindOf } from '../labels';
 import type { ChangeHistoryEntryData, ChangeHistoryFieldChange } from '../registry';
-import { EntityLink } from './entity-link';
+import { CutText, EntityLink } from './entity-link';
 import { useLabels } from './use-labels';
 import { useValueText } from './values';
 
@@ -127,7 +127,11 @@ export function EntryObject({ entry, cut = false }: { entry: ChangeHistoryEntryD
       return <EntityLink entry={subject} cut={cut} />;
     }
     return entry.entityLabel ? (
-      <span className={cut ? 'block truncate' : undefined}>{entry.entityLabel}</span>
+      cut ? (
+        <CutText>{entry.entityLabel}</CutText>
+      ) : (
+        <span>{entry.entityLabel}</span>
+      )
     ) : (
       <span className="text-muted-foreground">—</span>
     );
@@ -149,15 +153,16 @@ function BatchObject({ entry, cut }: { entry: ChangeHistoryEntryData; cut: boole
   const channel = isChannelBatch(entry) && typeof entry.meta?.channelCode === 'string' ? entry.meta.channelCode : '';
   const memberType = sharedMemberType(entry);
   const name = batchOwnLabel(entry) ?? (channel || (memberType ? labels.typePlural(memberType) : undefined));
+  // The count goes under the name when both do not fit on one line; the name takes up to two lines.
   return (
-    <span className="inline-flex max-w-full items-center gap-1.5">
+    <span className="inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5">
       {subject ? (
         <EntityLink entry={subject} cut={cut} />
       ) : (
-        name && <span className={cut ? 'truncate' : undefined}>{name}</span>
+        name && (cut ? <CutText>{name}</CutText> : <span>{name}</span>)
       )}
       {total > 0 && (
-        <Badge variant="outline" className="gap-1 font-normal">
+        <Badge variant="outline" className="shrink-0 gap-1 font-normal">
           <Layers className="h-3 w-3" />
           {total}
         </Badge>
