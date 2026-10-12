@@ -500,5 +500,57 @@ export function retentionScenarios(env: RetentionEnv): void {
       ]);
       await expect(retention().compact(ctx, { olderThanDays: 90, maxDetailRows: 0 })).rejects.toThrow(/maxDetailRows/);
     });
+
+    it('counts derived rows once when a batch ends between them and their cause, and after a restore', async () => {
+      const cause = await insert({ entityType: 'Product', entityId: 'rt-split', action: 'updated' });
+      const derived: ID[] = [];
+      for (const entityId of ['rt-split-1', 'rt-split-2', 'rt-split-3']) {
+        const row = await insert({
+          entityType: 'ProductVariant',
+          entityId,
+          parentType: 'Product',
+          parentId: 'rt-split',
+          action: 'updated',
+          derivedFromId: cause.id,
+        });
+        derived.push(row.id);
+      }
+      const kept = await insert({
+        entityType: 'ProductVariant',
+        entityId: 'rt-split-4',
+        parentType: 'Product',
+        parentId: 'rt-split',
+        action: 'deleted',
+        derivedFromId: cause.id,
+        meta: { lastState: { sku: 'RT-SPLIT-4' } },
+      });
+      const ids = [cause.id, ...derived, kept.id];
+      // One timestamp for all of them, as one transaction writes them on Postgres.
+      await backdate(ids, daysAgo(100));
+      const counted = async () =>
+        env
+          .app()
+          .get(ChangeHistoryReader)
+          .derivedCount(ctx, (await byId(cause.id))!);
+      expect(await counted()).toBe(4);
+
+      // The first batch takes the cause and one derived row, and the run stops there.
+      const first = await retention().compact(ctx, { olderThanDays: 90, batchSize: 2, maxBatches: 1 });
+      expect(first).toMatchObject({ scanned: 2, derivedDeleted: 1, drained: false });
+      expect((await byId(cause.id))?.meta.derivedCount).toBe(1);
+      expect(await counted()).toBe(4);
+
+      // A later run deletes the other two: added to the cause's snapshot. The kept deletion stays live.
+      const rest = await retention().compact(ctx, { olderThanDays: 90, batchSize: 2 });
+      expect(rest).toMatchObject({ scanned: 3, derivedDeleted: 2, drained: true });
+      expect((await byId(cause.id))?.meta.derivedCount).toBe(3);
+      expect(await counted()).toBe(4);
+
+      // Restoring the later batches brings those two back: counted live again, taken off the snapshot.
+      await retention().restore(ctx, await readArchive(rest.archiveKeys));
+      expect((await byId(cause.id))?.meta.derivedCount).toBe(1);
+      expect(await counted()).toBe(4);
+      await entries().delete({ id: In(ids) });
+    });
   });
 }

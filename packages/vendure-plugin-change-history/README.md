@@ -221,7 +221,8 @@ over that on its own is a batch by itself; `maxDetailRows` per call), and for ea
    (`<archiveKeyPrefix>/<yyyy>/<mm>/change-history_<stamp>_<maxId>_<uuid>.jsonl.gz`, one object per batch), then
    requires `exists(key)` to confirm it — **nothing is stripped or deleted before that**;
 2. in one transaction: snapshots the counts that are about to disappear (`meta.derivedCount` on the cause: the
-   derived rows it deletes; `meta.batchCounts` on a batch head), deletes detail rows, derived rows (except
+   derived rows it deletes, added to what an earlier batch kept when a batch ends between a cause and its derived
+   rows; `meta.batchCounts` on a batch head), deletes detail rows, derived rows (except
    cascaded deletions), collection-rules member rows and run lines older than `runLineDays`, replaces long values by
    `{ kind, stripped: true, fromLength, toLength }` (in `meta.lastState`: `{ stripped: true, length }`) and sets
    `compactedAt`.
@@ -304,13 +305,15 @@ await app.close();
 `compactedAt`**; rows compaction deleted (derived, member and run entries, detail rows) are inserted again
 under their archived ids, entries with `compactedAt` set. That way the next compaction leaves the restored
 rows alone instead of archiving and deleting them again; the next purge removes them with the rest once
-they are older than the summary window. Restoring the same object twice changes nothing more. For a one-off
+they are older than the summary window. A derived row inserted again is counted live again, so its cause's
+`meta.derivedCount` gives it back. Restoring the same object twice changes nothing more. For a one-off
 look without touching the live tables, read the lines with `decodeChangeHistoryArchive` (or `gunzip` the
 object) instead.
 
 ## Dashboard
 
-Everything needs the **ReadChangeHistory** permission. The dashboard is in English and Ukrainian.
+Everything needs the **ReadChangeHistory** permission, and each page shows only the entries the user may read
+(see [Permissions and channels](#permissions-and-channels)). The dashboard is in English and Ukrainian.
 
 - **Feed** — **System → Change history** (`/change-history`). One row per change: time, who, type, object
   (a link to it, «deleted» when it is gone), action and what changed. Search by name or SKU, filter by type,

@@ -127,7 +127,6 @@ describe('ChangeHistoryRetentionService.compact', () => {
       [entry(1, null), entry(2, '{"source":"x"}')], // the batch
       [], // their detail row counts
       [], // their detail rows
-      [], // derived entry counts of the kept entries
       [entry(3, null)], // the backlog check, from the start (a real run changed what it read)
     ]);
     const result = await service.compact(ctx, { olderThanDays: 90, batchSize: 2, maxBatches: 1 });

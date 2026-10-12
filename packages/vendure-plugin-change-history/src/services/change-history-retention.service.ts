@@ -4,11 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { Brackets, In, ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 import type { ColumnMetadata } from 'typeorm/metadata/ColumnMetadata';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
+import { chunks } from '../common/utils';
 import {
-  CHANGE_HISTORY_ACTIONS,
   CHANGE_HISTORY_ENTITY_TYPES,
   CHANGE_HISTORY_PLUGIN_OPTIONS,
-  DETAIL_CHUNK_SIZE,
   MAX_COMPACT_DETAIL_ROWS,
   loggerCtx,
 } from '../constants';
@@ -23,7 +22,7 @@ import {
   ChangeHistoryArchiveLine,
   encodeArchive,
 } from '../retention/jsonl';
-import { isBatchHead, isDetailRow, isMemberRow, isRunLine } from '../retention/rules';
+import { isBatchHead, isDetailRow, isKeptDeleted, isMemberRow, isRunLine } from '../retention/rules';
 import { ChangeHistoryFieldChanges, ResolvedChangeHistoryPluginOptions, RetentionRunOptions } from '../types';
 import { ChangeHistoryContextService } from './change-history-context.service';
 
@@ -299,11 +298,13 @@ export class ChangeHistoryRetentionService {
     const rowsOf = (table: string) => dedupe(lines.filter((line) => line.table === table).map((line) => line.row));
     await this.connection.withTransaction(ctx, async (tctx) => {
       const entries = rowsOf(ARCHIVE_TABLES.entry);
-      for (let i = 0; i < entries.length; i += DETAIL_CHUNK_SIZE) {
-        const chunk = entries.slice(i, i + DETAIL_CHUNK_SIZE);
+      const updated = new Set<string>();
+      const reinserted = new Map<string, number>();
+      for (const chunk of chunks(entries)) {
         const existing = await this.existingIds(tctx, ChangeHistoryEntry, chunk);
         for (const row of chunk) {
           if (existing.has(String(row.id))) {
+            updated.add(String(row.id));
             await this.connection.getRepository(tctx, ChangeHistoryEntry).update(
               row.id as ID,
               {
@@ -315,12 +316,22 @@ export class ChangeHistoryRetentionService {
           } else {
             await this.insertRaw(tctx, ChangeHistoryEntry, row, { compactedAt: row.compactedAt ?? 'now' });
             result.entriesInserted++;
+            if (row.derivedFromId != null && !isKeptDeleted(facts(row))) {
+              const cause = String(row.derivedFromId);
+              reinserted.set(cause, (reinserted.get(cause) ?? 0) + 1);
+            }
           }
         }
       }
+      // A re-inserted derived row is counted live again: its cause's snapshot gives it back — unless this
+      // restore just put the cause's own archived `meta` (from before compaction, without a snapshot) back.
+      await this.addToEarlierSnapshots(
+        tctx,
+        [...reinserted].filter(([causeId]) => !updated.has(causeId)),
+        -1,
+      );
       const details = rowsOf(ARCHIVE_TABLES.detail);
-      for (let i = 0; i < details.length; i += DETAIL_CHUNK_SIZE) {
-        const chunk = details.slice(i, i + DETAIL_CHUNK_SIZE);
+      for (const chunk of chunks(details)) {
         const existing = await this.existingIds(tctx, ChangeHistoryDetail, chunk);
         for (const row of chunk.filter((r) => !existing.has(String(r.id)))) {
           await this.insertRaw(tctx, ChangeHistoryDetail, row);
@@ -420,21 +431,17 @@ export class ChangeHistoryRetentionService {
     const cap = this.options.retention.compactValueBytes;
     return this.connection.withTransaction(ctx, async (tctx) => {
       const repository = this.connection.getRepository(tctx, ChangeHistoryEntry);
-      const keptIds = plan.keep.map((row) => row.id as ID);
-      // (a) Counts before anything is deleted, over all rows (derived / member rows of later batches too). Only
-      // the derived rows compaction deletes: a kept cascaded deletion stays and is still counted live.
-      const derivedCounts = new Map<string, number>();
-      for (const chunk of chunks(keptIds)) {
-        const rows = await repository
-          .createQueryBuilder('entry')
-          .select('entry.derivedFromId', 'derivedFromId')
-          .addSelect('COUNT(*)', 'count')
-          .where({ derivedFromId: In(chunk) })
-          .andWhere('entry.action != :keptAction', { keptAction: CHANGE_HISTORY_ACTIONS.deleted })
-          .groupBy('entry.derivedFromId')
-          .getRawMany<{ derivedFromId: ID; count: string | number }>();
-        rows.forEach((row) => derivedCounts.set(String(row.derivedFromId), Number(row.count)));
-      }
+      // (a) Counts before anything is deleted. `derivedCount`: the derived rows this batch deletes, added to
+      // what the cause kept from earlier batches — a cause and its derived rows share `createdAt`, so a batch
+      // (or a run stopped by `maxBatches`) may end between them, and the rest are counted live until a later
+      // batch deletes them. A kept cascaded deletion is never deleted and stays counted live.
+      const derivedCounts = deletedDerivedCounts(plan);
+      const inBatch = new Set([...plan.keep.map((row) => String(row.id)), ...deletedIn(plan)]);
+      await this.addToEarlierSnapshots(
+        tctx,
+        [...derivedCounts].filter(([causeId]) => !inBatch.has(causeId)),
+        1,
+      );
       const batchIds = [
         ...new Set(plan.keep.filter((row) => isBatchHead(facts(row)) && row.batchId).map((row) => String(row.batchId))),
       ];
@@ -566,6 +573,27 @@ export class ChangeHistoryRetentionService {
   }
 
   /**
+   * Adds `sign × count` to the `meta.derivedCount` snapshot of each compacted cause (never below 0). A cause
+   * that is gone, or not compacted (it has no snapshot yet), is left alone.
+   */
+  private async addToEarlierSnapshots(ctx: RequestContext, counts: Array<[string, number]>, sign: 1 | -1) {
+    const byId = new Map(counts);
+    const repository = this.connection.getRepository(ctx, ChangeHistoryEntry);
+    for (const chunk of chunks([...byId.keys()])) {
+      const causes = await repository.find({
+        select: { id: true, meta: true, compactedAt: true },
+        where: { id: In(chunk) },
+      });
+      for (const cause of causes.filter((row) => row.compactedAt != null)) {
+        const derivedCount = Math.max(0, snapshotCount(cause.meta) + sign * byId.get(String(cause.id))!);
+        await repository.update(cause.id, {
+          meta: { ...cause.meta, derivedCount },
+        } as QueryDeepPartialEntity<ChangeHistoryEntry>);
+      }
+    }
+  }
+
+  /**
    * A row back under its archived id: a plain `INSERT` (TypeORM leaves generated ids out of its own inserts
    * on Postgres). `overrides` replace archived values; `'now'` is the database's current timestamp.
    */
@@ -618,6 +646,31 @@ function* archiveLines(plan: CompactionPlan): Generator<ChangeHistoryArchiveLine
   }
 }
 
+/** The ids of the rows a batch deletes. */
+function deletedIn(plan: CompactionPlan): Set<string> {
+  const { derived, members, runs } = plan.deleteIds;
+  return new Set([...derived, ...members, ...runs].map(String));
+}
+
+/** Per cause id, how many of the rows this batch deletes derive from it. */
+function deletedDerivedCounts(plan: CompactionPlan): Map<string, number> {
+  const deleted = deletedIn(plan);
+  const counts = new Map<string, number>();
+  for (const row of plan.entries) {
+    if (row.derivedFromId != null && deleted.has(String(row.id))) {
+      const cause = String(row.derivedFromId);
+      counts.set(cause, (counts.get(cause) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/** The `derivedCount` an entry's `meta` already holds (0 without one). */
+function snapshotCount(meta: Record<string, unknown> | null | undefined): number {
+  const value = meta?.derivedCount;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
 function facts(row: RawRow) {
   return {
     entityType: String(row.entityType),
@@ -636,14 +689,6 @@ function isTimestamp(column: ColumnMetadata): boolean {
     column.type === Date ||
     ['timestamp', 'datetime', 'timestamp without time zone', 'timestamptz'].includes(String(column.type))
   );
-}
-
-function chunks<T>(items: T[]): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += DETAIL_CHUNK_SIZE) {
-    out.push(items.slice(i, i + DETAIL_CHUNK_SIZE));
-  }
-  return out;
 }
 
 /** The last line per id wins (an object archived twice after a crash between put and commit). */

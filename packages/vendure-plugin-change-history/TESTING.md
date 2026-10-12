@@ -44,7 +44,9 @@ compacts nothing; `restore` brings the deleted rows back without the next compac
 deletes only compacted rows; `archive: 'none'` compacts with a warning; a run of 5,001 rows stores 5,000 (detail
 `createdAt` equal to the entry's in the database), pages them, groups them per product / variant and compacts
 them; a run recorded in a host transaction that rolls back leaves no row; runs of 4, 4, 1, 9 and 2 rows under a
-cap of 6 detail rows compact in four batches (the 9-row run alone). Unit specs cover the retention rules, the
+cap of 6 detail rows compact in four batches (the 9-row run alone); a cause, three derived rows and a kept
+deletion that share one timestamp, compacted in batches of two that end between them (and a run stopped by
+`maxBatches`), keep `derivedCount` at 4 throughout — and after the later batches are restored. Unit specs cover the retention rules, the
 pure compaction, the archive lines (streamed through gzip) and keys, and the scheduled tasks.
 
 Both suites also run the Admin API scenarios (`e2e/api-scenarios.ts`), after the retention ones. The feed:
