@@ -12,9 +12,11 @@ The sql.js suite pins the behaviour without a before-state: every update is reco
 the diff against an earlier save in the same transaction. It also covers everything that needs no before-state:
 collection contents through the filters job (one `collection_rules` batch per collection and run, nothing for a
 run that changed nothing), the snapshot recorded at startup and the first change after it, re-recording on
-request, a collection deleted with its descendants (derived, with their member counts), a facet value rename
+request and at the first boot with capture on after a boot with it off (the marker set and removed once), a
+collection deleted with its descendants (derived, with their member counts), a facet value rename
 recorded on the value only, a force-deleted facet with its values, an asset's upload / edit / deletion, a
-promotion, channel assignments and `capture()` of a collection.
+promotion, channel assignments and `capture()` of a collection. Two `runBatch` calls running at once on one
+context, beside a plain write, stay two batches and leave the plain write out of both.
 
 The Postgres suite covers what needs a real second connection: exact before → after values of products and
 variants (translations, custom fields, facet values, prices), no entry for a save that changes nothing, the

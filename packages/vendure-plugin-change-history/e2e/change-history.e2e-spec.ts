@@ -21,7 +21,12 @@ import {
   FileSystemArchiveStorage,
   NoBeforeStateStrategy,
 } from '../src';
-import { CollectionCapture } from '../src/capture/collection-capture';
+import { CapturePipeline } from '../src/capture/capture-pipeline';
+import { CAPTURE_OFF_MARKER, CollectionCapture } from '../src/capture/collection-capture';
+import { ChangeHistoryWriter } from '../src/capture/entry-writer.service';
+import { ChangeHistoryDefinitions } from '../src/entity-definitions/definitions.service';
+import { resolveOptions } from '../src/options';
+import { ChangeHistoryContextService } from '../src/services/change-history-context.service';
 import { ChangeHistoryStrategies } from '../src/services/change-history-strategies.service';
 import { initialData } from './fixtures/initial-data';
 import {
@@ -629,11 +634,11 @@ describe('ChangeHistoryPlugin on sql.js', () => {
         (entries) => entries.length >= 2,
       );
       // The root collection, created with the first collection, has no event: recorded by the next boot.
-      await server.app.get(CollectionCapture).seedMissing();
+      await server.app.get(CollectionCapture).onBoot();
       // As after a deploy: no snapshot yet, then the boot records the current contents.
       await members().delete({ collectionId: decode(id) });
-      expect(await server.app.get(CollectionCapture).seedMissing()).toBe(1);
-      expect(await server.app.get(CollectionCapture).seedMissing()).toBe(0);
+      expect(await server.app.get(CollectionCapture).onBoot()).toEqual({ reseeded: 0, seeded: 1 });
+      expect(await server.app.get(CollectionCapture).onBoot()).toEqual({ reseeded: 0, seeded: 0 });
       expect(await members().findOneOrFail({ where: { collectionId: decode(id) } })).toMatchObject({
         productIds: [decode(redProduct)],
       });
@@ -650,6 +655,39 @@ describe('ChangeHistoryPlugin on sql.js', () => {
       ]);
       await adminClient.query(UPDATE_PRODUCT, { input: { id: blueProduct, facetValueIds: [blue] } });
       await settleJobs(adminClient);
+    });
+
+    it('re-records every collection at the first boot with capture on after one with it off', async () => {
+      const id = await collection('sq-switched-off', { filters: facetFilter([red]) });
+      await settleJobs(adminClient);
+      await waitFor(
+        () => under(id),
+        (entries) => entries.length >= 2,
+      );
+      // A boot with the kill switch on (a second instance, or the previous deploy) marks the snapshots stale.
+      const off = new CollectionCapture(
+        resolveOptions({ enabled: false, retention: { archive: 'none' } }),
+        server.app.get(TransactionalConnection),
+        server.app.get(ChangeHistoryContextService),
+        server.app.get(ChangeHistoryDefinitions),
+        server.app.get(CapturePipeline),
+        server.app.get(ChangeHistoryWriter),
+      );
+      expect(await off.onBoot()).toEqual({ reseeded: 0, seeded: 0 });
+      expect(await off.onBoot()).toEqual({ reseeded: 0, seeded: 0 });
+      expect(await members().count({ where: { collectionId: CAPTURE_OFF_MARKER } })).toBe(1);
+      // Meanwhile the contents changed unrecorded.
+      await members().update({ collectionId: decode(id) }, { productIds: ['999'] });
+
+      const on = server.app.get(CollectionCapture);
+      const { reseeded } = await on.onBoot();
+      expect(reseeded).toBe(await members().count());
+      expect(await members().findOneOrFail({ where: { collectionId: decode(id) } })).toMatchObject({
+        productIds: [decode(redProduct)],
+      });
+      expect(await members().count({ where: { collectionId: CAPTURE_OFF_MARKER } })).toBe(0);
+      // Once: the next boot finds no marker.
+      expect(await on.onBoot()).toEqual({ reseeded: 0, seeded: 0 });
     });
 
     it('re-records the contents of every collection on request (after capture was off)', async () => {

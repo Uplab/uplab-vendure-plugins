@@ -81,7 +81,7 @@ describe('ChangeHistoryPlugin', () => {
         {} as never,
         { init: vi.fn() } as never,
         { register: vi.fn() } as never,
-        { seedMissing: vi.fn() } as never,
+        { onBoot: vi.fn() } as never,
         { schedulerOptions: { schedulerStrategy: scheduler } } as never,
         { listen: vi.fn() } as never,
       );

@@ -13,12 +13,12 @@ import {
 import { randomUUID } from 'node:crypto';
 import { EntityManager, In } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
+import { byNumericId, chunks } from '../common/utils';
 import {
   CHANGE_HISTORY_ACTIONS,
   CHANGE_HISTORY_ENTITY_TYPES,
   CHANGE_HISTORY_PLUGIN_OPTIONS,
   CHANGE_HISTORY_SOURCES,
-  DETAIL_CHUNK_SIZE,
   loggerCtx,
 } from '../constants';
 import { ChangeHistoryCollectionMembers } from '../entities/change-history-collection-members.entity';
@@ -31,21 +31,17 @@ import { ResolvedChangeHistoryPluginOptions } from '../types';
 import { CapturePipeline } from './capture-pipeline';
 import { ChangeHistoryWriter, EntryDraft, logFailure } from './entry-writer.service';
 
+/**
+ * The row of `change_history_collection_members` that says capture was switched off since the snapshots were
+ * last brought up to date. No collection has this id (`~` is not a digit, nor part of a UUID).
+ */
+export const CAPTURE_OFF_MARKER = '~capture-off';
+
 /** Drivers where `SELECT … FOR UPDATE` works; TypeORM throws for `pessimistic_write` on the SQLite family. */
 const LOCKING_DRIVERS: readonly string[] = ['postgres', 'aurora-postgres', 'mysql', 'aurora-mysql', 'mariadb'];
 
 const MOVE_SCOPE: ReadonlySet<string> = new Set([BASE_GROUP, COLLECTION_POSITION_GROUP]);
 const MOVE_FIELDS = ['parent', 'position'] as const;
-
-const byNumericId = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
-
-function chunks<T>(items: T[], size = DETAIL_CHUNK_SIZE): T[][] {
-  const result: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    result.push(items.slice(i, i + size));
-  }
-  return result;
-}
 
 /**
  * Collections: their own changes (`created` / `updated` / `moved` / `deleted`) and their contents.
@@ -55,7 +51,9 @@ function chunks<T>(items: T[], size = DETAIL_CHUNK_SIZE): T[][] {
  * therefore keeps the last known product ids of every collection (`ChangeHistoryCollectionMembers`) and diffs
  * against it: one `collection_added` / `collection_removed` entry per product (on the Product, under the
  * collection), grouped under one `collection_rules` batch per collection and run whose head carries the counts.
- * The snapshot is seeded on every boot for each collection that has none.
+ * The snapshot is seeded on every boot for each collection that has none. A boot with capture switched off
+ * leaves a marker row; the next boot with capture on re-records every collection's contents, so the changes made
+ * meanwhile are not recorded as one change later (see `onBoot`).
  *
  * **Deletion.** Core deletes a collection's descendants (deepest first) and then the collection, publishing a
  * membership event for each and a single `CollectionEvent deleted` for the collection asked for. Each one found
@@ -222,35 +220,29 @@ export class CollectionCapture {
   }
 
   /**
-   * A snapshot for every collection that has none: on every boot, by the server and the worker alike.
-   * Idempotent — concurrent seeders insert the same snapshot and the first one wins. Never throws.
+   * On every boot, by the server and the worker alike. With capture off: leaves the marker that the snapshots
+   * fall behind from now on. With capture on: after such a period (the marker is there), re-records every
+   * collection's contents and removes the marker; then seeds a snapshot for every collection that has none.
+   * Idempotent and safe on several instances booting at once — concurrent seeders write the same contents, the
+   * marker is inserted and deleted by key. Never throws.
    */
-  async seedMissing(): Promise<number> {
-    if (!this.options.enabled) {
-      return 0;
-    }
+  async onBoot(): Promise<{ reseeded: number; seeded: number }> {
+    const result = { reseeded: 0, seeded: 0 };
     try {
       const manager = this.connection.rawConnection.manager;
-      const known = new Set(
-        (
-          await manager
-            .createQueryBuilder(ChangeHistoryCollectionMembers, 'members')
-            .select('members.collectionId', 'collectionId')
-            .getRawMany<{ collectionId: string }>()
-        ).map((row) => String(row.collectionId)),
-      );
-      const missing = (await allCollectionIds(manager)).filter((id) => !known.has(id));
-      for (const chunk of chunks(missing)) {
-        const members = await productIdsOf(manager, chunk);
-        await insertOrIgnore(
-          manager,
-          chunk.map((collectionId) => ({ collectionId, productIds: members.get(collectionId) ?? [] })),
+      if (!this.options.enabled) {
+        await insertOrIgnore(manager, [{ collectionId: CAPTURE_OFF_MARKER, productIds: [] }]);
+        return result;
+      }
+      if ((await manager.count(ChangeHistoryCollectionMembers, { where: { collectionId: CAPTURE_OFF_MARKER } })) > 0) {
+        result.reseeded = (await manager.transaction((transactional) => overwriteAll(transactional))).collections;
+        await manager.delete(ChangeHistoryCollectionMembers, { collectionId: CAPTURE_OFF_MARKER });
+        Logger.info(
+          `[ChangeHistory] capture was switched off: recorded the contents of ${result.reseeded} collection(s) again`,
+          loggerCtx,
         );
       }
-      if (missing.length > 0) {
-        Logger.info(`[ChangeHistory] recorded the contents of ${missing.length} collection(s)`, loggerCtx);
-      }
-      return missing.length;
+      result.seeded = await this.seedMissing(manager);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
       Logger.error(
@@ -258,26 +250,38 @@ export class CollectionCapture {
         loggerCtx,
         error.stack,
       );
-      return 0;
     }
+    return result;
   }
 
-  /** Overwrites every snapshot with the current contents (after a period with capture switched off). */
+  /** A snapshot for every collection that has none. Concurrent seeders insert the same one; the first wins. */
+  private async seedMissing(manager: EntityManager): Promise<number> {
+    const known = new Set(
+      (
+        await manager
+          .createQueryBuilder(ChangeHistoryCollectionMembers, 'members')
+          .select('members.collectionId', 'collectionId')
+          .getRawMany<{ collectionId: string }>()
+      ).map((row) => String(row.collectionId)),
+    );
+    const missing = (await allCollectionIds(manager)).filter((id) => !known.has(id));
+    for (const chunk of chunks(missing)) {
+      const members = await productIdsOf(manager, chunk);
+      await insertOrIgnore(
+        manager,
+        chunk.map((collectionId) => ({ collectionId, productIds: members.get(collectionId) ?? [] })),
+      );
+    }
+    if (missing.length > 0) {
+      Logger.info(`[ChangeHistory] recorded the contents of ${missing.length} collection(s)`, loggerCtx);
+    }
+    return missing.length;
+  }
+
+  /** Overwrites every snapshot with the current contents, in `ctx`'s transaction (an own one outside one). */
   async reseed(ctx: RequestContext): Promise<{ collections: number }> {
     return this.context.serialize(ctx, () =>
-      this.connection.withTransaction(ctx, async (tctx) => {
-        const manager = this.pipeline.managerOf(tctx);
-        const ids = await allCollectionIds(manager);
-        for (const chunk of chunks(ids)) {
-          const members = await productIdsOf(manager, chunk);
-          await manager.delete(ChangeHistoryCollectionMembers, { collectionId: In(chunk) });
-          await insertOrIgnore(
-            manager,
-            chunk.map((collectionId) => ({ collectionId, productIds: members.get(collectionId) ?? [] })),
-          );
-        }
-        return { collections: ids.length };
-      }),
+      this.connection.withTransaction(ctx, (tctx) => overwriteAll(this.pipeline.managerOf(tctx))),
     );
   }
 
@@ -378,6 +382,20 @@ export class CollectionCapture {
       );
     }
   }
+}
+
+/** Every collection's snapshot replaced by its current contents; the marker is left alone. */
+async function overwriteAll(manager: EntityManager): Promise<{ collections: number }> {
+  const ids = await allCollectionIds(manager);
+  for (const chunk of chunks(ids)) {
+    const members = await productIdsOf(manager, chunk);
+    await manager.delete(ChangeHistoryCollectionMembers, { collectionId: In(chunk) });
+    await insertOrIgnore(
+      manager,
+      chunk.map((collectionId) => ({ collectionId, productIds: members.get(collectionId) ?? [] })),
+    );
+  }
+  return { collections: ids.length };
 }
 
 async function allCollectionIds(manager: EntityManager): Promise<string[]> {

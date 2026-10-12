@@ -121,9 +121,8 @@ without values (`meta.noBefore = "evicted"`) rather than with a diff that would 
   `+3 / −1` and carries `meta.counts = { added, removed }`. A product that left because it was deleted gets no
   entry (its own `deleted` entry says it). The plugin keeps the last known products of each collection in
   `change_history_collection_members`; at every startup it records the contents of each collection it has no
-  row for, so the first change after you install it is recorded too. After running with `enabled: false`, call
-  `ChangeHistoryService.reseedCollectionMembership(ctx)` before re-enabling, or the first change of each
-  collection records everything that changed meanwhile.
+  row for, so the first change after you install it is recorded too. After a period with capture switched off
+  the plugin brings these rows up to date by itself (see [Switching capture off](#switching-capture-off)).
 - **`moved`**: a collection moved under another parent or to another position, with `parent` and `position`
   before → after. The siblings Vendure renumbers are not recorded.
 - **Cascades.** Deleting a collection records its descendants' deletions too, derived from it, each with its

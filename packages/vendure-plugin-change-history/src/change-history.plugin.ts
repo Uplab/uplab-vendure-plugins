@@ -109,8 +109,8 @@ export class ChangeHistoryPlugin implements OnApplicationBootstrap, OnApplicatio
     this.warnWithoutScheduler();
     this.context.listen();
     this.eventHandlers.register();
-    // Never fails the bootstrap; a collection without a snapshot would lose its first change of contents.
-    await this.collections.seedMissing();
+    // Never fails the bootstrap: the collection snapshots (seeded, or marked stale while capture is off).
+    await this.collections.onBoot();
   }
 
   /** The built-in retention tasks need a scheduler; core's default strategy runs nothing. */

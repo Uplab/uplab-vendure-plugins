@@ -939,9 +939,9 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
       expect(added).toMatchObject({ entityId: decode(redProduct), action: 'collection_added', batchId: head.batchId });
 
       // As after a deploy: no snapshot of this collection until the boot records its contents.
-      await collections().seedMissing();
+      await collections().onBoot();
       await members().delete({ collectionId: decode(id) });
-      expect(await collections().seedMissing()).toBe(1);
+      expect((await collections().onBoot()).seeded).toBe(1);
 
       await adminClient.query(UPDATE_COLLECTION, { input: { id, filters: facetFilter([blue]) } });
       await settleJobs(adminClient);

@@ -16,7 +16,7 @@ import { ChangeHistoryDefinitions } from '../entity-definitions/definitions.serv
 import { BatchState, ChangeHistoryContextService } from '../services/change-history-context.service';
 import { ResolvedChangeHistoryPluginOptions } from '../types';
 import { CapturePipeline } from './capture-pipeline';
-import { CollectionCapture } from './collection-capture';
+import { CAPTURE_OFF_MARKER, CollectionCapture } from './collection-capture';
 import { ChangeHistoryWriter, EntryDraft } from './entry-writer.service';
 import { TransactionState } from './transaction-state';
 
@@ -79,6 +79,47 @@ function fakeManager(
     update: vi.fn(async () => undefined),
   };
   return manager;
+}
+
+/**
+ * The connection's own manager as the boot sees it: whether the capture-off marker is there, the collections,
+ * the snapshots it has; records what is inserted and deleted.
+ */
+function bootManager(db: { marker?: boolean; collections?: string[]; snapshots?: string[] } = {}) {
+  const inserted: Array<{ collectionId: string; productIds: string[] }> = [];
+  const deleted: unknown[] = [];
+  const manager = {
+    count: vi.fn(async () => (db.marker ? 1 : 0)),
+    transaction: vi.fn(async (work: (manager: unknown) => Promise<unknown>) => work(manager)),
+    delete: vi.fn(async (_target: unknown, where: unknown) => {
+      deleted.push(where);
+    }),
+    createQueryBuilder: (target?: unknown) => {
+      if (target === Collection) {
+        return queryBuilder({ raw: (db.collections ?? []).map((id) => ({ id })) });
+      }
+      if (target === ChangeHistoryCollectionMembers) {
+        return queryBuilder({ raw: (db.snapshots ?? []).map((collectionId) => ({ collectionId })) });
+      }
+      if (target === ProductVariant) {
+        return queryBuilder({ raw: [{ collectionId: '5', productId: '7' }] });
+      }
+      return {
+        insert: () => ({
+          into: () => ({
+            values: (rows: typeof inserted) => ({
+              orIgnore: () => ({
+                execute: async () => {
+                  inserted.push(...rows);
+                },
+              }),
+            }),
+          }),
+        }),
+      };
+    },
+  };
+  return { manager, inserted, deleted };
 }
 
 /**
@@ -157,16 +198,49 @@ afterEach(() => {
 });
 
 describe('CollectionCapture switched off', () => {
-  it('records nothing for collection events, contents changes or the startup seed', async () => {
-    const { capture, pipeline, writer, context } = setup({ enabled: false });
+  it('records nothing for collection events or contents changes, and marks the snapshots stale at boot', async () => {
+    const boot = bootManager({ collections: ['5'] });
+    const { capture, pipeline, writer, context } = setup({ enabled: false, rawManager: boot.manager });
 
     await capture.onCollectionEvent(collectionEvent('updated', { id: 5 }, { id: 5 }));
     await capture.onModification(modificationEvent({ id: 5 }));
 
-    expect(await capture.seedMissing()).toBe(0);
+    expect(await capture.onBoot()).toEqual({ reseeded: 0, seeded: 0 });
+    expect(boot.inserted).toEqual([{ collectionId: CAPTURE_OFF_MARKER, productIds: [] }]);
     expect(pipeline.run).not.toHaveBeenCalled();
     expect(writer.write).not.toHaveBeenCalled();
     expect(context.transactionOf).not.toHaveBeenCalled();
+  });
+});
+
+describe('CollectionCapture at boot', () => {
+  it('seeds only the collections without a snapshot', async () => {
+    const boot = bootManager({ collections: ['4', '5'], snapshots: ['4'] });
+    const { capture } = setup({ rawManager: boot.manager });
+
+    expect(await capture.onBoot()).toEqual({ reseeded: 0, seeded: 1 });
+    expect(boot.inserted).toEqual([{ collectionId: '5', productIds: ['7'] }]);
+    expect(boot.manager.transaction).not.toHaveBeenCalled();
+  });
+
+  it('re-records every collection after a boot with capture off, then removes the marker', async () => {
+    vi.spyOn(Logger, 'info').mockImplementation(() => undefined);
+    const boot = bootManager({ marker: true, collections: ['4', '5'], snapshots: ['4', '5', CAPTURE_OFF_MARKER] });
+    const { capture } = setup({ rawManager: boot.manager });
+
+    expect(await capture.onBoot()).toEqual({ reseeded: 2, seeded: 0 });
+    expect(boot.inserted).toEqual([
+      { collectionId: '4', productIds: [] },
+      { collectionId: '5', productIds: ['7'] },
+    ]);
+    expect(boot.deleted).toEqual([
+      { collectionId: expect.objectContaining({ _value: ['4', '5'] }) },
+      { collectionId: CAPTURE_OFF_MARKER },
+    ]);
+    expect(Logger.info).toHaveBeenCalledWith(
+      '[ChangeHistory] capture was switched off: recorded the contents of 2 collection(s) again',
+      'ChangeHistory',
+    );
   });
 });
 
@@ -205,13 +279,14 @@ describe('CollectionCapture failures', () => {
   ])('logs %s thrown while seeding the snapshots and reports none seeded', async (_label, thrown, message) => {
     const error = vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
     const rawManager = {
+      count: async () => 0,
       createQueryBuilder: () => {
         throw thrown;
       },
     };
     const { capture } = setup({ rawManager });
 
-    expect(await capture.seedMissing()).toBe(0);
+    expect(await capture.onBoot()).toEqual({ reseeded: 0, seeded: 0 });
     expect(error).toHaveBeenCalledWith(
       `[ChangeHistory] recording the contents of the collections failed: ${message}`,
       expect.any(String),

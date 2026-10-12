@@ -130,9 +130,10 @@ export class ChangeHistoryService {
   }
 
   /**
-   * Overwrites the package's snapshot of every collection's products with the current contents. Call it
-   * after a period with capture switched off; otherwise the first change of each collection afterwards
-   * records the whole difference since then. Unlike the write methods, it rejects when it fails.
+   * Overwrites the package's snapshot of every collection's products with the current contents, without
+   * recording entries. The plugin does this by itself at the first boot with capture on after a boot with it
+   * off; call it when the contents changed in a way the plugin cannot see (a restored database, raw SQL on
+   * `collection_product_variants_product_variant`). Unlike the write methods, it rejects when it fails.
    */
   async reseedCollectionMembership(ctx: RequestContext): Promise<{ collections: number }> {
     return this.collections.reseed(ctx);
