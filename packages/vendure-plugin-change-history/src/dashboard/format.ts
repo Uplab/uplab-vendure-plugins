@@ -791,8 +791,8 @@ export function capitalizeFirst(text: string): string {
 }
 
 /**
- * `Oversize tee S (TS-OVS-BLK-S)` → name and SKU, so that a narrow cell cuts the name and keeps the SKU, the
- * part that tells the variants apart. A label without a trailing `(…)` comes back as the name.
+ * `Oversize tee S (TS-OVS-BLK-S)` → name and SKU, so that a narrow cell can put the SKU, the part that tells
+ * the variants apart, on a line of its own. A label without a trailing `(…)` comes back as the name.
  */
 export function splitTrailingCode(label: string): { name: string; code?: string } {
   const open = label.lastIndexOf('(');

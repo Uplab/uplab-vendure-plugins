@@ -117,8 +117,8 @@ export function EntryAction({ entry }: { entry: ChangeHistoryEntryData }) {
 
 /**
  * The object of a feed row: a link to the entity, the batch's subject and size, or what a run was about (its
- * recorded label: «stock sync after order #1042»). `cut` lets a narrow cell shorten the name, never a
- * variant's SKU.
+ * recorded label: «stock sync after order #1042»). `cut` lets a narrow cell shorten the name and put a
+ * variant's SKU on a line of its own.
  */
 export function EntryObject({ entry, cut = false }: { entry: ChangeHistoryEntryData; cut?: boolean }) {
   if (entry.entityType === 'Run') {

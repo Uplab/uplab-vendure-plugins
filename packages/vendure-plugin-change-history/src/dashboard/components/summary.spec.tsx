@@ -185,7 +185,7 @@ describe('EntryObject', () => {
     expect(document.body.textContent).toBe('Odoo: stock after order #1042');
   });
 
-  it("keeps a variant's SKU apart from its name, so that a narrow cell cuts the name only", () => {
+  it("keeps a variant's SKU apart from its name, so that a narrow cell can put it on a line of its own", () => {
     render(<EntryObject entry={entry({ entityType: 'ProductVariant', entityLabel: 'Oversize tee S (TS-S)' })} cut />);
     expect(screen.getByText('(TS-S)')).toBeTruthy();
     expect(screen.getByText('Oversize tee S').getAttribute('class')).toContain('truncate');

@@ -33,10 +33,10 @@ export function DeletedBadge() {
 const LINK_CLASS = 'text-primary underline-offset-2 hover:underline';
 
 /**
- * A label that keeps a variant's trailing «(SKU)» whole when the cell cuts it: the name shrinks, the code
- * stays. Only a code too long for the cell is cut too, leaving room for the name's first letter (a reserve of
- * a few letters would cut a normal SKU next to a «Deleted» badge, and «TS-OVS-BLK-L» would read as its
- * «-M» sibling); the whole label is the tooltip.
+ * A variant's label in a cell that cuts it: «name (SKU)» on one line when both fit, else the SKU on a line of
+ * its own under the name, so neither is crushed to a letter («C. (E2E-FOLD-40-424…»). Each line is cut with an
+ * ellipsis only when it alone is wider than the cell (a long name; a code of 30 characters); the whole label
+ * is the tooltip. A label without a trailing «(…)» is one line, cut as a whole.
  */
 function CuttableLabel({ text, keepCode }: { text: ReactNode; keepCode: boolean }) {
   if (!keepCode || typeof text !== 'string') {
@@ -47,9 +47,9 @@ function CuttableLabel({ text, keepCode }: { text: ReactNode; keepCode: boolean 
     return <span className="min-w-0 truncate">{text}</span>;
   }
   return (
-    <span className="inline-flex min-w-0 max-w-full items-baseline gap-[0.3em]" title={text}>
-      <span className="min-w-0 truncate">{name}</span>
-      <span className="max-w-[calc(100%-1.25em)] shrink-0 truncate">({code})</span>
+    <span className="inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-[0.3em]" title={text}>
+      <span className="min-w-0 max-w-full truncate">{name}</span>
+      <span className="min-w-0 max-w-full truncate">({code})</span>
     </span>
   );
 }
@@ -69,7 +69,7 @@ export function EntityLink({
   children?: ReactNode;
   className?: string;
   deletedBadge?: boolean;
-  /** In a cell that cuts long names: the name shrinks, a variant's SKU and the badge stay. */
+  /** In a cell that cuts long names: a variant's SKU goes under its name when both do not fit; the badge stays. */
   cut?: boolean;
 }) {
   const route = useEntityRoute()(entry);

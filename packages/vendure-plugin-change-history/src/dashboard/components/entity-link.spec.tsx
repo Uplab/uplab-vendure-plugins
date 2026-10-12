@@ -77,22 +77,28 @@ describe('EntityLink', () => {
     expect(container.textContent).toBe('Oversize tee');
   });
 
-  it("keeps a variant's SKU whole in a narrow cell, and cuts a label without one as a whole", () => {
+  it("puts a variant's SKU under its name in a narrow cell, and cuts a label without one as a whole", () => {
     const variant = (entityLabel: string) => entry({ entityType: 'ProductVariant', entityLabel });
     const { rerender } = render(<EntityLink entry={variant('Oversize tee S (TS-S)')} cut />);
-    // The code does not shrink: it is cut only past the room the cell leaves it, after the name's first letter.
-    const code = screen.getByText('(TS-S)').getAttribute('class')?.split(' ');
-    expect(code).toEqual(expect.arrayContaining(['shrink-0', 'truncate', 'max-w-[calc(100%-1.25em)]']));
-    expect(screen.getByText('Oversize tee S').getAttribute('class')).toContain('truncate');
-    expect(screen.getByText('Oversize tee S').getAttribute('class')).not.toContain('shrink-0');
+    // One line when both fit, else the code wraps under the name: neither part is crushed to a letter.
+    const code = screen.getByText('(TS-S)');
+    const name = screen.getByText('Oversize tee S');
+    expect(code.parentElement).toBe(name.parentElement);
+    expect(code.parentElement?.className.split(' ')).toEqual(
+      expect.arrayContaining(['inline-flex', 'flex-wrap', 'min-w-0', 'max-w-full']),
+    );
+    for (const part of [name, code]) {
+      // Each line is cut only when it alone is wider than the cell; neither keeps its room at the other's cost.
+      expect(part.className.split(' ')).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full', 'truncate']));
+      expect(part.className).not.toContain('shrink-0');
+    }
 
-    // A long SKU: both parts can be cut, the whole label in the tooltip.
+    // A long SKU: the whole label in the tooltip.
     const long = 'Oversize tee Basic (TEE-NIGHT-SKY-ORGANIC-WHITE-XL)';
     rerender(<EntityLink entry={variant(long)} cut />);
     const label = screen.getByText('(TEE-NIGHT-SKY-ORGANIC-WHITE-XL)');
     expect(label.getAttribute('class')).toContain('truncate');
     expect(label.parentElement?.getAttribute('title')).toBe(long);
-    expect(label.parentElement?.getAttribute('class')).toContain('min-w-0 max-w-full');
 
     rerender(<EntityLink entry={variant('Oversize tee S')} cut />);
     expect(screen.getByText('Oversize tee S').getAttribute('class')).toContain('truncate');
@@ -106,7 +112,7 @@ describe('EntityLink', () => {
     expect(screen.getByRole('link').textContent).toBe('open');
   });
 
-  it("keeps a deleted variant's normal SKU whole next to its badge: the name gives way, all but its first letter", () => {
+  it("keeps a deleted variant's badge beside its label, the label wrapping its SKU under the name", () => {
     setLocale('uk');
     const { container } = render(
       <EntityLink
@@ -120,13 +126,7 @@ describe('EntityLink', () => {
     );
     expect(container.textContent).toBe('Oversize tee L(TS-OVS-BLK-L)Видалено');
     const code = screen.getByText('(TS-OVS-BLK-L)');
-    // The code may take all of the label but about one letter (1.25em, less the 0.3em gap): far more than a
-    // 14-character SKU needs in the feed's narrowest Object cell, so only a code of 30 characters is cut.
-    expect(code.className.split(' ')).toEqual(
-      expect.arrayContaining(['shrink-0', 'truncate', 'max-w-[calc(100%-1.25em)]']),
-    );
-    expect(code.className).not.toMatch(/max-w-\[calc\(100%-[2-9]/);
-    expect(screen.getByText('Oversize tee L').className).toBe('min-w-0 truncate');
+    expect(code.parentElement?.className).toContain('flex-wrap');
     // The label shrinks inside the line; the badge does not.
     expect(code.parentElement?.parentElement?.className).toContain('min-w-0');
     expect(screen.getByText('Видалено').parentElement?.className).toBe('shrink-0');

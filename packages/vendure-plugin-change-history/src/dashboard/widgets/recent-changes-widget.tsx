@@ -105,8 +105,9 @@ export function RecentChangesWidget() {
                   </button>
                   <div className="min-w-0 flex-1">
                     {/* A long name or type is cut with an ellipsis (the whole one in the tooltip) at a share of
-                        the line, the object taking the rest: nothing runs past the widget's edge. */}
-                    <div className="flex min-w-0 items-center gap-1.5">
+                        the line; the object follows them, or starts a line of its own when it does not fit beside
+                        them, so it is never squeezed: nothing runs past the widget's edge. */}
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-1.5">
                       <span className="flex min-w-0 max-w-[50%] shrink-0" title={actor.name}>
                         <ActorName actor={actor} className="min-w-0 max-w-full font-medium" />
                       </span>
@@ -118,7 +119,7 @@ export function RecentChangesWidget() {
                       >
                         <EntryType entry={entry} />
                       </span>
-                      <span className="flex min-w-0">
+                      <span className="flex min-w-0 max-w-full">
                         <EntryObject entry={entry} cut />
                       </span>
                     </div>

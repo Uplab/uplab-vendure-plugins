@@ -231,6 +231,9 @@ describe('RecentChangesWidget', () => {
     Object.defineProperties(type, { scrollWidth: { value: 120 }, clientWidth: { value: 60 } });
     fireEvent.mouseEnter(type);
     expect(type.title).toBe(type.textContent);
+    // The object starts a line of its own when it does not fit beside them, never squeezed to a letter.
+    expect(name.parentElement?.className.split(' ')).toEqual(expect.arrayContaining(['flex-wrap', 'min-w-0']));
+    expect(name.parentElement?.lastElementChild?.className).toContain('max-w-full');
   });
 
   it('links «All changes» to the feed with the default switches and the page’s period', () => {
