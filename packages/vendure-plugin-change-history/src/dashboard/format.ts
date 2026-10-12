@@ -47,7 +47,6 @@ export function stripHtml(html: string): string {
     .trim();
 }
 
-/** The first `max` characters (on a word boundary when one is near), with an ellipsis when cut. */
 /**
  * A no-break space: «Odoo id: 5950013 → 941185322» breaks before a label or between words of a value, never
  * right after a colon or an arrow, which would leave the value alone on the next line.
@@ -60,6 +59,7 @@ export const labelled = (label: string, value: string | number): string => `${la
 /** «from → to», the arrow kept with both sides. */
 export const fromTo = (from: string, to: string): string => `${from}${NBSP}→${NBSP}${to}`;
 
+/** The first `max` characters (on a word boundary when one is near), with an ellipsis when cut. */
 export function clipText(text: string, max: number): { text: string; clipped: boolean } {
   if (text.length <= max) {
     return { text, clipped: false };
