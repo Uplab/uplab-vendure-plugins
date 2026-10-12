@@ -41,7 +41,12 @@ import {
   titleWhenCut,
   type FeedSearch,
 } from '../format';
-import { changeHistoryEntriesDocument, changeHistoryFilterOptionsDocument, type ListOptions } from '../graphql';
+import {
+  changeHistoryEntriesDocument,
+  changeHistoryFilterOptionsDocument,
+  type FilterOptions,
+  type ListOptions,
+} from '../graphql';
 import { getChangeHistoryRegistry } from '../registry';
 import { CHANGE_HISTORY_NAV_ORDER } from '../public';
 
@@ -67,8 +72,12 @@ export const changeHistoryListRoute: DashboardRouteDefinition = {
   component: (route) => <ChangeHistoryListPage route={route} />,
 };
 
-/** Every field the feed selects, apart from the visible columns, is only an input of their cells. */
+/**
+ * Every field the feed selects, apart from the visible columns, is only an input of their cells; the entry id is
+ * no column either (a row opens its entry).
+ */
 const HIDDEN_FIELDS = [
+  'id',
   'entityId',
   'parentType',
   'parentId',
@@ -108,6 +117,8 @@ const ROW_FIELDS = [
 ] as const;
 
 const SORTED = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
+
+const NO_OPTIONS: FilterOptions = { actors: [], sources: [], actions: [], entityTypes: [] };
 
 /**
  * Every cell carries its row's entry id, so a click anywhere on the row opens the entry whichever columns are
@@ -216,6 +227,9 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
     setSearch({ ...feedSearchParams({ ...state, ...patch }), page: undefined });
 
   const queryClient = useQueryClient();
+  // A failed options request: the filters' popovers would say «No results», so the page says what failed.
+  const [optionsError, setOptionsError] = useState<unknown>();
+  const [optionsAttempt, setOptionsAttempt] = useState(0);
 
   // The faceted filter reads its options once per `optionsFn`, so each one loads the (cached) options itself.
   const facetedFilters = useMemo(() => {
@@ -225,8 +239,17 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
           queryKey: ['change-history-filter-options'],
           queryFn: () => api.query(changeHistoryFilterOptionsDocument, {}),
           staleTime: 60_000,
+          retry: 1,
         })
-        .then((result) => result.changeHistoryFilterOptions);
+        .then((result) => {
+          setOptionsError(undefined);
+          return result.changeHistoryFilterOptions;
+        })
+        .catch((error: unknown) => {
+          // The banner says it failed; the filters offer what the dashboard knows (registered types).
+          setOptionsError(error);
+          return NO_OPTIONS;
+        });
     const sorted = (options: Array<{ value: string; label: string }>) => options.sort(SORTED);
     return {
       entityType: {
@@ -257,7 +280,8 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
           ),
       },
     };
-  }, [queryClient, labels, t]);
+    // A retry gives the filters new loaders: the faceted filter asks each one once.
+  }, [queryClient, labels, t, optionsAttempt]);
 
   const period: DefinedDateRange | undefined = useMemo(
     () => (state.from && state.to ? { from: new Date(state.from), to: new Date(state.to) } : undefined),
@@ -268,12 +292,15 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
 
   const { page, perPage, filters: columnFilters } = parseListSearch(search);
   const feedQuery = useFeedQueryState(queryClient);
-  // A page past the end (a stale link, a filter that shrank the list) moves to the last page.
+  // A page past the end (a stale link, a filter that shrank the list) moves to the last page. The table keeps
+  // the page it was opened with, so it opens again, on the last page (its pager then reads «Page 4 of 4»).
   const lastValidPage =
     feedQuery.totalItems !== undefined && !feedQuery.fetching ? clampPage(page, perPage, feedQuery.totalItems) : page;
+  const [tableKey, setTableKey] = useState(0);
   useEffect(() => {
     if (lastValidPage !== page) {
       setSearch({ page: lastValidPage });
+      setTableKey((key) => key + 1);
     }
     // `setSearch` is a new function on every render; the page numbers are what matters.
   }, [lastValidPage, page]);
@@ -350,11 +377,23 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
               retrying={feedQuery.fetching}
             />
           )}
+          {!!optionsError && !feedQuery.error && (
+            <QueryError
+              className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 p-2"
+              error={optionsError}
+              what="filters"
+              onRetry={() => {
+                setOptionsError(undefined);
+                setOptionsAttempt((attempt) => attempt + 1);
+              }}
+            />
+          )}
           {/* After a failed request the table's «No results» would claim there were no changes: it is hidden. */}
           <div onClick={openRow} className={`[&_tbody_tr]:cursor-pointer ${feedQuery.error ? '[&_tbody]:hidden' : ''}`}>
             <PaginatedListDataTable
+              key={tableKey}
               listQuery={changeHistoryEntriesDocument}
-              page={page}
+              page={lastValidPage}
               itemsPerPage={perPage}
               sorting={sorting}
               columnFilters={columnFilters}
@@ -394,8 +433,8 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
               defaultColumnOrder={['createdAt', 'actorLabel', 'entityType', 'entityLabel', 'action', 'summary']}
               customizeColumns={{
                 ...Object.fromEntries(HIDDEN_FIELDS.map((field) => [field, { meta: { disabled: true } }])),
+                // Core's header («Created at»): the column settings list the column by that name too.
                 createdAt: {
-                  header: () => <Trans context="change-history">Time</Trans>,
                   enableColumnFilter: false,
                   cell: ({ row }) => (
                     <Cell id={row.original.id}>
@@ -432,7 +471,10 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   enableSorting: false,
                   meta: { dependencies: [...ROW_FIELDS] },
                   cell: ({ row }) => (
-                    <Cell id={row.original.id} className="min-w-[5rem] max-w-[7.5rem] whitespace-normal">
+                    <Cell
+                      id={row.original.id}
+                      className="min-w-[5rem] max-w-[7.5rem] whitespace-normal min-[1400px]:max-w-none min-[1400px]:whitespace-nowrap"
+                    >
                       <EntryType entry={row.original} />
                     </Cell>
                   ),
@@ -445,7 +487,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="flex max-w-[12rem] min-w-0 min-[1400px]:max-w-[16rem]"
+                      className="flex max-w-[12rem] min-w-0 min-[1280px]:max-w-[15rem] min-[1400px]:max-w-[16rem]"
                       title={row.original.entityLabel ?? undefined}
                     >
                       <EntryObject entry={row.original} cut />
@@ -457,7 +499,10 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   enableSorting: false,
                   meta: { dependencies: [...ROW_FIELDS] },
                   cell: ({ row }) => (
-                    <Cell id={row.original.id} className="min-w-[6rem] max-w-[9rem] whitespace-normal">
+                    <Cell
+                      id={row.original.id}
+                      className="min-w-[6rem] max-w-[9rem] whitespace-normal min-[1400px]:max-w-[13rem] min-[1400px]:whitespace-nowrap min-[1400px]:truncate"
+                    >
                       <EntryAction entry={row.original} />
                     </Cell>
                   ),

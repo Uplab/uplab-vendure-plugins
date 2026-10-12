@@ -204,4 +204,45 @@ describe('EntryDialog', () => {
     expect(screen.getByRole('button', { name: 'Наступна сторінка' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Попередня сторінка' })).toBeTruthy();
   });
+
+  it("titles a channel operation by its kind, names its channel once and its members' consequences", () => {
+    const head = entry({
+      entityType: 'Batch',
+      entityLabel: null,
+      action: 'batch',
+      batchId: 'channel_assigned:1',
+      meta: { kind: 'channel_assigned', channelCode: 'uk-store' },
+      batchCounts: [{ entityType: 'Product', action: 'channel_assigned', count: 2 }],
+    });
+    const member = (id: string, label: string, derivedCount: number) =>
+      entry({
+        id,
+        entityLabel: label,
+        action: 'channel_assigned',
+        batchId: 'channel_assigned:1',
+        derivedCount,
+        meta: { channelCode: 'uk-store' },
+      });
+    open(head, [member('11', 'Худі', 4), member('12', 'Кепка', 0)]);
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Додано до каналу');
+    expect(screen.getByText('Канал')).toBeTruthy();
+    expect(screen.getByText('Товари: 2')).toBeTruthy();
+    // The member rows do not repeat the channel; the one with variants says so.
+    expect(screen.getAllByText('uk-store')).toHaveLength(1);
+    const rows = [...document.querySelectorAll('tbody tr')].map((row) => row.textContent);
+    expect(rows[0]).toContain('Наслідки зміни: 4');
+    expect(rows[1]).not.toContain('Наслідки');
+  });
+
+  it("leaves a deleted entity's empty values out, and names a created filter list with its size", () => {
+    open(
+      entry({
+        entityType: 'Collection',
+        action: 'deleted',
+        entityDeleted: true,
+        meta: { lastState: { 'name.uk': 'Розпродаж', filters: [], customFields: {}, isPrivate: false } },
+      }),
+    );
+    expect([...document.querySelectorAll('dt')].map((term) => term.textContent)).toEqual(['Назва (uk)', 'Приватне']);
+  });
 });

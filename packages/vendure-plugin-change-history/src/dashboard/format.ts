@@ -110,6 +110,33 @@ export function flatEntries(value: unknown): Array<[string, string]> | undefined
 }
 
 /**
+ * The keys of two objects of scalars whose values differ, as `[key, from, to]` text (`—` for a missing or null
+ * value), in the order of `to` then `from`; `undefined` unless each side is such an object (or empty). A per-
+ * location map then reads as what changed: `Kyiv: 0 → 13`, not both whole maps.
+ */
+export function changedEntries(from: unknown, to: unknown): Array<[string, string, string]> | undefined {
+  const side = (value: unknown) => (value == null ? new Map<string, string>() : new Map(flatEntries(value) ?? []));
+  const before = side(from);
+  const after = side(to);
+  if ((from != null && !flatEntries(from)) || (to != null && !flatEntries(to)) || (from == null && to == null)) {
+    return undefined;
+  }
+  const keys = [...new Set([...after.keys(), ...before.keys()])];
+  return keys
+    .filter((key) => before.get(key) !== after.get(key))
+    .map((key) => [key, before.get(key) ?? '—', after.get(key) ?? '—']);
+}
+
+/**
+ * Whether a key names an identifier (`id`, `odooId`, `customFields.erpId`): its numbers are shown as stored,
+ * without digit grouping.
+ */
+export function isIdKey(key: string): boolean {
+  const last = key.slice(key.lastIndexOf('.') + 1);
+  return last === 'id' || /[a-z0-9]Id$/.test(last);
+}
+
+/**
  * The lines of a JSON value: `key: value` per line for an object of scalars, else pretty-printed JSON with the
  * facet value ids of operation arguments replaced by their labels (`"[\"31\"]"` in a `facetValueIds` argument
  * becomes `["Season: Winter"]`), so a filter or condition reads as names.
@@ -452,6 +479,11 @@ export const COLLAPSE_BATCHES_FILTER: Filter = {
 };
 export const HIDE_SYSTEM_FILTER: Filter = { actorType: { in: ['admin', 'api_key'] } };
 
+/** The feed's search: an entry's name (a variant's with its SKU) or what a run was about (an order code). */
+export function searchFilter(term: string): Filter {
+  return term ? { _or: [{ entityLabel: { contains: term } }, { subjectLabel: { contains: term } }] } : {};
+}
+
 /**
  * The feed's list filter: the table's column filters (with the actor filter rewritten to id + type), the
  * search, and the switches and period kept in the URL.
@@ -477,11 +509,6 @@ export function feedFilter(tableFilter: Filter | undefined, switches: FeedSwitch
     filter._and = clauses;
   }
   return Object.keys(filter).length > 0 ? filter : undefined;
-}
-
-/** The feed's search: an entry's name (a variant's with its SKU) or what a run was about (an order code). */
-export function searchFilter(term: string): Filter {
-  return term ? { _or: [{ entityLabel: { contains: term } }, { subjectLabel: { contains: term } }] } : {};
 }
 
 /** The URL state of the feed: `?collapse=false&hideSystem=true&from=…&to=…&entry=…`. */
@@ -702,8 +729,11 @@ export function formatBytes(bytes: number, formatNumber: (value: number) => stri
   return `${formatNumber(rounded)} ${units[unit]}`;
 }
 
-/** Keys a created entity's values start with: what names it first, then whether it is live. */
-const LEADING_KEYS = ['name', 'code', 'sku', 'slug', 'enabled'];
+/**
+ * Keys a created entity's values start with: what names it first, then whether it is live; an asset's kind and
+ * size in reading order (width before height).
+ */
+const LEADING_KEYS = ['name', 'code', 'sku', 'slug', 'enabled', 'type', 'mimeType', 'width', 'height', 'fileSize'];
 
 /** `name.uk`, `slug.uk`, `enabled`, … first (in that order), every other key after them as it came. */
 export function orderCreatedKeys(keys: string[]): string[] {

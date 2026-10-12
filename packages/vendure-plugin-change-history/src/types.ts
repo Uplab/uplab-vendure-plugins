@@ -26,6 +26,8 @@ export type ChangeHistoryValueKind =
   | 'prices'
   | 'json'
   | 'stock'
+  /** An identifier (an ERP id): shown as stored, a number without digit grouping. */
+  | 'id'
   | (string & {});
 
 /** One changed field of an entry: `from` → `to`, or `added` / `removed` ids for lists. */

@@ -45,7 +45,7 @@ function CuttableLabel({ text, keepCode }: { text: ReactNode; keepCode: boolean 
     return <span className="min-w-0 truncate">{text}</span>;
   }
   return (
-    <span className="inline-flex min-w-0 max-w-full items-baseline gap-1">
+    <span className="inline-flex min-w-0 max-w-full items-baseline gap-[0.3em]">
       <span className="min-w-0 truncate">{name}</span>
       <span className="shrink-0">({code})</span>
     </span>

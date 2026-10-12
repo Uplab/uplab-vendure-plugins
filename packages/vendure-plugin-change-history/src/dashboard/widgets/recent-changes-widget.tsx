@@ -45,6 +45,9 @@ export function RecentChangesWidget() {
       }),
   });
   const items = data?.changeHistoryEntries.items ?? [];
+  const isToday = (createdAt: string) => new Date(createdAt).toDateString() === new Date().toDateString();
+  // The time column fits its format: «08:55» when every line is today's, else «12.10, 08:55».
+  const timeWidth = items.every((entry) => isToday(entry.createdAt)) ? 'w-[2.75rem]' : 'w-[5.5rem]';
   return (
     <DashboardBaseWidget
       id={RECENT_CHANGES_WIDGET_ID}
@@ -83,10 +86,12 @@ export function RecentChangesWidget() {
                   onClick={() => setEntryId(entry.id)}
                 >
                   {/* Today's changes by time; older ones by day and time, so one day's changes stay apart. */}
-                  <span className="w-[5.5rem] shrink-0 whitespace-nowrap text-xs leading-5 text-muted-foreground">
+                  <span
+                    className={`${timeWidth} shrink-0 whitespace-nowrap text-xs leading-5 tabular-nums text-muted-foreground`}
+                  >
                     {formatDate(
                       entry.createdAt,
-                      new Date(entry.createdAt).toDateString() === new Date().toDateString()
+                      isToday(entry.createdAt)
                         ? { timeStyle: 'short' }
                         : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' },
                     )}

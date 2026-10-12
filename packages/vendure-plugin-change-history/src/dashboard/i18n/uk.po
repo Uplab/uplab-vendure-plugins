@@ -110,7 +110,7 @@ msgstr "Запас"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.field.isPrivate"
-msgstr "Приватний"
+msgstr "Приватне"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -250,7 +250,7 @@ msgstr "Масова операція"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.type.Run"
-msgstr "Система"
+msgstr "Синхронізація"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -330,7 +330,7 @@ msgstr "вилучено з колекції"
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
 msgid "change-history.action.stock_adjusted"
-msgstr "скориговано залишок"
+msgstr "скориговано запас"
 
 #. js-lingui-explicit-id
 #: src/dashboard/labels.ts
@@ -480,7 +480,7 @@ msgstr "Дія"
 #. js-lingui-explicit-id
 #: src/dashboard/routes/change-history-list.tsx
 msgid "fieldName.summary"
-msgstr "Зміни"
+msgstr "Що змінилось"
 
 #. js-lingui-explicit-id
 #: src/dashboard/routes/change-history-list.tsx
@@ -567,7 +567,7 @@ msgstr "Видалено"
 #: src/dashboard/components/timeline.tsx
 msgctxt "change-history"
 msgid "Derived"
-msgstr "Похідна"
+msgstr "Наслідок іншої зміни"
 
 #: src/dashboard/components/entry-dialog.tsx
 #: src/dashboard/components/summary.tsx
@@ -575,7 +575,7 @@ msgstr "Похідна"
 #: src/dashboard/components/timeline.tsx
 msgctxt "change-history"
 msgid "Derived changes:"
-msgstr "Похідні зміни:"
+msgstr "Наслідки зміни:"
 
 #: src/dashboard/components/entry-dialog.tsx
 msgctxt "change-history"
@@ -752,11 +752,6 @@ msgid "This entry no longer exists."
 msgstr "Цього запису вже немає."
 
 #: src/dashboard/routes/change-history-list.tsx
-msgctxt "change-history"
-msgid "Time"
-msgstr "Час"
-
-#: src/dashboard/routes/change-history-list.tsx
 #: src/dashboard/routes/change-history-list.tsx
 msgctxt "change-history"
 msgid "Type"
@@ -791,3 +786,8 @@ msgstr "Так"
 msgctxt "change-history"
 msgid "You do not have permission to view this history."
 msgstr "Немає прав на перегляд цієї історії."
+
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "The filter options could not be loaded."
+msgstr "Не вдалося завантажити варіанти фільтрів."

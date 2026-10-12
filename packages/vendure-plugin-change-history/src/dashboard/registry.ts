@@ -95,6 +95,17 @@ export interface ChangeHistoryValueRendererProps {
 }
 
 /**
+ * A value of a kind as one line of text (`registerChangeHistoryValueText`): what the feed's «What changed»
+ * cell, the widget, batch member rows and a created entity's value line show. `change` is the whole change the
+ * value belongs to (both sides), so a formatter may describe only what differs; `side` says which value this
+ * is. Return `undefined` to fall back to the built-in text.
+ */
+export type ChangeHistoryValueText = (
+  value: unknown,
+  context: { change: ChangeHistoryFieldChange; side: 'from' | 'to'; entityType: string; fieldKey: string },
+) => string | undefined;
+
+/**
  * Props of a detail renderer (`registerChangeHistoryDetailRenderer`): rows of a run, all of one `kind`.
  *
  * - `dialog`: one page of the whole run, in the entry dialog (the dialog pages it).
@@ -135,6 +146,7 @@ export interface ChangeHistoryRegistry {
   /** entity type → field key → label */
   fieldLabels: Map<string, Map<string, ChangeHistoryLabel>>;
   valueRenderers: Map<string, ComponentType<ChangeHistoryValueRendererProps>>;
+  valueTexts: Map<string, ChangeHistoryValueText>;
   detailRenderers: Map<string, ComponentType<ChangeHistoryDetailRendererProps>>;
   sources: Map<string, ChangeHistorySourceDefinition>;
   actions: Map<string, ChangeHistoryLabelDefinition>;
@@ -156,6 +168,7 @@ export function getChangeHistoryRegistry(): ChangeHistoryRegistry {
     registry = {
       fieldLabels: new Map(),
       valueRenderers: new Map(),
+      valueTexts: new Map(),
       detailRenderers: new Map(),
       sources: new Map(),
       actions: new Map(),

@@ -12,11 +12,14 @@ export function QueryError({
   onRetry,
   retrying = false,
   className,
+  what = 'history',
 }: {
   error: unknown;
   onRetry?: () => void;
   retrying?: boolean;
   className?: string;
+  /** What failed to load: the history (default) or the feed's filter options. */
+  what?: 'history' | 'filters';
 }) {
   const detail = error instanceof Error ? error.message : undefined;
   return (
@@ -27,10 +30,14 @@ export function QueryError({
     >
       <AlertCircle className="h-4 w-4 shrink-0" />
       <span>
-        {isForbiddenError(error) ? (
+        {isForbiddenError(error) && (
           <Trans context="change-history">You do not have permission to view this history.</Trans>
-        ) : (
+        )}
+        {!isForbiddenError(error) && what === 'history' && (
           <Trans context="change-history">The change history could not be loaded.</Trans>
+        )}
+        {!isForbiddenError(error) && what === 'filters' && (
+          <Trans context="change-history">The filter options could not be loaded.</Trans>
         )}
       </span>
       {onRetry && (

@@ -1,6 +1,7 @@
 import { useLingui as useLinguiContext } from '@lingui/react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { api, useChannel, useLocalFormat, useQuery, useServerConfig, VendureImage } from '@vendure/dashboard';
+import { ImageOff } from 'lucide-react';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import {
   argumentList,
@@ -13,6 +14,7 @@ import {
   formatBytes,
   formatDelta,
   idList,
+  isIdKey,
   isOperationList,
   jsonDiff,
   jsonLines,
@@ -35,9 +37,24 @@ import { useLabels } from './use-labels';
 
 type Side = 'from' | 'to';
 
+const SIDE_COLOURS: Record<Side, string> = {
+  from: 'bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-200',
+  to: 'bg-green-50 text-green-800 dark:bg-green-950/60 dark:text-green-200',
+};
+
+/** A whole value: a chip with room around its text. */
 const SIDE_CHIP: Record<Side, string> = {
-  from: 'rounded bg-red-50 px-1 text-red-800 dark:bg-red-950/60 dark:text-red-200',
-  to: 'rounded bg-green-50 px-1 text-green-800 dark:bg-green-950/60 dark:text-green-200',
+  from: `rounded px-1 ${SIDE_COLOURS.from}`,
+  to: `rounded px-1 ${SIDE_COLOURS.to}`,
+};
+
+/**
+ * Changed words inside running text: only the background marks them, so they keep the spacing of the words
+ * around them (`dense 220 g/m²`, not `dense  220  g/m²`); a mark broken over two lines keeps its corners.
+ */
+const WORD_MARK: Record<Side, string> = {
+  from: `rounded-sm box-decoration-clone ${SIDE_COLOURS.from}`,
+  to: `rounded-sm box-decoration-clone ${SIDE_COLOURS.to}`,
 };
 
 /**
@@ -59,8 +76,15 @@ function Chip({ side, children }: { side: Side; children: ReactNode }) {
   return <span className={`${SIDE_CHIP[side]} break-words`}>{children}</span>;
 }
 
+/** Nothing to show: no value, an empty string, an empty list or an empty object. */
 function isBlank(value: unknown): boolean {
-  return value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
+  if (value === null || value === undefined || value === '') {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+  return typeof value === 'object' && Object.keys(value).length === 0;
 }
 
 /** Core's invisible root collection: the parent of a top-level collection, shown as no parent. */
@@ -118,11 +142,23 @@ export function useValueText() {
   const currency = activeChannel?.defaultCurrencyCode ?? 'USD';
   const yes = t({ message: 'Yes', context: 'change-history' });
   const no = t({ message: 'No', context: 'change-history' });
-  return (value: unknown, change: ChangeHistoryFieldChange | undefined, field?: FieldRef): string => {
+  return (value: unknown, change: ChangeHistoryFieldChange | undefined, field?: FieldRef, side?: Side): string => {
     if (isBlank(value) || value === ROOT_COLLECTION) {
       return '—';
     }
     const kind = change?.kind;
+    const host = kind ? labels.valueText(kind) : undefined;
+    if (host && change) {
+      const hostText = host(value, {
+        change,
+        side: side ?? (value === change.from ? 'from' : 'to'),
+        entityType: field?.entityType ?? '',
+        fieldKey: field?.fieldKey ?? '',
+      });
+      if (typeof hostText === 'string') {
+        return hostText;
+      }
+    }
     if (kind === 'money' && typeof value === 'number') {
       return formatCurrency(value, typeof change?.currencyCode === 'string' ? change.currencyCode : currency);
     }
@@ -162,7 +198,8 @@ export function useValueText() {
       return formatBytes(value, formatNumber);
     }
     if (typeof value === 'number') {
-      return formatNumber(value);
+      // An identifier (an ERP id) reads as stored: `5950013`, not `5 950 013`.
+      return kind === 'id' || (field && isIdKey(field.fieldKey)) ? String(value) : formatNumber(value);
     }
     const flat = flatEntries(value);
     if (flat) {
@@ -200,7 +237,7 @@ function ScalarValue({ change, side, entityType, fieldKey }: BuiltInProps) {
   }
   return (
     <>
-      <Chip side={side}>{text(value, change, { entityType, fieldKey })}</Chip>
+      <Chip side={side}>{text(value, change, { entityType, fieldKey }, side)}</Chip>
       {change.truncated && (
         <span className="ml-1 text-xs text-muted-foreground">
           <Trans context="change-history">(shortened)</Trans>
@@ -271,8 +308,13 @@ function AssetsValue({ change, side }: { change: ChangeHistoryFieldChange; side:
             {asset ? (
               <VendureImage asset={asset} preset="tiny" className="h-10 w-10 object-cover" />
             ) : (
-              <span className="flex h-full w-full items-center justify-center bg-muted p-0.5 text-[9px] leading-tight text-muted-foreground">
-                {clipText(name, 14).text}
+              // A deleted image has no preview: a placeholder, its name in the tooltip.
+              <span
+                role="img"
+                aria-label={name}
+                className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground"
+              >
+                <ImageOff className="h-4 w-4" />
               </span>
             )}
           </span>
@@ -316,7 +358,7 @@ function DiffWords({ words, side, full }: { words: DiffLine[]; side: Side; full:
         return (
           <span key={index}>
             {space}
-            {run.changed ? <span className={SIDE_CHIP[side]}>{run.text}</span> : run.text}
+            {run.changed ? <span className={WORD_MARK[side]}>{run.text}</span> : run.text}
           </span>
         );
       })}
@@ -658,17 +700,16 @@ export function CreatedValues({
     <div className="text-sm text-muted-foreground">
       {shown.map((key, index) => {
         const change = changes[key];
-        // A long JSON value (filters, conditions) is named, not printed.
-        const short = change.stripped || change.kind === 'json';
+        // A long JSON value (filters, conditions) is named with its size, not printed.
+        const value = createdValueOf(change);
+        const size = change.kind === 'json' && Array.isArray(value) ? value.length : undefined;
         return (
           <span key={key}>
             {index > 0 && ', '}
             {labels.field(entityType, key, change)}
-            {!short && (
-              <span className="text-foreground">
-                {' '}
-                {text(createdValueOf(change), change, { entityType, fieldKey: key })}
-              </span>
+            {size !== undefined && <span className="text-foreground"> ({size})</span>}
+            {!change.stripped && change.kind !== 'json' && (
+              <span className="text-foreground"> {text(value, change, { entityType, fieldKey: key })}</span>
             )}
           </span>
         );

@@ -145,7 +145,9 @@ without values (`meta.noBefore = "evicted"`) rather than with a diff that would 
   translatable ones). Fields declared `readonly` or `internal` are written by code and left out, unless you list
   them in `entities.<Type>.includeReadonlyCustomFields`. Relation fields are stored as ids with the target's
   name as a label. `entities.<Type>.ignoreFields` drops noisy keys, `entities.<Type>.fieldKinds` tells the
-  dashboard how to show a value (`{ 'customFields.price': 'money' }`).
+  dashboard how to show a value (`{ 'customFields.price': 'money' }`, `{ 'customFields.erpId': 'id' }` for an
+  identifier shown as stored, `5950013` rather than `5 950 013`; a key named `id` or ending in `Id` reads so
+  without it).
 - References (facet values, assets, options, tax category, relation custom fields) are compared **by id**; the
   names are stored as labels for display. Renaming a facet value is therefore not a change of every product
   that uses it.
@@ -371,9 +373,13 @@ Everything needs the **ReadChangeHistory** permission, and each page shows only 
   same period.
 
 A request that fails shows a translated message with **Retry** in the feed, the entry window, the history
-block and the widget — never the «no changes» text. Changes made with an API key show the owner's name with
+block and the widget — never the «no changes» text; when the feed's filter options fail to load, the feed says
+so above the table and the filters offer the types your extension registered. A link to a page past the end
+opens the last page. Changes made with an API key show the owner's name with
 an «API key» marker in the dashboard's language. A batch without a label of its own is titled by its kind's
-registered label (`registerChangeHistoryBatchKind`), else «Bulk operation» — never by the raw kind.
+registered label (`registerChangeHistoryBatchKind`), else «Bulk operation» — never by the raw kind. In the
+feed such a batch's action is what its members had done to them when they share one («updated») and its
+object their type («Products»); a channel operation's object is its channel.
 
 Values are drawn by their `kind`: `text`, `enum` (core enums and custom field options by their labels),
 `bool`, `date`, `money` (the channel's currency), `prices`, `ref` / `refs` (labels; a set change lists what
@@ -382,7 +388,9 @@ did), `richtext` (plain text, the words around each change marked, «show in ful
 changed lines highlighted, facet value ids shown by name; collection filters and promotion conditions and
 actions read as their descriptions with `argument: value` lines, money formatted), `stock` (with the delta),
 and a compacted value as «changed (3,412 → 3,587 characters)». An object of plain values (stock thresholds
-per location, a focal point) reads as `key: value` lines. A host action with `meta.counts` shows them with
+per location, a focal point) reads as `key: value` lines; in a one-line summary (the feed, the widget, a
+batch's member rows) a change of one names only the keys that changed: «Min. stock: Kyiv: 0 → 13». A number
+of kind `id`, or under a key named `id` or ending in `Id`, is shown as stored, without digit grouping. A host action with `meta.counts` shows them with
 the count labels, the `total` last: «moved: 3 (total: 48)». Action, batch kind and count labels read best in
 lowercase, like the built-in ones: the dashboard capitalizes them where they start a title or a badge. The feed's navigation `order` is `CHANGE_HISTORY_NAV_ORDER`; give an
 item of your own `order: CHANGE_HISTORY_NAV_ORDER + 1` to place it right after.
@@ -406,6 +414,7 @@ import {
   registerChangeHistoryFieldLabels,
   registerChangeHistorySource,
   registerChangeHistoryValueRenderer,
+  registerChangeHistoryValueText,
   type ChangeHistoryDetailRendererProps,
   type ChangeHistoryValueRendererProps,
 } from '@uplab/vendure-plugin-change-history/dashboard';
@@ -441,6 +450,10 @@ function Swatch({ change, side }: ChangeHistoryValueRendererProps) {
   ) : null;
 }
 registerChangeHistoryValueRenderer('color', Swatch);
+
+// The one-line text of a value of your kind: the feed's «What changed», the widget, batch member rows and a
+// created entity's values. `change` holds both sides, so it can say only what differs; `undefined` falls back.
+registerChangeHistoryValueText('color', (value) => (typeof value === 'string' ? value.toUpperCase() : undefined));
 
 // Rows of an external run of your kind: `dialog` (a page of the whole run), `timeline` (this entity's rows),
 // `summary` (the inline count line of the collapsed item — your own plural forms go here).
@@ -482,6 +495,7 @@ type ChangeHistoryEntry implements Node {
   entityType: String!
   entityId: String!
   entityLabel: String # null for a batch without a label: name it by meta.kind
+  subjectLabel: String # a run's subject (meta.subject.label), searchable; null otherwise
   parentType: String
   parentId: String
   action: String!
@@ -495,7 +509,6 @@ type ChangeHistoryEntry implements Node {
   changes: JSON
   meta: JSON!
   summary: String! # an English machine summary, not display text
-  subjectLabel: String # a run's subject (meta.subject.label), searchable; null otherwise
   compactedAt: DateTime
   isCompacted: Boolean!
   derivedCount: Int!

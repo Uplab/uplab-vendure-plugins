@@ -14,11 +14,13 @@ import { QueryError } from './query-error';
 import {
   BatchSummary,
   batchKindOfEntry,
+  DerivedBadge,
   batchSubject,
   EntryAction,
   EntryCounts,
   EntrySummary,
   hasCounts,
+  repeatsItsBatch,
   runSubjectEntry,
 } from './summary';
 import { useLabels } from './use-labels';
@@ -237,12 +239,13 @@ function BatchItem({ entry }: { entry: ChangeHistoryEntryData }) {
               <span className="text-muted-foreground">
                 <EntryAction entry={member} />
               </span>
-              {member.action !== 'collection_added' && member.action !== 'collection_removed' && (
+              {!repeatsItsBatch(member) && (
                 <span className="text-muted-foreground">
                   {' · '}
                   <EntrySummary entry={member} />
                 </span>
               )}
+              {repeatsItsBatch(member) && member.derivedCount > 0 && <DerivedBadge count={member.derivedCount} />}
             </li>
           ))}
           {!isLoading && !isError && total > members.length && (
@@ -355,7 +358,10 @@ function EntryItem({ entry, subject }: { entry: ChangeHistoryEntryData; subject:
       }
       badges={[
         !!entry.derivedFromId && { key: 'derived', text: t({ message: 'Derived', context: 'change-history' }) },
-        !!batchKind && batchKind !== 'collection_rules' && { key: 'batch', text: labels.batchKind(batchKind) },
+        // Not when it says what the line says (a channel operation of several products).
+        !!batchKind &&
+          batchKind !== 'collection_rules' &&
+          batchKind !== entry.action && { key: 'batch', text: labels.batchKind(batchKind) },
       ]}
     >
       {hasChanges && entry.action === 'created' && <CreatedValues entityType={entry.entityType} changes={changes} />}

@@ -24,6 +24,7 @@ import { QueryError } from './query-error';
 import {
   BatchSummary,
   batchKindOfEntry,
+  DerivedBadge,
   batchOwnLabel,
   batchSubject,
   EntryAction,
@@ -32,6 +33,7 @@ import {
   EntrySummary,
   EntryType,
   hasCounts,
+  repeatsItsBatch,
   RunCounts,
   runSubjectEntry,
 } from './summary';
@@ -98,28 +100,35 @@ function Section({ title, children }: { title: ReactNode; children: ReactNode })
   );
 }
 
-/** Members of a batch or entries derived from one: the feed's columns, one row each. */
+/**
+ * The members of a batch: the feed's columns, one row each, sized to their content. A member's «what changed»
+ * is left out where it would repeat the window's title (the collection, the channel); what it caused stays.
+ */
 function EntryRows({ entries }: { entries: ChangeHistoryEntryData[] }) {
   const { formatDate } = useLocalFormat();
   return (
-    <table className="w-full text-sm">
+    <table className="text-sm">
       <tbody>
         {entries.map((entry) => (
           <tr key={entry.id} className="border-b border-border/50 align-top last:border-0">
-            <td className="py-1 pr-3 whitespace-nowrap text-muted-foreground">
+            <td className="py-1 pr-4 whitespace-nowrap text-muted-foreground">
               {formatDate(entry.createdAt, { timeStyle: 'short' })}
             </td>
-            <td className="py-1 pr-3 text-muted-foreground">
+            <td className="py-1 pr-4 whitespace-nowrap text-muted-foreground">
               <EntryType entry={entry} />
             </td>
-            <td className="py-1 pr-3">
+            <td className="py-1 pr-4">
               <EntryObject entry={entry} />
             </td>
-            <td className="py-1 pr-3">
+            <td className="py-1 pr-4 whitespace-nowrap">
               <EntryAction entry={entry} />
             </td>
             <td className="py-1">
-              <EntrySummary entry={entry} />
+              {repeatsItsBatch(entry) ? (
+                entry.derivedCount > 0 && <DerivedBadge count={entry.derivedCount} />
+              ) : (
+                <EntrySummary entry={entry} />
+              )}
             </td>
           </tr>
         ))}
@@ -165,7 +174,12 @@ function LastState({ entry }: { entry: ChangeHistoryEntryData }) {
     return null;
   }
   const values = Object.entries(state as Record<string, unknown>).filter(
-    ([, value]) => value !== null && value !== undefined && value !== '' && !(Array.isArray(value) && !value.length),
+    ([, value]) =>
+      value !== null &&
+      value !== undefined &&
+      value !== '' &&
+      !(Array.isArray(value) && !value.length) &&
+      !(typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0),
   );
   return (
     <Section title={<Trans context="change-history">Last state</Trans>}>
@@ -213,7 +227,9 @@ function Membership({ entry }: { entry: ChangeHistoryEntryData }) {
       </ValuesGrid>
     );
   }
-  if (entry.action === 'channel_assigned' || entry.action === 'channel_removed') {
+  // An entry of a channel operation, or the batch of one (several products at once).
+  const channelBatch = entry.entityType === 'Batch' && batchKindOfEntry(entry).startsWith('channel_');
+  if (entry.action === 'channel_assigned' || entry.action === 'channel_removed' || channelBatch) {
     return (
       <ValuesGrid>
         <GridRow label={<Trans context="change-history">Channel</Trans>}>

@@ -19,7 +19,7 @@ Initial release of the change history plugin.
   or deletes anything; `purge`, `preview` and `restore`; two built-in scheduled tasks, or your own scheduler.
 - **Admin API.** The feed, one entry, entity timelines, run details and filter options, behind the new
   per-channel `ReadChangeHistory` permission. A reader sees only the entity types they may read anyway
-  (`ReadCatalog`, `ReadPromotion`, …); `readPermissions` sets them for your own types. Offset pages are stable.
+  (`ReadCatalog`, `ReadPromotion`, …); `readPermissions` sets them for your own types.
 - **Dashboard.** A change history feed, the entry window, a history block on the detail pages, the «Recent
   changes» Insights widget, English and Ukrainian labels, and a `./dashboard` entry to register your own
-  labels, sources, actions, batch kinds, entity types and renderers.
+  labels, sources, actions, batch kinds, entity types, renderers and value texts.

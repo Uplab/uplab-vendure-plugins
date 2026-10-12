@@ -25,6 +25,7 @@ import {
   type ChangeHistoryLabelDefinition,
   type ChangeHistorySourceDefinition,
   type ChangeHistoryValueRendererProps,
+  type ChangeHistoryValueText,
   getChangeHistoryRegistry,
 } from './registry';
 
@@ -40,6 +41,7 @@ export type {
   ChangeHistorySourceDefinition,
   ChangeHistorySourceTone,
   ChangeHistoryValueRendererProps,
+  ChangeHistoryValueText,
 } from './registry';
 
 /**
@@ -112,6 +114,29 @@ export function registerChangeHistoryValueRenderer(
     requireKey('kind', kind);
     requireComponent(`renderer of kind "${kind}"`, component);
     getChangeHistoryRegistry().valueRenderers.set(kind, component);
+  });
+}
+
+/**
+ * The one-line text of a value of the given kind — the feed's «What changed» cell, the widget, batch member rows
+ * and a created entity's values — where a value renderer (`registerChangeHistoryValueRenderer`) draws the field
+ * tables. Without one, numbers are formatted, and an object of scalars reads `key: value, …` (a change of one
+ * reads as its changed keys only: `Kyiv: 0 → 13`).
+ *
+ * @example
+ * ```ts
+ * registerChangeHistoryValueText('stockThreshold', (value) =>
+ *   value && typeof value === 'object' ? `${Object.keys(value).length} locations` : undefined,
+ * );
+ * ```
+ */
+export function registerChangeHistoryValueText(kind: string, format: ChangeHistoryValueText): void {
+  register(() => {
+    requireKey('kind', kind);
+    if (typeof format !== 'function') {
+      throw new Error(`[ChangeHistory] text of kind "${kind}" must be a function`);
+    }
+    getChangeHistoryRegistry().valueTexts.set(kind, format);
   });
 }
 

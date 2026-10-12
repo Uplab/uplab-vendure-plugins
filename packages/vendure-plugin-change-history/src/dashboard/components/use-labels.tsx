@@ -61,6 +61,7 @@ export function useLabels() {
       },
       entityRoute: (type: string) => registry.entityTypes.get(type)?.route,
       valueRenderer: (kind: string) => registry.valueRenderers.get(kind),
+      valueText: (kind: string) => registry.valueTexts.get(kind),
       detailRenderer: (kind: string) => registry.detailRenderers.get(kind),
     };
     // `i18n.locale` changes with the dashboard's language. The registry is one store on `globalThis`;

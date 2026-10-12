@@ -138,7 +138,7 @@ describe('EntityTimeline', () => {
           }
         : undefined,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Похідні зміни: 80' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Наслідки зміни: 80' }));
     expect(screen.getByText('Tee S (TS-S)')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'показати всі (60)' })).toBeTruthy();
   });

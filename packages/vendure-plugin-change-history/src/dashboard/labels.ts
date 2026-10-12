@@ -71,7 +71,7 @@ const ENTITY_TYPE_LABELS: Record<string, BuiltInLabel> = {
   Asset: label('type.Asset', 'Asset'),
   Promotion: label('type.Promotion', 'Promotion'),
   Batch: label('type.Batch', 'Bulk operation'),
-  Run: label('type.Run', 'System'),
+  Run: label('type.Run', 'Sync run'),
 };
 
 /** Plural nouns for the count line of a run («Variants: 3 · Rows: 4»): numbers sit next to them, no plurals. */
@@ -119,6 +119,9 @@ const SOURCE_LABELS: Record<string, BuiltInSource> = {
 /** Batch kinds read like actions (the feed shows them in the Action column): lowercase, capitalized in titles. */
 const BATCH_KIND_LABELS: Record<string, BuiltInLabel> = {
   collection_rules: label('batch.collection_rules', 'collection contents updated'),
+  // Several products (or variants, assets) assigned to / removed from a channel in one call.
+  channel_assigned: label('action.channel_assigned', 'assigned to channel'),
+  channel_removed: label('action.channel_removed', 'removed from channel'),
 };
 
 /** Values of core enum fields, keyed by `<entity type>.<field>` or by the field alone. */

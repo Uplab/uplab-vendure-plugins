@@ -68,7 +68,8 @@ export function useLocalFormat() {
   return {
     formatDate: (value: string | Date) => new Date(value).toISOString().slice(0, 16).replace('T', ' '),
     formatCurrency: (value: number, currency: string) => `${(value / 100).toFixed(2)} ${currency}`,
-    formatNumber: (value: number) => String(value),
+    // Grouped like the dashboard's own (`5,950,013`), so a test sees where a number is formatted.
+    formatNumber: (value: number) => value.toLocaleString('en-US'),
   };
 }
 

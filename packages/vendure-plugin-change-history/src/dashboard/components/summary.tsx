@@ -3,6 +3,7 @@ import { Badge } from '@vendure/dashboard';
 import { Layers } from 'lucide-react';
 import {
   batchTotal,
+  changedEntries,
   countEntries,
   countsLine,
   durationSeconds,
@@ -66,6 +67,30 @@ export function batchOwnLabel(entry: ChangeHistoryEntryData): string | undefined
   return entry.entityLabel && entry.entityLabel !== batchKindOfEntry(entry) ? entry.entityLabel : undefined;
 }
 
+/** Whether a batch head is one channel operation (several products assigned to / removed from a channel). */
+const isChannelBatch = (entry: ChangeHistoryEntryData) =>
+  entry.entityType === 'Batch' && ['channel_assigned', 'channel_removed'].includes(batchKindOfEntry(entry));
+
+/** The one action every member of a batch shares (`updated`), if they share one. */
+function sharedMemberAction(entry: ChangeHistoryEntryData): string | undefined {
+  const actions = new Set((entry.batchCounts ?? []).map((count) => count.action));
+  return actions.size === 1 ? [...actions][0] : undefined;
+}
+
+/** The one type every member of a batch has (`Product`), if they share one. */
+function sharedMemberType(entry: ChangeHistoryEntryData): string | undefined {
+  const types = new Set((entry.batchCounts ?? []).map((count) => count.entityType));
+  return types.size === 1 ? [...types][0] : undefined;
+}
+
+/**
+ * Whether a member row of a batch would only repeat what its batch says (the collection of a contents change,
+ * the channel of a channel operation): its «what changed» is left out under the batch.
+ */
+export function repeatsItsBatch(entry: ChangeHistoryEntryData): boolean {
+  return ['collection_added', 'collection_removed', 'channel_assigned', 'channel_removed'].includes(entry.action);
+}
+
 /** «Product», «Variant», …; a batch with a parent shows its parent's type. */
 export function EntryType({ entry }: { entry: ChangeHistoryEntryData }) {
   const labels = useLabels();
@@ -73,14 +98,18 @@ export function EntryType({ entry }: { entry: ChangeHistoryEntryData }) {
   return <span>{labels.type(subject?.entityType ?? entry.entityType)}</span>;
 }
 
-/** The action; a batch head says what kind of batch it is. */
+/**
+ * The action; a batch head says what kind of batch it is. A kind nobody labelled says what its members had done
+ * to them when they share one action («updated»), else «bulk operation».
+ */
 export function EntryAction({ entry }: { entry: ChangeHistoryEntryData }) {
   const labels = useLabels();
-  return (
-    <span>
-      {entry.entityType === 'Batch' ? labels.batchKind(batchKindOfEntry(entry)) : labels.action(entry.action)}
-    </span>
-  );
+  if (entry.entityType !== 'Batch') {
+    return <span>{labels.action(entry.action)}</span>;
+  }
+  const kind = batchKindOfEntry(entry);
+  const shared = sharedMemberAction(entry);
+  return <span>{labels.knownBatchKind(kind) ?? (shared ? labels.action(shared) : labels.batchKind(kind))}</span>;
 }
 
 /**
@@ -101,25 +130,37 @@ export function EntryObject({ entry, cut = false }: { entry: ChangeHistoryEntryD
     );
   }
   if (entry.entityType === 'Batch') {
-    const subject = batchSubject(entry);
-    const total = batchTotal(entry.batchCounts);
-    return (
-      <span className="inline-flex max-w-full items-center gap-1.5">
-        {subject ? (
-          <EntityLink entry={subject} cut={cut} />
-        ) : (
-          batchOwnLabel(entry) && <span className={cut ? 'truncate' : undefined}>{batchOwnLabel(entry)}</span>
-        )}
-        {total > 0 && (
-          <Badge variant="outline" className="gap-1 font-normal">
-            <Layers className="h-3 w-3" />
-            {total}
-          </Badge>
-        )}
-      </span>
-    );
+    return <BatchObject entry={entry} cut={cut} />;
   }
   return <EntityLink entry={entry} cut={cut} />;
+}
+
+/**
+ * A batch's object: its subject (a collection), else its own label, else the channel of a channel operation,
+ * else what its members are («Products»); then the number of members.
+ */
+function BatchObject({ entry, cut }: { entry: ChangeHistoryEntryData; cut: boolean }) {
+  const labels = useLabels();
+  const subject = batchSubject(entry);
+  const total = batchTotal(entry.batchCounts);
+  const channel = isChannelBatch(entry) && typeof entry.meta?.channelCode === 'string' ? entry.meta.channelCode : '';
+  const memberType = sharedMemberType(entry);
+  const name = batchOwnLabel(entry) ?? (channel || (memberType ? labels.typePlural(memberType) : undefined));
+  return (
+    <span className="inline-flex max-w-full items-center gap-1.5">
+      {subject ? (
+        <EntityLink entry={subject} cut={cut} />
+      ) : (
+        name && <span className={cut ? 'truncate' : undefined}>{name}</span>
+      )}
+      {total > 0 && (
+        <Badge variant="outline" className="gap-1 font-normal">
+          <Layers className="h-3 w-3" />
+          {total}
+        </Badge>
+      )}
+    </span>
+  );
 }
 
 /** «updated: 37» — a count after its label, so that a noun («errors») reads as well as a participle. */
@@ -194,12 +235,24 @@ export function BatchSummary({ entry }: { entry: ChangeHistoryEntryData }) {
   );
 }
 
-function DerivedBadge({ count }: { count: number }) {
+export function DerivedBadge({ count }: { count: number }) {
   return (
     <Badge variant="outline" className="ml-1.5 font-normal">
       <Trans context="change-history">Derived changes:</Trans> {count}
     </Badge>
   );
+}
+
+/**
+ * The keys of a change of an object of scalars whose values differ — unless the value is a list, stripped, or a
+ * host formats its kind itself; `undefined` when there is no such key.
+ */
+function changedKeysOf(change: ChangeHistoryFieldChange, hostText: boolean) {
+  if (change.stripped || hostText || LIST_KINDS.has(change.kind ?? 'text')) {
+    return undefined;
+  }
+  const changed = changedEntries(change.from, change.to);
+  return changed && changed.length > 0 ? changed : undefined;
 }
 
 /** «Name (uk): Tee → Oversized tee» for one short field, else the changed fields' names. */
@@ -214,6 +267,16 @@ function ChangesSummary({
   const text = useValueText();
   const keys = Object.keys(changes);
   const only = keys.length === 1 ? changes[keys[0]] : undefined;
+  const changed = only ? changedKeysOf(only, !!labels.valueText(only.kind ?? 'text')) : undefined;
+  if (only && changed) {
+    // A per-location map (or any object of scalars): only what changed, «Kyiv: 0 → 13».
+    return (
+      <span>
+        {labels.field(entry.entityType, keys[0], only)}:{' '}
+        {changed.map(([key, from, to]) => `${key}: ${from} → ${to}`).join(', ')}
+      </span>
+    );
+  }
   if (only && only.kind === 'refs' && !only.stripped) {
     // «Facet values: +Color: White, −Color: Black»
     const ids = (list: string[] | undefined, sign: string) =>
@@ -230,7 +293,8 @@ function ChangesSummary({
     const delta = only.kind === 'stock' ? numericDelta(only.from, only.to) : undefined;
     return (
       <span>
-        {labels.field(entry.entityType, keys[0], only)}: {text(only.from, only, field)} → {text(only.to, only, field)}
+        {labels.field(entry.entityType, keys[0], only)}: {text(only.from, only, field, 'from')} →{' '}
+        {text(only.to, only, field, 'to')}
         {delta !== undefined && delta !== 0 && ` (${formatDelta(delta)})`}
       </span>
     );
@@ -270,45 +334,24 @@ function CreatedSummary({
   );
 }
 
-/** The one-line «what changed» of a feed row or a widget line. */
-export function EntrySummary({ entry }: { entry: ChangeHistoryEntryData }) {
-  if (entry.entityType === 'Run') {
-    return <RunCounts entry={entry} />;
-  }
-  if (entry.entityType === 'Batch') {
-    return <BatchSummary entry={entry} />;
-  }
+/** What a row says changed, without its derived count. */
+function SummaryBody({ entry }: { entry: ChangeHistoryEntryData }) {
   const changes = entry.changes ?? {};
-  const derived = entry.derivedCount > 0 ? <DerivedBadge count={entry.derivedCount} /> : null;
   if (entry.action === 'collection_added' || entry.action === 'collection_removed') {
-    return <span>{typeof entry.meta?.collectionLabel === 'string' ? `«${entry.meta.collectionLabel}»` : '—'}</span>;
+    return <>{typeof entry.meta?.collectionLabel === 'string' ? `«${entry.meta.collectionLabel}»` : '—'}</>;
   }
   if (entry.action === 'channel_assigned' || entry.action === 'channel_removed') {
-    return <span>{typeof entry.meta?.channelCode === 'string' ? entry.meta.channelCode : '—'}</span>;
+    return <>{typeof entry.meta?.channelCode === 'string' ? entry.meta.channelCode : '—'}</>;
   }
-  if (Object.keys(changes).length > 0 && entry.action !== 'created') {
-    return (
-      <span>
-        <ChangesSummary entry={entry} changes={changes} />
-        {derived}
-      </span>
-    );
-  }
-  if (entry.action === 'created' && Object.keys(changes).length > 0) {
-    return (
-      <span>
-        <CreatedSummary entry={entry} changes={changes} />
-        {derived}
-      </span>
+  if (Object.keys(changes).length > 0) {
+    return entry.action === 'created' ? (
+      <CreatedSummary entry={entry} changes={changes} />
+    ) : (
+      <ChangesSummary entry={entry} changes={changes} />
     );
   }
   if (hasCounts(entry)) {
-    return (
-      <span>
-        <EntryCounts entry={entry} />
-        {derived}
-      </span>
-    );
+    return <EntryCounts entry={entry} />;
   }
   if (entry.meta?.noBefore && entry.action !== 'created' && entry.action !== 'deleted') {
     return (
@@ -317,5 +360,24 @@ export function EntrySummary({ entry }: { entry: ChangeHistoryEntryData }) {
       </span>
     );
   }
-  return <span className="text-muted-foreground">—{derived}</span>;
+  return <span className="text-muted-foreground">—</span>;
+}
+
+/**
+ * The one-line «what changed» of a feed row or a widget line, with the number of changes it caused (a product's
+ * variants and images that went to a channel with it).
+ */
+export function EntrySummary({ entry }: { entry: ChangeHistoryEntryData }) {
+  if (entry.entityType === 'Run') {
+    return <RunCounts entry={entry} />;
+  }
+  if (entry.entityType === 'Batch') {
+    return <BatchSummary entry={entry} />;
+  }
+  return (
+    <span>
+      <SummaryBody entry={entry} />
+      {entry.derivedCount > 0 && <DerivedBadge count={entry.derivedCount} />}
+    </span>
+  );
 }
