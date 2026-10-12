@@ -58,6 +58,17 @@ interface FakeQuery {
   getObserversCount: () => number;
 }
 
+/**
+ * The fields core's PaginatedListDataTable (3.7.2 and 3.7.3) puts in the list query: a column per field of the
+ * document unless it is disabled (`meta.disabled` drops the column, and its field with it), of those the visible
+ * ones and always `id`, plus the `meta.dependencies` of every selected column.
+ */
+function selectedFields(props: Pick<TableProps, 'customizeColumns' | 'defaultVisibility'>, fields: string[]) {
+  const columns = fields.filter((field) => !props.customizeColumns[field]?.meta?.disabled);
+  const shown = columns.filter((field) => props.defaultVisibility[field] !== false || field === 'id');
+  return new Set([...shown, ...shown.flatMap((field) => props.customizeColumns[field]?.meta?.dependencies ?? [])]);
+}
+
 const COLUMNS = ['createdAt', 'actorLabel', 'entityType', 'entityLabel', 'action', 'summary', 'source', 'actorId'];
 
 const h = vi.hoisted(() => ({
@@ -145,11 +156,16 @@ vi.mock('@vendure/dashboard', async () => {
     useQueryClient: () => h.client,
     /**
      * The table: it keeps the props it was given and the number of times it was mounted (a new `key` mounts it
-     * again), and renders the rows given by the test through the page's own column definitions.
+     * again), and renders the rows given by the test through the page's own column definitions — each row with
+     * only the fields core's list query would select (see `selectedFields`).
      */
     PaginatedListDataTable: (props: TableProps) => {
       useState(() => ++h.mounts);
       h.table = props;
+      const pick = (row: ChangeHistoryEntryData) => {
+        const fields = selectedFields(props, Object.keys(row));
+        return Object.fromEntries(Object.entries(row).filter(([key]) => fields.has(key))) as ChangeHistoryEntryData;
+      };
       return (
         <table>
           <thead>
@@ -166,7 +182,7 @@ vi.mock('@vendure/dashboard', async () => {
               <tr key={row.id}>
                 {COLUMNS.map((column) => (
                   <td key={column} data-column={column}>
-                    {props.customizeColumns[column].cell?.({ row: { original: row } })}
+                    {props.customizeColumns[column].cell?.({ row: { original: pick(row) } })}
                   </td>
                 ))}
               </tr>
@@ -463,14 +479,13 @@ describe('ChangeHistoryListPage', () => {
       expect(h.table.customizeColumns.actorId).toMatchObject({
         enableSorting: false,
         enableHiding: false,
-        meta: { dependencies: ['actorType', 'actorLabel'] },
+        meta: { dependencies: ['id', 'actorType', 'actorLabel'] },
       });
     });
 
-    it('keeps the cells’ inputs and the entry id out of the columns', () => {
+    it('keeps the cells’ inputs out of the columns, and selects each through the cells that read it', () => {
       feed();
       for (const field of [
-        'id',
         'entityId',
         'parentType',
         'parentId',
@@ -491,6 +506,27 @@ describe('ChangeHistoryListPage', () => {
       // The columns built from several fields select them all.
       expect(h.table.customizeColumns.summary.meta?.dependencies).toContain('changes');
       expect(h.table.customizeColumns.createdAt.enableColumnFilter).toBe(false);
+      // Whichever single column is left visible, the query still has what its cells read.
+      const all = Object.keys(entry());
+      for (const column of COLUMNS) {
+        const visibility = Object.fromEntries(COLUMNS.map((other) => [other, other === column]));
+        const fields = selectedFields(
+          { ...h.table, defaultVisibility: { ...h.table.defaultVisibility, ...visibility } },
+          all,
+        );
+        expect(fields.has('id')).toBe(true);
+      }
+    });
+
+    it('selects the entry id though no column shows it or offers it in the settings: a row opens its entry', () => {
+      feed({}, [entry({ id: '7' })]);
+      // A disabled column leaves the list query: the id must stay a column, hidden and not hideable.
+      expect(h.table.customizeColumns.id?.meta?.disabled).toBeUndefined();
+      expect(h.table.customizeColumns.id).toMatchObject({ enableHiding: false });
+      expect(h.table.defaultVisibility.id).toBe(false);
+      expect(selectedFields(h.table, Object.keys(entry())).has('id')).toBe(true);
+      fireEvent.click(cell('entityType'));
+      expect(url()).toEqual({ entry: 7 });
     });
   });
 

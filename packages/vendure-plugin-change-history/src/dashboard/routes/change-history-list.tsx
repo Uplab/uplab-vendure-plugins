@@ -73,11 +73,10 @@ export const changeHistoryListRoute: DashboardRouteDefinition = {
 };
 
 /**
- * Every field the feed selects, apart from the visible columns, is only an input of their cells; the entry id is
- * no column either (a row opens its entry).
+ * Every field the feed selects, apart from the visible columns, is only an input of their cells. Disabled
+ * columns leave the list query: each is selected through the `dependencies` of the cells that read it.
  */
 const HIDDEN_FIELDS = [
-  'id',
   'entityId',
   'parentType',
   'parentId',
@@ -94,7 +93,9 @@ const HIDDEN_FIELDS = [
   'parentDeleted',
 ] as const;
 
+/** What a row's cells read; `id` above all — every cell carries it, and a click opens that entry. */
 const ROW_FIELDS = [
+  'id',
   'entityType',
   'entityId',
   'entityLabel',
@@ -429,13 +430,18 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                 summary: true,
                 source: false,
                 actorId: false,
+                id: false,
               }}
               defaultColumnOrder={['createdAt', 'actorLabel', 'entityType', 'entityLabel', 'action', 'summary']}
               customizeColumns={{
                 ...Object.fromEntries(HIDDEN_FIELDS.map((field) => [field, { meta: { disabled: true } }])),
+                // Selected, never shown and not offered in the column settings: a disabled column would leave the
+                // list query, and a row without its id opens nothing.
+                id: { enableHiding: false, enableSorting: false, enableColumnFilter: false },
                 // Core's header («Created at»): the column settings list the column by that name too.
                 createdAt: {
                   enableColumnFilter: false,
+                  meta: { dependencies: ['id'] },
                   cell: ({ row }) => (
                     <Cell id={row.original.id}>
                       <button
@@ -487,7 +493,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   cell: ({ row }) => (
                     <Cell
                       id={row.original.id}
-                      className="flex max-w-[12rem] min-w-0 min-[1280px]:max-w-[15rem] min-[1400px]:max-w-[16rem]"
+                      className="flex max-w-[12rem] min-w-0 min-[1280px]:max-w-[14rem] min-[1400px]:max-w-[16rem]"
                       title={row.original.entityLabel ?? undefined}
                     >
                       <EntryObject entry={row.original} cut />
@@ -515,7 +521,10 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   // The table cells do not wrap: this column alone does, takes the width the compact columns
                   // leave and shows up to three lines, the whole text in the tooltip when it is longer.
                   cell: ({ row }) => (
-                    <Cell id={row.original.id} className="line-clamp-3 min-w-[12rem] whitespace-normal break-words">
+                    <Cell
+                      id={row.original.id}
+                      className="line-clamp-3 min-w-[11rem] whitespace-normal break-words min-[1400px]:min-w-[12rem]"
+                    >
                       <EntrySummary entry={row.original} />
                     </Cell>
                   ),
@@ -523,6 +532,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                 source: {
                   header: () => <Trans context="change-history">Source</Trans>,
                   enableSorting: false,
+                  meta: { dependencies: ['id', 'actorType'] },
                   cell: ({ row }) => (
                     <Cell id={row.original.id}>{labels.source(row.original.source, row.original.actorType).label}</Cell>
                   ),
@@ -533,7 +543,7 @@ function ChangeHistoryListPage({ route }: { route: Route }) {
                   header: () => <Trans context="change-history">Who</Trans>,
                   enableSorting: false,
                   enableHiding: false,
-                  meta: { dependencies: ['actorType', 'actorLabel'] },
+                  meta: { dependencies: ['id', 'actorType', 'actorLabel'] },
                   cell: ({ row }) => (
                     <Cell id={row.original.id}>
                       {actorLabelText(row.original.actorType, row.original.actorLabel) ?? '—'}
