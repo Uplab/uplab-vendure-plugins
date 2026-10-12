@@ -9,6 +9,8 @@ const BLOCK_PAGES: Record<string, string> = {
   'collection-detail': 'Collection',
   'facet-detail': 'Facet',
   'promotion-detail': 'Promotion',
+  'asset-detail': 'Asset',
+  'facet-value-detail': 'FacetValue',
 };
 
 const BLOCK_TITLE = { id: 'change-history.block.title', message: 'Change history' };

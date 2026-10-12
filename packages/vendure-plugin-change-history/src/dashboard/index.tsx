@@ -25,10 +25,14 @@ defineDashboardExtension({
     block('change-history-collection', 'collection-detail', 'contents'),
     block('change-history-facet', 'facet-detail', 'facet-values'),
     block('change-history-promotion', 'promotion-detail', 'actions'),
+    // The asset and facet value pages end with their custom fields block (rendered empty without any).
+    block('change-history-asset', 'asset-detail', 'custom-fields'),
+    block('change-history-facet-value', 'facet-value-detail', 'custom-fields'),
   ],
   widgets: [
     {
       id: RECENT_CHANGES_WIDGET_ID,
+      // Not shown by the dashboard (3.7 lists no widget names); core's widgets use English names too.
       name: 'Recent changes',
       component: RecentChangesWidget,
       defaultSize: { w: 6, h: 6 },
