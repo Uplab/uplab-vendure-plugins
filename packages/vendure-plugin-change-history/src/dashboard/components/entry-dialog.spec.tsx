@@ -111,7 +111,7 @@ describe('EntryDialog', () => {
       key[0] === 'change-history-entry' ? { data: dialogData(key[1] === '4' ? cause : derived) } : undefined,
     );
     render(<EntryDialog entryId="7" onClose={() => undefined} />);
-    expect(header()).toContain('Наслідок зміни: Товар «Oversize tee Basic» · додано до каналу');
+    expect(header()).toContain('Причина: Товар «Oversize tee Basic» · додано до каналу');
     fireEvent.click(screen.getByRole('button', { name: 'Товар «Oversize tee Basic» · додано до каналу' }));
     expect(screen.getAllByRole('dialog')).toHaveLength(2);
     expect(screen.getAllByRole('heading', { level: 2 }).map((title) => title.textContent)).toEqual([
@@ -126,7 +126,7 @@ describe('EntryDialog', () => {
 
   it('says nothing of a cause the reader cannot see, and names its close button in the dashboard’s language', () => {
     open(entry({ derivedFromId: '4', derivedFrom: null }));
-    expect(header()).not.toContain('Наслідок');
+    expect(header()).not.toContain('Причина');
     expect(screen.getByRole('button', { name: 'Закрити' })).toBeTruthy();
   });
 

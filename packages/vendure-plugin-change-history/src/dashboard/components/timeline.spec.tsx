@@ -529,7 +529,7 @@ describe('EntityTimeline, an entry', () => {
     );
     expect(badges()).toEqual([]);
     const link = screen.getByRole('button', { name: 'Товар «Oversize tee Basic» · додано до каналу' });
-    expect(link.parentElement?.textContent).toBe('Наслідок зміни: Товар «Oversize tee Basic» · додано до каналу');
+    expect(link.parentElement?.textContent).toBe('Причина: Товар «Oversize tee Basic» · додано до каналу');
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(link);
     expect(query).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: '4' }));

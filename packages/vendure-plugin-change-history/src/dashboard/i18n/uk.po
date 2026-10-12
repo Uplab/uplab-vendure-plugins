@@ -795,7 +795,7 @@ msgstr "Не вдалося завантажити варіанти фільтр
 #: src/dashboard/components/entry-dialog.tsx
 msgctxt "change-history"
 msgid "Caused by:"
-msgstr "Наслідок зміни:"
+msgstr "Причина:"
 
 #: src/dashboard/components/entry-dialog.tsx
 msgctxt "change-history"
