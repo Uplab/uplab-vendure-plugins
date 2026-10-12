@@ -91,7 +91,7 @@ describe('ChangeHistoryWriter', () => {
     expect(entries).toHaveLength(1);
     expect(after).toHaveBeenCalledWith(entries);
     expect(error).toHaveBeenCalledWith(
-      '[ChangeHistory] write failed in saved entries listener: cache down',
+      'write failed in saved entries listener: cache down',
       'ChangeHistory',
       expect.any(String),
     );
@@ -111,18 +111,14 @@ describe('ChangeHistoryWriter', () => {
         throw new Error('deadlock');
       }),
     ).resolves.toBeUndefined();
-    expect(error).toHaveBeenCalledWith(
-      '[ChangeHistory] write failed in reseed: deadlock',
-      'ChangeHistory',
-      expect.any(String),
-    );
+    expect(error).toHaveBeenCalledWith('write failed in reseed: deadlock', 'ChangeHistory', expect.any(String));
   });
 
   it('logs a thrown value that is not an Error by its text', () => {
     const error = vi.spyOn(Logger, 'error').mockImplementation(() => undefined);
     logFailure('recordAction', 'connection reset');
     expect(error).toHaveBeenCalledWith(
-      '[ChangeHistory] write failed in recordAction: connection reset',
+      'write failed in recordAction: connection reset',
       'ChangeHistory',
       expect.any(String),
     );

@@ -208,7 +208,7 @@ export class ChangeHistoryContextService {
           return actor;
         }
       } catch (e) {
-        Logger.warn(`[ChangeHistory] actor resolver "${resolver.name}" failed: ${(e as Error).message}`, loggerCtx);
+        Logger.warn(`actor resolver "${resolver.name}" failed: ${(e as Error).message}`, loggerCtx);
       }
     }
     // A failing built-in lookup fails the write instead of attributing the change to an unknown actor.

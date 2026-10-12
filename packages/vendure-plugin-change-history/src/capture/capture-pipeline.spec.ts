@@ -335,7 +335,7 @@ describe('CapturePipeline', () => {
     });
     await expect(pipeline.run(ctx, definition, [1], updated)).resolves.toBeUndefined();
     expect(error).toHaveBeenCalledWith(
-      expect.stringContaining('[ChangeHistory] write failed in updated ProductVariant: insert failed'),
+      expect.stringContaining('write failed in updated ProductVariant: insert failed'),
       'ChangeHistory',
       expect.any(String),
     );
@@ -439,7 +439,7 @@ describe('CapturePipeline', () => {
     expect(load).not.toHaveBeenCalled();
     expect(saved).toEqual([]);
     expect(error).toHaveBeenCalledWith(
-      '[ChangeHistory] write failed in updated ProductVariant: bad input',
+      'write failed in updated ProductVariant: bad input',
       'ChangeHistory',
       expect.any(String),
     );

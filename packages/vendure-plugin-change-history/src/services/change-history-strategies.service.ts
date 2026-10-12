@@ -31,19 +31,16 @@ export class ChangeHistoryStrategies {
     const driver = this.connection.rawConnection.options.type;
     const { strategy, warning } = selectBeforeStateStrategy(this.options.beforeState, driver);
     if (warning) {
-      Logger.warn(`[ChangeHistory] ${warning}`, loggerCtx);
+      Logger.warn(`${warning}`, loggerCtx);
     } else if (!strategy.supports(this.connection)) {
-      Logger.warn(
-        `[ChangeHistory] the before-state strategy "${strategy.name}" does not support "${driver}"`,
-        loggerCtx,
-      );
+      Logger.warn(`the before-state strategy "${strategy.name}" does not support "${driver}"`, loggerCtx);
     }
     await strategy.init?.(injector);
     this.selected = strategy;
 
     const { archive } = this.options.retention;
     if (archive === 'none') {
-      Logger.info('[ChangeHistory] retention.archive is "none": compaction keeps no copy of what it strips', loggerCtx);
+      Logger.info('retention.archive is "none": compaction keeps no copy of what it strips', loggerCtx);
     } else {
       await archive.init?.(injector);
     }

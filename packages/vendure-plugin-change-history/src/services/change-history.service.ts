@@ -60,8 +60,8 @@ const PARENT_LOOKUPS = {
  * @description
  * The change history's write and read facade — the one service hosts call.
  *
- * Every write method **never rejects because of a history failure**: the failure is logged with the
- * `[ChangeHistory]` prefix and the caller's work goes on. Writes run in `withTransaction(ctx)`: a
+ * Every write method **never rejects because of a history failure**: the failure is logged under the
+ * `ChangeHistory` logger context and the caller's work goes on. Writes run in `withTransaction(ctx)`: a
  * savepoint inside the caller's transaction (the entry commits or rolls back with the change it
  * describes), an own short transaction otherwise.
  *
@@ -114,10 +114,7 @@ export class ChangeHistoryService {
     if (!definition) {
       if (!this.uncapturedWarned.has(entityType)) {
         this.uncapturedWarned.add(entityType);
-        Logger.warn(
-          `[ChangeHistory] capture() does not support ${entityType}; nothing was recorded (use recordAction)`,
-          loggerCtx,
-        );
+        Logger.warn(`capture() does not support ${entityType}; nothing was recorded (use recordAction)`, loggerCtx);
       }
       return;
     }
@@ -178,7 +175,7 @@ export class ChangeHistoryService {
     const omitted = all.length - details.length;
     if (omitted > 0) {
       Logger.warn(
-        `[ChangeHistory] run "${input.source}" has ${all.length} detail rows; stored the first ${MAX_RUN_DETAILS}`,
+        `run "${input.source}" has ${all.length} detail rows; stored the first ${MAX_RUN_DETAILS}`,
         loggerCtx,
       );
     }

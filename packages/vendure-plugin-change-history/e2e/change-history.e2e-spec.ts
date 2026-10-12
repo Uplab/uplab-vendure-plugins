@@ -361,7 +361,7 @@ describe('ChangeHistoryPlugin on sql.js', () => {
       }),
     ).resolves.toBeUndefined();
     expect(error).toHaveBeenCalledWith(
-      expect.stringContaining('[ChangeHistory] write failed in recordAction'),
+      expect.stringContaining('write failed in recordAction'),
       'ChangeHistory',
       expect.any(String),
     );

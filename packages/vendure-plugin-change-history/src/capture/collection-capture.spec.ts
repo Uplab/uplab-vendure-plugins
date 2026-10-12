@@ -238,7 +238,7 @@ describe('CollectionCapture at boot', () => {
       { collectionId: CAPTURE_OFF_MARKER },
     ]);
     expect(Logger.info).toHaveBeenCalledWith(
-      '[ChangeHistory] capture was switched off: recorded the contents of 2 collection(s) again',
+      'capture was switched off: recorded the contents of 2 collection(s) again',
       'ChangeHistory',
     );
   });
@@ -253,7 +253,7 @@ describe('CollectionCapture failures', () => {
     await expect(capture.onCollectionEvent(collectionEvent('updated', { id: 5 }, { id: 5 }))).resolves.toBeUndefined();
 
     expect(error).toHaveBeenCalledWith(
-      '[ChangeHistory] write failed in updated Collection: pipeline down',
+      'write failed in updated Collection: pipeline down',
       expect.any(String),
       expect.any(String),
     );
@@ -267,7 +267,7 @@ describe('CollectionCapture failures', () => {
     await expect(capture.onModification(modificationEvent({ id: 5 }))).resolves.toBeUndefined();
 
     expect(error).toHaveBeenCalledWith(
-      '[ChangeHistory] write failed in collection membership: no connection',
+      'write failed in collection membership: no connection',
       expect.any(String),
       expect.any(String),
     );
@@ -288,7 +288,7 @@ describe('CollectionCapture failures', () => {
 
     expect(await capture.onBoot()).toEqual({ reseeded: 0, seeded: 0 });
     expect(error).toHaveBeenCalledWith(
-      `[ChangeHistory] recording the contents of the collections failed: ${message}`,
+      `recording the contents of the collections failed: ${message}`,
       expect.any(String),
       expect.any(String),
     );

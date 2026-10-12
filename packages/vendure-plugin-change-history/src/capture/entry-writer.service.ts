@@ -202,7 +202,7 @@ export class ChangeHistoryWriter {
 /** Logs a swallowed history failure with the stable prefix ops grep for. */
 export function logFailure(operation: string, e: unknown): void {
   const error = e instanceof Error ? e : new Error(String(e));
-  Logger.error(`[ChangeHistory] write failed in ${operation}: ${error.message}`, loggerCtx, error.stack);
+  Logger.error(`write failed in ${operation}: ${error.message}`, loggerCtx, error.stack);
 }
 
 function derivedFrom(transaction: TransactionState, draft: EntryDraft): ID | null {

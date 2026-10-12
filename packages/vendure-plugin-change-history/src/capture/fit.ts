@@ -48,7 +48,7 @@ export function fitColumns<T extends object>(
 export function warnClipped(operation: string, clipped: ReadonlySet<string>): void {
   if (clipped.size > 0) {
     Logger.warn(
-      `[ChangeHistory] ${operation}: clipped ${[...clipped].sort().join(', ')} to the column length; ` +
+      `${operation}: clipped ${[...clipped].sort().join(', ')} to the column length; ` +
         'shorten these values (they are cut, not rejected)',
       loggerCtx,
     );

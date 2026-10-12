@@ -208,7 +208,7 @@ export class CapturePipeline {
       if (!this.warnedNoTransaction.has(def.entityType)) {
         this.warnedNoTransaction.add(def.entityType);
         Logger.warn(
-          `[ChangeHistory] a ${def.entityType} change was saved outside a transaction: recorded without its before-state (meta.noBefore = "no_transaction")`,
+          `${def.entityType} saved outside a transaction: recorded without its before-state (meta.noBefore = "no_transaction")`,
           loggerCtx,
         );
       }
@@ -219,7 +219,7 @@ export class CapturePipeline {
     return this.strategies.beforeState
       .withCommittedReader(ctx, (manager) => def.load(ctx, ids, manager, scope))
       .catch((e: unknown) => {
-        Logger.warn(`[ChangeHistory] before-state read failed: ${(e as Error)?.message}`, loggerCtx);
+        Logger.warn(`before-state read failed: ${(e as Error)?.message}`, loggerCtx);
         return { noBefore: 'error' as const };
       });
   }

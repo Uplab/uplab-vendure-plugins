@@ -88,7 +88,7 @@ variables. Invalid options throw at startup with a message naming the option.
 
 Every change is recorded **inside the transaction that makes it** (a blocking event handler, in a savepoint):
 an entry commits or rolls back with its change, and a failing history write never fails your mutation — it is
-logged with a `[ChangeHistory]` prefix.
+logged under the `ChangeHistory` logger context (`[ChangeHistory]` in Vendure's default logger).
 
 The plugin's work on one transaction runs one piece at a time, even when core runs several blocking handlers
 of one transaction concurrently (it publishes some events inside `Promise.all`: deleting several assets,
@@ -172,7 +172,7 @@ capture off sets the marker again; the next boot with capture on re-records the 
 ## Recording from your own code
 
 Inject `ChangeHistoryService` (add `ChangeHistoryPlugin` to your plugin's `imports`). Its write methods never
-reject because of a history failure — the failure is logged with a `[ChangeHistory]` prefix — and write in
+reject because of a history failure — the failure is logged under the `ChangeHistory` context — and write in
 the caller's transaction through a savepoint, so an entry commits or rolls back with the change it describes.
 
 ```ts
@@ -225,8 +225,8 @@ for its `kind` in the dashboard: the head of a batch without a label stores its 
 `entityType`, `action`, `source` and batch `kind` are free strings; give yours labels in the dashboard. They
 must fit their columns: `entityType`, `parentType`, `action`, `source` and a detail row's `kind` at most 32
 characters, `entityId` and `parentId` 36 (a run's `entityId` defaults to its `source`), and a detail row's
-`scope` 64. A longer value is clipped to its column with a `[ChangeHistory] … clipped …` warning, so the entry
-or run is still recorded.
+`scope` 64. A longer value is clipped to its column with a `… clipped …` warning, so the entry or run is still
+recorded.
 
 ## Retention
 

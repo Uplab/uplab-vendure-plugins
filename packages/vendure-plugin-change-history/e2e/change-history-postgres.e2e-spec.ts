@@ -551,7 +551,7 @@ describe.skipIf(!url)('ChangeHistoryPlugin on Postgres', () => {
       await updateProduct({ id: productId, translations: [{ languageCode: 'en', name: `Leather belt ${FAIL}` }] });
 
       expect(error).toHaveBeenCalledWith(
-        expect.stringContaining('[ChangeHistory] write failed in updated Product: injected history failure'),
+        expect.stringContaining('write failed in updated Product: injected history failure'),
         'ChangeHistory',
         expect.any(String),
       );

@@ -121,7 +121,7 @@ export class ChangeHistoryPlugin implements OnApplicationBootstrap, OnApplicatio
       strategy?.constructor?.name === 'NoopSchedulerStrategy'
     ) {
       Logger.warn(
-        '[ChangeHistory] retention tasks are registered but no scheduler runs them: add DefaultSchedulerPlugin ' +
+        'retention tasks are registered but no scheduler runs them: add DefaultSchedulerPlugin ' +
           '(or another SchedulerStrategy), or set retention.schedule to false and call ChangeHistoryRetentionService yourself',
         loggerCtx,
       );

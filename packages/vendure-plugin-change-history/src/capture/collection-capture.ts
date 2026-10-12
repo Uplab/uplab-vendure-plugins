@@ -238,18 +238,14 @@ export class CollectionCapture {
         result.reseeded = (await manager.transaction((transactional) => overwriteAll(transactional))).collections;
         await manager.delete(ChangeHistoryCollectionMembers, { collectionId: CAPTURE_OFF_MARKER });
         Logger.info(
-          `[ChangeHistory] capture was switched off: recorded the contents of ${result.reseeded} collection(s) again`,
+          `capture was switched off: recorded the contents of ${result.reseeded} collection(s) again`,
           loggerCtx,
         );
       }
       result.seeded = await this.seedMissing(manager);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
-      Logger.error(
-        `[ChangeHistory] recording the contents of the collections failed: ${error.message}`,
-        loggerCtx,
-        error.stack,
-      );
+      Logger.error(`recording the contents of the collections failed: ${error.message}`, loggerCtx, error.stack);
     }
     return result;
   }
@@ -273,7 +269,7 @@ export class CollectionCapture {
       );
     }
     if (missing.length > 0) {
-      Logger.info(`[ChangeHistory] recorded the contents of ${missing.length} collection(s)`, loggerCtx);
+      Logger.info(`recorded the contents of ${missing.length} collection(s)`, loggerCtx);
     }
     return missing.length;
   }

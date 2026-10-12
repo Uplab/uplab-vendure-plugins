@@ -146,7 +146,7 @@ export class ChangeHistoryRetentionService {
     const { archive } = this.options.retention;
     const dryRun = opts.dryRun === true;
     if (archive === 'none' && !dryRun) {
-      Logger.warn('[ChangeHistory] compacting without an archive copy (retention.archive is "none")', loggerCtx);
+      Logger.warn('compacting without an archive copy (retention.archive is "none")', loggerCtx);
     }
     const result: ChangeHistoryCompactResult = {
       scanned: 0,
@@ -700,7 +700,7 @@ async function reportProgress(onProgress: RetentionRunOptions['onProgress'], aff
   try {
     await onProgress?.(affected);
   } catch (e) {
-    Logger.warn(`[ChangeHistory] retention progress callback failed: ${(e as Error)?.message ?? e}`, loggerCtx);
+    Logger.warn(`retention progress callback failed: ${(e as Error)?.message ?? e}`, loggerCtx);
   }
 }
 

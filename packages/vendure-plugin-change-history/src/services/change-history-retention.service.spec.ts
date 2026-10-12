@@ -134,7 +134,7 @@ describe('ChangeHistoryRetentionService.compact', () => {
     expect(result).toMatchObject({ scanned: 2, archived: 0, archiveKeys: [], batches: 1, drained: false });
     expect(queue).toEqual([]);
     expect(warn).toHaveBeenCalledWith(
-      '[ChangeHistory] compacting without an archive copy (retention.archive is "none")',
+      'compacting without an archive copy (retention.archive is "none")',
       'ChangeHistory',
     );
     // The detail rows of both entries leave; no entry is deleted (neither is derived, a member or a run line).
@@ -173,10 +173,7 @@ describe('ChangeHistoryRetentionService.compact', () => {
 
       expect(result).toMatchObject({ scanned: 2, archived: 0, stripped: 0, batches: 1, drained: false });
       expect(queue).toEqual([]);
-      expect(warn).toHaveBeenCalledWith(
-        `[ChangeHistory] retention progress callback failed: ${message}`,
-        'ChangeHistory',
-      );
+      expect(warn).toHaveBeenCalledWith(`retention progress callback failed: ${message}`, 'ChangeHistory');
     },
   );
 });
