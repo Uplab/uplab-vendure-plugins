@@ -9,11 +9,13 @@ Reference implementation: `packages/vendure-plugin-turbosms`. Full contract:
 
 1. Create `packages/vendure-plugin-<name>/` mirroring turbosms's shape:
    `package.json` (name `@uplab/vendure-plugin-<name>`, `version: 0.0.0`, MIT,
-   `publishConfig.access: public`, `files: ["dist", "README.md", "CHANGELOG.md"]`,
+   `publishConfig.access: public`,
+   `files: ["dist", "README.md", "CHANGELOG.md", "LICENSE"]`,
    `main`/`types`/`exports` into `dist/`, `@vendure/core` in `peerDependencies`
    `^3.7.0`, repository URL with the package `directory`), `tsconfig.json`,
    `tsconfig.build.json`, `vitest.config.mts` (copy — it carries the SWC decorator
-   setup), empty `CHANGELOG.md` with the package-name heading.
+   setup), empty `CHANGELOG.md` with the package-name heading, and `LICENSE` copied
+   from the repo root (`pnpm check:packages` fails without an identical copy).
 2. `src/`: `constants.ts` (options injection token), `types.ts` (options +
    resolved options), `<name>.plugin.ts` (`@VendurePlugin` with
    `compatibility: '^3.7.0'`, static `init(options)` — defaults resolved there,

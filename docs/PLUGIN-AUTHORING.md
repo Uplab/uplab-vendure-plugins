@@ -7,8 +7,12 @@ Claude Code, `/new-plugin <name>` scaffolds all of this.
 ## Package contract
 
 - `name: @uplab/vendure-plugin-<x>`, `license: MIT`, `publishConfig.access: public`
-- `files: ["dist", "README.md", "CHANGELOG.md"]` — nothing else ends up in the
-  tarball (CI verifies the packed tarball with publint + attw)
+- `files: ["dist", "README.md", "CHANGELOG.md", "LICENSE"]` — nothing else ends up
+  in the tarball (CI verifies the packed tarball with publint + attw)
+- a `LICENSE` in the package directory, an exact copy of the root `LICENSE`: npm
+  only ships a LICENSE that sits next to `package.json`, and releases publish from
+  the package directory. `pnpm check:packages` fails when it is missing, differs
+  from the root one, or is not in the tarball
 - `main` / `types` / `exports` point into `dist`
 - `peerDependencies: { "@vendure/core": "^3.7.0" }` (plus `@vendure/dashboard`
   when the package ships a dashboard extension) — Vendure packages are never
@@ -63,7 +67,7 @@ compiled copy of the config from `node_modules/.cache`, where nothing else resol
 ## Checklist for a new plugin
 
 1. Copy the shape of `vendure-plugin-turbosms` (including its `vitest.config.mts`
-   — it carries the SWC decorator setup).
+   — it carries the SWC decorator setup, and its `LICENSE`, the root one).
 2. Unit tests next to sources; an `e2e/*.e2e-spec.ts` with `@vendure/testing`
    (sql.js) proving the plugin boots — vendor HTTP mocked, no real network calls.
 3. Register in `packages/dev-server/src/vendure-config.ts`, add env vars with

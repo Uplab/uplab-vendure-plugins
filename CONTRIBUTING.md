@@ -33,7 +33,8 @@ docs: describe the release flow
 ## Adding a new plugin package
 
 Follow [docs/PLUGIN-AUTHORING.md](./docs/PLUGIN-AUTHORING.md) — package contract,
-code conventions and the full checklist. Before the first release, the package is
+code conventions and the full checklist. Every package carries a copy of the root
+`LICENSE` (npm only ships the one in the package directory). Before the first release, the package is
 published by hand once and gets an npm trusted publisher
 ([docs/RELEASING.md](./docs/RELEASING.md#bootstrapping-a-new-package)).
 

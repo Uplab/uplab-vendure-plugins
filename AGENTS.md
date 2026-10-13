@@ -33,7 +33,7 @@ packages/
   vendure-plugin-<name>/       # one publishable package per plugin
     src/                       # server code → dist/ (tsc)
     e2e/                       # @vendure/testing specs (sql.js), *.e2e-spec.ts
-    README.md CHANGELOG.md
+    README.md CHANGELOG.md LICENSE
 docs/                          # RELEASING, TESTING, PLUGIN-AUTHORING
 scripts/                       # release + package checks
 ```
@@ -41,7 +41,8 @@ scripts/                       # release + package checks
 ## Plugin contract (every publishable package)
 
 - `name: @uplab/vendure-plugin-<x>`, MIT, `publishConfig.access: public`,
-  `files: ["dist", "README.md", "CHANGELOG.md"]`.
+  `files: ["dist", "README.md", "CHANGELOG.md", "LICENSE"]`, and a `LICENSE` that
+  is an exact copy of the root one (`pnpm check:packages` fails otherwise).
 - `@vendure/*` only in `peerDependencies` (`^3.7.0`), never `dependencies`.
 - `compatibility: '^3.7.0'` on the `@VendurePlugin()` decorator.
 - All configuration through a static `init(options)` — **plugin code never reads
