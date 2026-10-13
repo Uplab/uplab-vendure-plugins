@@ -25,8 +25,29 @@ import {
   StaticExchangeRateSource,
 } from '../../vendure-plugin-exchange-rates/src';
 import { UnifiedSlugPlugin } from '../../vendure-plugin-unified-slug/src';
+import { ChangeHistoryPlugin, FileSystemArchiveStorage } from '../../vendure-plugin-change-history/src';
 
 const port = +(process.env.APP_PORT ?? 3000);
+
+/**
+ * SQLite by default, so that `pnpm dev` needs nothing installed. `DEV_DB=postgres` + `DEV_DB_URL` runs on
+ * Postgres instead — the change history records before → after values only there (SQLite has no second
+ * connection to read the committed state from).
+ */
+function dbConnectionOptions(): VendureConfig['dbConnectionOptions'] {
+  if (process.env.DEV_DB === 'postgres') {
+    if (!process.env.DEV_DB_URL) {
+      throw new Error('DEV_DB=postgres needs DEV_DB_URL, e.g. postgres://postgres:postgres@localhost:5433/vendure_dev');
+    }
+    return { type: 'postgres', url: process.env.DEV_DB_URL, synchronize: true, logging: false };
+  }
+  return {
+    type: 'better-sqlite3',
+    synchronize: true,
+    logging: false,
+    database: path.join(__dirname, '../vendure.sqlite'),
+  };
+}
 
 /** `EXCHANGE_RATE_SOURCE=ecb|frankfurter|monobank|nbu` reads live rates; anything else keeps fixed ones. */
 function exchangeRateSource(): ExchangeRateSource {
@@ -74,12 +95,7 @@ export const config: VendureConfig = {
       secret: 'dev-server-cookie-secret',
     },
   },
-  dbConnectionOptions: {
-    type: 'better-sqlite3',
-    synchronize: true,
-    logging: false,
-    database: path.join(__dirname, '../vendure.sqlite'),
-  },
+  dbConnectionOptions: dbConnectionOptions(),
   paymentOptions: {
     paymentMethodHandlers: [],
   },
@@ -102,5 +118,11 @@ export const config: VendureConfig = {
     ExchangeRatesPlugin.init({ source: exchangeRateSource() }),
     // With the placeholder key the Shop queries fail with Nova Poshta's "API key incorrect".
     NovaPoshtaPlugin.init({ apiKey: process.env.NOVA_POSHTA_API_KEY ?? 'dev-api-key' }),
+    ChangeHistoryPlugin.init({
+      enabled: process.env.CHANGE_HISTORY_ENABLED !== 'false',
+      retention: {
+        archive: new FileSystemArchiveStorage({ dir: path.join(__dirname, '../.change-history-archive') }),
+      },
+    }),
   ],
 };

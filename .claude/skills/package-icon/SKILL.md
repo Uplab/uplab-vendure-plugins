@@ -45,6 +45,8 @@ Chosen so far:
 - `exchange-rates` — two coins (warm white, amber) with brand-400 swap arrows on brand.
 - `nova-poshta` — the Nova Poshta symbol (`#ed1c24`) above the Vendure symbol (`#17c9ff`) on
   brand-950, the vendor mark the larger of the two, its down arrow pointing into the Vendure slot.
+- `change-history` — an amber (`#f4b952`) anticlockwise history arrow around an isometric product box
+  on brand.
 
 ## Flow
 

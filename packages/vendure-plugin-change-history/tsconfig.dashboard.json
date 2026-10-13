@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "target": "es2022",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@/vdb/*": ["./node_modules/@vendure/dashboard/src/lib/*"]
+    }
+  },
+  "include": ["src/dashboard/**/*", "./node_modules/@vendure/dashboard/src/lib/virtual.d.ts"]
+}

@@ -1,3 +1,9 @@
+codecov:
+  notify:
+    # Two uploads per commit: the merged unit + sql.js e2e report (`checks`, node 22) and the Postgres e2e
+    # report (`e2e-postgres`). Statuses wait for both, so a half-merged report never fails the project check.
+    after_n_builds: 2
+
 coverage:
   status:
     project:
@@ -11,6 +17,7 @@ coverage:
 
 comment:
   layout: 'condensed_header, diff, components'
+  after_n_builds: 2
 
 component_management:
   individual_components:
@@ -30,3 +37,7 @@ component_management:
       name: vendure-plugin-exchange-rates
       paths:
         - packages/vendure-plugin-exchange-rates/**
+    - component_id: change-history
+      name: vendure-plugin-change-history
+      paths:
+        - packages/vendure-plugin-change-history/**

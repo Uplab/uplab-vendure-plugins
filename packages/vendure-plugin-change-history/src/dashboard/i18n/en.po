@@ -1,0 +1,808 @@
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: en\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "change-history.nav.title"
+msgstr "Change history"
+
+#. js-lingui-explicit-id
+#: src/dashboard/components/history-block.tsx
+msgid "change-history.block.title"
+msgstr "Change history"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.name"
+msgstr "Name"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.slug"
+msgstr "Slug"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.description"
+msgstr "Description"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.enabled"
+msgstr "Enabled"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.sku"
+msgstr "SKU"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.price"
+msgstr "Price"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.prices"
+msgstr "Price"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.featuredAsset"
+msgstr "Featured asset"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.assets"
+msgstr "Assets"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.facetValues"
+msgstr "Facet values"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.optionGroups"
+msgstr "Option groups"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.options"
+msgstr "Options"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.taxCategory"
+msgstr "Tax category"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.trackInventory"
+msgstr "Track inventory"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.outOfStockThreshold"
+msgstr "Out-of-stock threshold"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.useGlobalOutOfStockThreshold"
+msgstr "Use global out-of-stock threshold"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.stock"
+msgstr "Stock"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.isPrivate"
+msgstr "Private"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.inheritFilters"
+msgstr "Inherit filters"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.parent"
+msgstr "Parent collection"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.filters"
+msgstr "Filters"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.position"
+msgstr "Position"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.code"
+msgstr "Code"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.startsAt"
+msgstr "Starts at"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.endsAt"
+msgstr "Ends at"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.couponCode"
+msgstr "Coupon code"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.perCustomerUsageLimit"
+msgstr "Per-customer usage limit"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.usageLimit"
+msgstr "Usage limit"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.conditions"
+msgstr "Conditions"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.actions"
+msgstr "Actions"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.type"
+msgstr "Type"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.mimeType"
+msgstr "MIME type"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.fileSize"
+msgstr "File size"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.width"
+msgstr "Width"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.height"
+msgstr "Height"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.focalPoint"
+msgstr "Focal point"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.field.tags"
+msgstr "Tags"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Product"
+msgstr "Product"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.ProductVariant"
+msgstr "Variant"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Collection"
+msgstr "Collection"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Facet"
+msgstr "Facet"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.FacetValue"
+msgstr "Facet value"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Asset"
+msgstr "Asset"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Promotion"
+msgstr "Promotion"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Batch"
+msgstr "Bulk operation"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.type.Run"
+msgstr "Sync run"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.Product"
+msgstr "Products"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.ProductVariant"
+msgstr "Variants"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.Collection"
+msgstr "Collections"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.Facet"
+msgstr "Facets"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.FacetValue"
+msgstr "Facet values"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.Asset"
+msgstr "Assets"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.Promotion"
+msgstr "Promotions"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.types.other"
+msgstr "Objects"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.rows"
+msgstr "Rows"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.created"
+msgstr "created"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.updated"
+msgstr "updated"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.deleted"
+msgstr "deleted"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.moved"
+msgstr "moved"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.collection_added"
+msgstr "added to collection"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.collection_removed"
+msgstr "removed from collection"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.stock_adjusted"
+msgstr "stock adjusted"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.channel_assigned"
+msgstr "assigned to channel"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.channel_removed"
+msgstr "removed from channel"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.option_group_added"
+msgstr "option group added"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.option_group_removed"
+msgstr "option group removed"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.batch"
+msgstr "bulk operation"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.action.run"
+msgstr "completed"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.source.admin"
+msgstr "Dashboard"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.source.api_key"
+msgstr "API key"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.source.collection_rules"
+msgstr "Collection rules"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.source.unknown_system"
+msgstr "System"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.batch.collection_rules"
+msgstr "collection contents updated"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.created"
+msgstr "created"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.updated"
+msgstr "updated"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.deleted"
+msgstr "deleted"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.failed"
+msgstr "failed"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.added"
+msgstr "added"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.removed"
+msgstr "removed"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.moved"
+msgstr "moved"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.count.total"
+msgstr "total"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.GlobalFlag.TRUE"
+msgstr "Track"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.GlobalFlag.FALSE"
+msgstr "Do not track"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.GlobalFlag.INHERIT"
+msgstr "Inherit from global settings"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.AssetType.IMAGE"
+msgstr "Image"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.AssetType.VIDEO"
+msgstr "Video"
+
+#. js-lingui-explicit-id
+#: src/dashboard/labels.ts
+msgid "change-history.enum.AssetType.BINARY"
+msgstr "Binary"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.actorLabel"
+msgstr "Who"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.entityType"
+msgstr "Type"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.entityLabel"
+msgstr "Object"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.action"
+msgstr "Action"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.summary"
+msgstr "What changed"
+
+#. js-lingui-explicit-id
+#: src/dashboard/routes/change-history-list.tsx
+msgid "fieldName.source"
+msgstr "Source"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "(shortened)"
+msgstr "(shortened)"
+
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Action"
+msgstr "Action"
+
+#: src/dashboard/widgets/recent-changes-widget.tsx
+msgctxt "change-history"
+msgid "All changes"
+msgstr "All changes"
+
+#: src/dashboard/components/actor.tsx
+#: src/dashboard/components/actor.tsx
+msgctxt "change-history"
+msgid "API key"
+msgstr "API key"
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Back"
+msgstr "Back"
+
+#: src/dashboard/components/details.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "Became"
+msgstr "Became"
+
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Change history"
+msgstr "Change history"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "changed"
+msgstr "changed"
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "Channel"
+msgstr "Channel"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "characters"
+msgstr "characters"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Clear the period"
+msgstr "Clear the period"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "collapse"
+msgstr "collapse"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Collapse bulk operations"
+msgstr "Collapse bulk operations"
+
+#: src/dashboard/components/entity-link.tsx
+msgctxt "change-history"
+msgid "Deleted"
+msgstr "Deleted"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "Derived"
+msgstr "Derived"
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/summary.tsx
+#: src/dashboard/components/timeline.tsx
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "Derived changes:"
+msgstr "Derived changes:"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Detailed values are kept for a limited time; the complete record of this entry is in the archive."
+msgstr "Detailed values are kept for a limited time; the complete record of this entry is in the archive."
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/summary.tsx
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "details unavailable"
+msgstr "details unavailable"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "expand"
+msgstr "expand"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "Field"
+msgstr "Field"
+
+#: src/dashboard/components/entry-dialog.tsx
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Full history"
+msgstr "Full history"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Hide system changes"
+msgstr "Hide system changes"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Last state"
+msgstr "Last state"
+
+#: src/dashboard/components/details.tsx
+msgctxt "change-history"
+msgid "Name"
+msgstr "Name"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Next page"
+msgstr "Next page"
+
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "No"
+msgstr "No"
+
+#: src/dashboard/widgets/recent-changes-widget.tsx
+msgctxt "change-history"
+msgid "No changes in this period."
+msgstr "No changes in this period."
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "No changes recorded yet."
+msgstr "No changes recorded yet."
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "No rows."
+msgstr "No rows."
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Object"
+msgstr "Object"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "open"
+msgstr "open"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "order changed"
+msgstr "order changed"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Previous page"
+msgstr "Previous page"
+
+#: src/dashboard/widgets/recent-changes-widget.tsx
+msgctxt "change-history"
+msgid "Recent changes"
+msgstr "Recent changes"
+
+#: src/dashboard/widgets/recent-changes-widget.tsx
+#: src/dashboard/widgets/recent-changes-widget.tsx
+msgctxt "change-history"
+msgid "Refresh"
+msgstr "Refresh"
+
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "Retry"
+msgstr "Retry"
+
+#: src/dashboard/components/summary.tsx
+msgctxt "change-history"
+msgid "s"
+msgstr "s"
+
+#: src/dashboard/components/details.tsx
+msgctxt "change-history"
+msgid "Location"
+msgstr "Location"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "show all"
+msgstr "show all"
+
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "show all fields"
+msgstr "show all fields"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "show in full"
+msgstr "show in full"
+
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "show less"
+msgstr "show less"
+
+#: src/dashboard/components/timeline.tsx
+msgctxt "change-history"
+msgid "Show more"
+msgstr "Show more"
+
+#: src/dashboard/components/details.tsx
+msgctxt "change-history"
+msgid "SKU / ID"
+msgstr "SKU / ID"
+
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Source"
+msgstr "Source"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Source:"
+msgstr "Source:"
+
+#: src/dashboard/components/actor.tsx
+msgctxt "change-history"
+msgid "System change"
+msgstr "System change"
+
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "The change history could not be loaded."
+msgstr "The change history could not be loaded."
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "This entry no longer exists."
+msgstr "This entry no longer exists."
+
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Type"
+msgstr "Type"
+
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "unchanged"
+msgstr "unchanged"
+
+#: src/dashboard/components/details.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "Was"
+msgstr "Was"
+
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "What changed"
+msgstr "What changed"
+
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+#: src/dashboard/routes/change-history-list.tsx
+msgctxt "change-history"
+msgid "Who"
+msgstr "Who"
+
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
+#: src/dashboard/components/values.tsx
+msgctxt "change-history"
+msgid "Yes"
+msgstr "Yes"
+
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "You do not have permission to view this history."
+msgstr "You do not have permission to view this history."
+
+#: src/dashboard/components/query-error.tsx
+msgctxt "change-history"
+msgid "The filter options could not be loaded."
+msgstr "The filter options could not be loaded."
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Caused by:"
+msgstr "Caused by:"
+
+#: src/dashboard/components/entry-dialog.tsx
+msgctxt "change-history"
+msgid "Close"
+msgstr "Close"

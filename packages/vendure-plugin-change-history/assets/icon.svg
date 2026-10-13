@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Catalogue change history">
+  <rect width="512" height="512" rx="112" fill="#255774"/>
+  <!-- history arrow: runs anticlockwise (back in time), head on the left -->
+  <path d="M 107 187 A 164 164 0 1 1 114 338" fill="none" stroke="#f4b952" stroke-width="40" stroke-linecap="round"/>
+  <polygon points="60,160 149,202 81,243" fill="#f4b952" stroke="#f4b952" stroke-width="16" stroke-linejoin="round"/>
+  <!-- product box -->
+  <polygon points="256,164 339,212 256,260 173,212" fill="#f5f3f5"/>
+  <polygon points="173,212 256,260 256,356 173,308" fill="#cae1ed"/>
+  <polygon points="339,212 256,260 256,356 339,308" fill="#65abcb"/>
+</svg>
