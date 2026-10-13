@@ -1,6 +1,6 @@
 {
   "name": "@uplab/vendure-plugin-change-history",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Change history for the Vendure catalogue: who changed what and when, with before → after values, batches, external sync runs and tiered retention",
   "license": "MIT",
   "author": "Uplab",
