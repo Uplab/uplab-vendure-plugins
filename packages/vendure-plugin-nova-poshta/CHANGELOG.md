@@ -1,5 +1,11 @@
 # @uplab/vendure-plugin-nova-poshta
 
+## 0.1.2
+
+### Patch Changes
+
+- [#41](https://github.com/Uplab/uplab-vendure-plugins/pull/41) [`31d5deb`](https://github.com/Uplab/uplab-vendure-plugins/commit/31d5deba10edce2aef108da53358fafbb5ff7fae) Thanks [@brmk](https://github.com/brmk)! - Ship the LICENSE file in the package.
+
 ## 0.1.1
 
 ### Patch Changes
