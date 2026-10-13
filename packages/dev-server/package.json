@@ -27,7 +27,7 @@
     "@nestjs/graphql": "^13.1.0",
     "@types/node": "^22.20.1",
     "currency-codes": "^2.2.0",
-    "graphql-tag": "^2.12.6",
+    "graphql-tag": "2.12.7",
     "pg": "^8.23.1",
     "ts-node": "^10.9.2",
     "typeorm": "^0.3.21",

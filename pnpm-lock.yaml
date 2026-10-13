@@ -118,7 +118,7 @@ importers:
         specifier: ^2.2.0
         version: 2.2.0
       graphql-tag:
-        specifier: ^2.12.6
+        specifier: 2.12.7
         version: 2.12.7(graphql@16.14.2)
       pg:
         specifier: ^8.23.1
