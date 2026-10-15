@@ -1,6 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
-  Badge,
   Button,
   DashboardRouteDefinition,
   DetailFormGrid,
@@ -22,6 +21,7 @@ import {
 import { useMemo } from 'react';
 import { formatRate } from '../format-rate';
 import { getCurrencyExchangeRateDetailDocument, updateCurrencyExchangeRateDocument } from '../graphql';
+import { StateBadge } from '../state-badge';
 
 const pageId = 'currency-exchange-rate-detail';
 
@@ -122,9 +122,7 @@ function CurrencyExchangeRateDetailPage({ route }: { route: Route }) {
                 <Trans>Status</Trans>
               </dt>
               <dd>
-                <Badge variant={entity?.enabled ? 'success' : 'secondary'}>
-                  {entity?.enabled ? t`Enabled` : t`Disabled`}
-                </Badge>
+                <StateBadge on={!!entity?.enabled}>{entity?.enabled ? t`Enabled` : t`Disabled`}</StateBadge>
               </dd>
             </div>
             <div className="flex flex-col">

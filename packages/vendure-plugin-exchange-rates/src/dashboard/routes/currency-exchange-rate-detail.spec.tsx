@@ -124,7 +124,8 @@ describe('the currency exchange rate detail page', () => {
     expect(definition('Код').textContent).toBe('—');
     expect(definition('Базова валюта').textContent).toBe('—');
     expect(definition('Статус').textContent).toBe('Вимкнено');
-    expect(definition('Статус').firstElementChild?.getAttribute('data-variant')).toBe('secondary');
+    expect(definition('Статус').firstElementChild?.getAttribute('data-variant')).toBe('outline');
+    expect(definition('Статус').firstElementChild?.className).toContain('bg-secondary');
     expect(definition('Останнє оновлення').textContent).toBe('—');
     expect(definition('Курс із джерела').textContent).toBe('—');
     expect(screen.queryByText(/per 1/)).toBeNull();

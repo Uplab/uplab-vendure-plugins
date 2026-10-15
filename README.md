@@ -7,7 +7,7 @@ A monorepo of open-source [Vendure](https://www.vendure.io/) plugins maintained 
 [Uplab](https://uplab.io), focused on the Ukrainian market: SMS, delivery, payments,
 fiscalization and exchange rates — plus catalogue tooling for multilingual shops.
 
-All packages are published to npm under the `@uplab` scope and target **Vendure 3.7**.
+All packages are published to npm under the `@uplab` scope and target **Vendure 3.7 and 3.8** (NestJS 11 and 12).
 
 ## Packages
 

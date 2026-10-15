@@ -10,10 +10,8 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   msw: true
+  # Optional native dep of @vendure/core 3.8 (linear-time regex filters on SQLite); without it
+  # Vendure falls back to the built-in RegExp, which is all the sql.js tests and dev server need.
+  re2: false
   sharp: true
   unrs-resolver: true
-
-# Backports https://github.com/vendure-ecommerce/vendure/pull/5459 (fixed for 3.7.4): in dev mode the
-# dashboard can render blank with more than one dashboard extension. Drop when moving to 3.7.4.
-patchedDependencies:
-  '@vendure/dashboard@3.7.2': patches/@vendure__dashboard@3.7.2.patch

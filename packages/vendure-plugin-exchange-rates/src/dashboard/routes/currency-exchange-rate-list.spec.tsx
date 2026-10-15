@@ -109,7 +109,8 @@ describe('the currency exchange rate list', () => {
     expect(status.textContent).toBe('Увімкнено');
     expect(status.firstElementChild?.getAttribute('data-variant')).toBe('success');
     expect(custom.textContent).toBe('Курс із джерела');
-    expect(custom.firstElementChild?.getAttribute('data-variant')).toBe('secondary');
+    expect(custom.firstElementChild?.getAttribute('data-variant')).toBe('outline');
+    expect(custom.firstElementChild?.className).toContain('bg-secondary');
   });
 
   it('shows the custom rate instead of the fetched one while it is used', () => {
@@ -118,7 +119,8 @@ describe('the currency exchange rate list', () => {
     const [, value, status, custom] = rowOf('EUR');
     expect(value.textContent).toBe('48,25 UAH');
     expect(status.textContent).toBe('Вимкнено');
-    expect(status.firstElementChild?.getAttribute('data-variant')).toBe('secondary');
+    expect(status.firstElementChild?.getAttribute('data-variant')).toBe('outline');
+    expect(status.firstElementChild?.className).toContain('bg-secondary');
     expect(custom.textContent).toBe('Використовується власний курс');
     expect(custom.firstElementChild?.getAttribute('data-variant')).toBe('success');
   });

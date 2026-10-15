@@ -1,8 +1,9 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Badge, DashboardRouteDefinition, DetailPageButton, ListPage, useLocalFormat } from '@vendure/dashboard';
+import { DashboardRouteDefinition, DetailPageButton, ListPage, useLocalFormat } from '@vendure/dashboard';
 import { useMemo } from 'react';
 import { formatRate } from '../format-rate';
 import { getCurrencyExchangeRateListDocument } from '../graphql';
+import { StateBadge } from '../state-badge';
 
 const pageId = 'currency-exchange-rate-list';
 
@@ -83,17 +84,15 @@ function CurrencyExchangeRateListPage({ route }: { route: Parameters<DashboardRo
         },
         enabled: {
           cell: ({ row }) => (
-            <Badge variant={row.original.enabled ? 'success' : 'secondary'}>
-              {row.original.enabled ? t`Enabled` : t`Disabled`}
-            </Badge>
+            <StateBadge on={row.original.enabled}>{row.original.enabled ? t`Enabled` : t`Disabled`}</StateBadge>
           ),
         },
         useCustomRate: {
           header: () => <Trans>Custom rate</Trans>,
           cell: ({ row }) => (
-            <Badge variant={row.original.useCustomRate ? 'success' : 'secondary'}>
+            <StateBadge on={row.original.useCustomRate}>
               {row.original.useCustomRate ? t`Using custom rate` : t`Fetched rate`}
-            </Badge>
+            </StateBadge>
           ),
         },
         updatedAt: {

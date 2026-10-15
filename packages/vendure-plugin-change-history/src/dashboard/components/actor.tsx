@@ -59,7 +59,7 @@ export function runLabelOf(entry: ChangeHistoryEntryData, actor: ActorView): str
 export interface EntryBadge {
   key: string;
   text: string;
-  variant?: 'outline' | 'secondary' | 'destructive';
+  variant?: 'outline' | 'destructive';
   className?: string;
 }
 
@@ -78,7 +78,7 @@ export function EntryBadges({
 }) {
   const { t } = useLingui();
   const actorBadges: Record<ActorTone, EntryBadge | undefined> = {
-    system: { key: 'actor', variant: 'secondary', text: t({ message: 'System change', context: 'change-history' }) },
+    system: { key: 'actor', text: t({ message: 'System change', context: 'change-history' }), className: SYSTEM_BADGE },
     api_key: {
       key: 'actor',
       text: t({ message: 'API key', context: 'change-history' }),
@@ -102,6 +102,12 @@ export function EntryBadges({
     </>
   );
 }
+
+/**
+ * The look of the dashboard's `secondary` badge, on `outline`: Vendure 3.8's Badge no longer has `secondary`
+ * (it renders an unknown variant unstyled), while `outline` and these colours exist on 3.7 and 3.8 alike.
+ */
+const SYSTEM_BADGE = 'border-transparent bg-secondary text-secondary-foreground';
 
 const API_KEY_BADGE = 'border-blue-200 text-blue-700 dark:border-blue-800 dark:text-blue-300';
 
