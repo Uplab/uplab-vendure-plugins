@@ -106,7 +106,7 @@ jobs:
       id-token: write
     services:
       postgres:
-        image: postgres:15
+        image: postgres:15@sha256:c961aa287d8698297cb26cdfadfbe9fd2cbaf77e53cfffe9636e8d8a1e4d842c
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: change_history_e2e
