@@ -80,9 +80,17 @@ export const useWidgetFilters = () => ({
   dateRange: { from: new Date('2026-10-01T00:00:00Z'), to: new Date('2026-10-12T00:00:00Z') },
 });
 
-export function Badge({ children, className }: { children?: ReactNode; className?: string; variant?: string }) {
+export function Badge({
+  children,
+  className,
+  variant,
+}: {
+  children?: ReactNode;
+  className?: string;
+  variant?: string;
+}) {
   return (
-    <span data-badge className={className}>
+    <span data-badge data-variant={variant} className={className}>
       {children}
     </span>
   );

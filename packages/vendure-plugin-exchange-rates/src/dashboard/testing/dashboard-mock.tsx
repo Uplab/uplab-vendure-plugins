@@ -140,8 +140,20 @@ export function PageBlock({
   );
 }
 
-export function Badge({ children, variant }: { children?: ReactNode; variant?: string }) {
-  return <span data-variant={variant}>{children}</span>;
+export function Badge({
+  children,
+  variant,
+  className,
+}: {
+  children?: ReactNode;
+  variant?: string;
+  className?: string;
+}) {
+  return (
+    <span data-variant={variant} className={className}>
+      {children}
+    </span>
+  );
 }
 
 export function Button({

@@ -51,6 +51,15 @@ describe('actorOf', () => {
       'Scheduled action',
     ]);
   });
+
+  it("marks a system source's change with a grey badge that exists on Vendure 3.7 and 3.8 alike", () => {
+    registerChangeHistorySource('erp', { label: 'ERP', tone: 'system' });
+    render(<EntryBadges actor={actor(entry({ source: 'erp', actorType: 'admin' }))} />);
+    const badge = screen.getByText('System change');
+    // Not `secondary`: Vendure 3.8's Badge dropped it and would render the badge unstyled.
+    expect(badge.getAttribute('data-variant')).toBe('outline');
+    expect(badge.getAttribute('class')).toContain('bg-secondary text-secondary-foreground');
+  });
 });
 
 describe('runLabelOf', () => {
