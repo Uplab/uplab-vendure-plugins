@@ -1,5 +1,13 @@
 # @uplab/vendure-plugin-change-history
 
+## 0.1.2
+
+### Patch Changes
+
+- [#43](https://github.com/Uplab/uplab-vendure-plugins/pull/43) [`c1a7435`](https://github.com/Uplab/uplab-vendure-plugins/commit/c1a7435d95b0835a24ee51ff2ff529c5153afc9c) Thanks [@brmk](https://github.com/brmk)! - Keep the grey badges grey on the Vendure 3.8 dashboard. Its Badge no longer has a `secondary` variant and shows such a badge as plain text. That hit the «System change» badge in the change history, and the «Disabled» and «Fetched rate» badges on the exchange-rate pages. They look the same as before on 3.7.
+
+- [#43](https://github.com/Uplab/uplab-vendure-plugins/pull/43) [`c7d7775`](https://github.com/Uplab/uplab-vendure-plugins/commit/c7d777541307cf7be3a80b07f9e3438e9c03c2f1) Thanks [@brmk](https://github.com/brmk)! - Install alongside Vendure 3.8: the `@nestjs/common` and `@nestjs/core` peers now accept `^11 || ^12`, and `@nestjs/graphql` accepts `^13 || ^14`. Vendure 3.8 moved to NestJS 12, so `npm install` failed with `ERESOLVE` against the old `^11` / `^13` ranges. Nothing changes on Vendure 3.7.
+
 ## 0.1.1
 
 ### Patch Changes
