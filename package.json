@@ -12,7 +12,7 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "packageManager": "pnpm@11.28.6",
+  "packageManager": "pnpm@11.28.8",
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" build",
     "typecheck": "pnpm -r --filter \"./packages/*\" typecheck",
@@ -46,7 +46,7 @@
     "prettier": "^3.9.6",
     "publint": "^0.3.24",
     "rimraf": "^6.0.1",
-    "sql.js": "1.15.0",
+    "sql.js": "1.15.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.67.0",
