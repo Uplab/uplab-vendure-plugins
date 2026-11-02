@@ -15,9 +15,9 @@
   "dependencies": {
     "@uplab/vendure-plugin-nova-poshta": "workspace:*",
     "@uplab/vendure-plugin-turbosms": "workspace:*",
-    "@vendure/asset-server-plugin": "3.8.0",
-    "@vendure/core": "3.8.0",
-    "@vendure/dashboard": "3.8.0",
+    "@vendure/asset-server-plugin": "3.8.1",
+    "@vendure/core": "3.8.1",
+    "@vendure/dashboard": "3.8.1",
     "better-sqlite3": "^11.10.0",
     "dotenv": "^16.4.7"
   },
