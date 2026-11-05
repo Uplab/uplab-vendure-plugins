@@ -89,7 +89,7 @@
     "@vendure/testing": "3.8.0",
     "graphql": "^16.11.0",
     "jsdom": "^26.1.0",
-    "lucide-react": "^0.475.0",
+    "lucide-react": "^0.577.0",
     "pg": "^8.23.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
