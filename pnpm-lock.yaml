@@ -27,11 +27,11 @@ importers:
         specifier: ^22.20.1
         version: 22.20.5
       '@vendure/core':
-        specifier: 3.8.0
-        version: 3.8.0(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
+        specifier: 3.8.1
+        version: 3.8.1(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
       '@vendure/testing':
-        specifier: 3.8.0
-        version: 3.8.0
+        specifier: 3.8.1
+        version: 3.8.1
       '@vitest/coverage-v8':
         specifier: ^4.1.11
         version: 4.1.12(vitest@4.1.12)
@@ -84,14 +84,14 @@ importers:
         specifier: workspace:*
         version: link:../vendure-plugin-turbosms
       '@vendure/asset-server-plugin':
-        specifier: 3.8.0
-        version: 3.8.0(@types/node@22.20.5)(supports-color@7.2.0)
+        specifier: 3.8.1
+        version: 3.8.1(@types/node@22.20.5)(supports-color@7.2.0)
       '@vendure/core':
-        specifier: 3.8.0
-        version: 3.8.0(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
+        specifier: 3.8.1
+        version: 3.8.1(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
       '@vendure/dashboard':
-        specifier: 3.8.0
-        version: 3.8.0(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/extensions@3.33.0(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/pm@3.33.0))(@types/node@22.20.5)(csstype@3.2.3)(esbuild@0.28.2)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.0)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.1)
+        specifier: 3.8.1
+        version: 3.8.1(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/extensions@3.33.0(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/pm@3.33.0))(@types/node@22.20.5)(csstype@3.2.3)(esbuild@0.28.2)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.0)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.1)
       better-sqlite3:
         specifier: ^11.10.0
         version: 11.10.0
@@ -164,14 +164,14 @@ importers:
         specifier: 19.3.0
         version: 19.3.0(@types/react@19.3.0)
       '@vendure/core':
-        specifier: 3.8.0
-        version: 3.8.0(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
+        specifier: 3.8.1
+        version: 3.8.1(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
       '@vendure/dashboard':
-        specifier: 3.8.0
-        version: 3.8.0(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/extensions@3.33.0(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/pm@3.33.0))(@types/node@22.20.5)(csstype@3.2.3)(esbuild@0.28.2)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.0)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.1)
+        specifier: 3.8.1
+        version: 3.8.1(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/extensions@3.33.0(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/pm@3.33.0))(@types/node@22.20.5)(csstype@3.2.3)(esbuild@0.28.2)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.0)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.1)
       '@vendure/testing':
-        specifier: 3.8.0
-        version: 3.8.0
+        specifier: 3.8.1
+        version: 3.8.1
       graphql:
         specifier: ^16.15.0
         version: 16.15.0
@@ -243,14 +243,14 @@ importers:
         specifier: 19.3.0
         version: 19.3.0(@types/react@19.3.0)
       '@vendure/core':
-        specifier: 3.8.0
-        version: 3.8.0(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
+        specifier: 3.8.1
+        version: 3.8.1(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
       '@vendure/dashboard':
-        specifier: 3.8.0
-        version: 3.8.0(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/extensions@3.33.0(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/pm@3.33.0))(@types/node@22.20.5)(csstype@3.2.3)(esbuild@0.28.2)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.0)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.1)
+        specifier: 3.8.1
+        version: 3.8.1(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/extensions@3.33.0(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/pm@3.33.0))(@types/node@22.20.5)(csstype@3.2.3)(esbuild@0.28.2)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.0)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.1)
       '@vendure/testing':
-        specifier: 3.8.0
-        version: 3.8.0
+        specifier: 3.8.1
+        version: 3.8.1
       graphql:
         specifier: ^16.15.0
         version: 16.15.0
@@ -301,11 +301,11 @@ importers:
         specifier: ^14.1.0
         version: 14.2.0(@nestjs/common@12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.4.0)(graphql@16.15.0)(reflect-metadata@0.2.2)(typescript@5.9.3)
       '@vendure/core':
-        specifier: 3.8.0
-        version: 3.8.0(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
+        specifier: 3.8.1
+        version: 3.8.1(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
       '@vendure/testing':
-        specifier: 3.8.0
-        version: 3.8.0
+        specifier: 3.8.1
+        version: 3.8.1
       rimraf:
         specifier: ^6.1.3
         version: 6.1.4
@@ -328,11 +328,11 @@ importers:
         specifier: ^12.2.0
         version: 12.4.0(@nestjs/common@12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/platform-express@12.4.0)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@vendure/core':
-        specifier: 3.8.0
-        version: 3.8.0(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
+        specifier: 3.8.1
+        version: 3.8.1(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
       '@vendure/testing':
-        specifier: 3.8.0
-        version: 3.8.0
+        specifier: 3.8.1
+        version: 3.8.1
       rimraf:
         specifier: ^6.1.3
         version: 6.1.4
@@ -380,14 +380,14 @@ importers:
         specifier: 19.3.0
         version: 19.3.0(@types/react@19.3.0)
       '@vendure/core':
-        specifier: 3.8.0
-        version: 3.8.0(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
+        specifier: 3.8.1
+        version: 3.8.1(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)
       '@vendure/dashboard':
-        specifier: 3.8.0
-        version: 3.8.0(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/extensions@3.33.0(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/pm@3.33.0))(@types/node@22.20.5)(csstype@3.2.3)(esbuild@0.28.2)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.0)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.1)
+        specifier: 3.8.1
+        version: 3.8.1(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/extensions@3.33.0(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/pm@3.33.0))(@types/node@22.20.5)(csstype@3.2.3)(esbuild@0.28.2)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.0)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.1)
       '@vendure/testing':
-        specifier: 3.8.0
-        version: 3.8.0
+        specifier: 3.8.1
+        version: 3.8.1
       jsdom:
         specifier: ^26.1.0
         version: 26.1.0(supports-color@7.2.0)
@@ -3396,25 +3396,25 @@ packages:
       next-themes:
         optional: true
 
-  '@vendure/asset-server-plugin@3.8.0':
-    resolution: {integrity: sha512-FhNDOObDyvn9n/VJjYqSDf7+a9t/3BNnjWlz9CFYLIm0rJ59ubq9yLdDhuJCAgOyO2rV0y0AbfYTvKHcLqN2uA==}
+  '@vendure/asset-server-plugin@3.8.1':
+    resolution: {integrity: sha512-buYUXaciV2BKF/wOmSwMBPPltexwMjbihG8CR+5v7E02dgOoHo7EzOeN/u2TXLVB85Z/2Y4yZd4Qv2rAHPOAdg==}
 
-  '@vendure/common@3.8.0':
-    resolution: {integrity: sha512-yD7NuKYP6viUgmHaWx5KGNoBTI6ZBy+8jf8SSUcVt/kfXvA57bS42xA9Bun5GqPOn4xJuPlFJvRg70Ned9mssQ==}
+  '@vendure/common@3.8.1':
+    resolution: {integrity: sha512-UwDNy5gf/37cBArRySUZX4g0KxuC9HoZrZRBYGZ7T0QNcHftubNFnIJU2FgqTpZTh8tdpqkZT/VHiI8GZylYpg==}
 
-  '@vendure/core@3.8.0':
-    resolution: {integrity: sha512-fFPxLHEYFghXCv0rejX9L2fXFFVgeaYngtRjTZBHpS9T39pXxTUocEYiRVuVs3ZPw0Ck20CwOyU43VbU1Stoiw==}
+  '@vendure/core@3.8.1':
+    resolution: {integrity: sha512-b2/heJWuppB5Mw9CK9F2aBHuXlj4wey5yceLhwkTlSkcXYDkFSQgt5YOd8VQRExzPMRRf29e/+i+4cFNZf8N1A==}
     peerDependencies:
       ioredis: ^5.3.2
     peerDependenciesMeta:
       ioredis:
         optional: true
 
-  '@vendure/dashboard@3.8.0':
-    resolution: {integrity: sha512-PEmbQeEShImNYxEEUsao0Sw0qXbNzk/p8bkaIzQwXz7+/adRzCn0dUlPJxOizDYofVoXN7t80GkLSLiFMRb1Pg==}
+  '@vendure/dashboard@3.8.1':
+    resolution: {integrity: sha512-oiGmanHazOsNMCFTQTLUQs9cEcZjdAJuamFc3eJgEw54IcBYs5GPdFv4o1tJpI0kqqn7CTWlv7VqlffoGOWGeg==}
 
-  '@vendure/testing@3.8.0':
-    resolution: {integrity: sha512-4Ddw7Q4xpgZb4YPdKXwgpNbFvYrC2iPqbA7fMDYWnhR18L0tpKcmJ/02W9iV22Nd5N4sAORLBe7bUpapqelQRw==}
+  '@vendure/testing@3.8.1':
+    resolution: {integrity: sha512-weNeARPX+5eFarzsGvwaoi0Acoiqb3oBpUvi1g0LmbHck5gHOTAXJOi7YIwbgzMDrPwEuNgqwdEe3KFfmaiF2Q==}
 
   '@vitejs/plugin-react@5.2.0':
     resolution: {integrity: sha512-YmKkfhOAi3wsB1PhJq5Scj3GXMn3WvtQ/JC0xoopuHoXSdmtdStOpFrYaT1kie2YgFBcIe64ROzMYRjCrYOdYw==}
@@ -9463,7 +9463,7 @@ snapshots:
       - '@types/react'
       - '@types/react-dom'
 
-  '@vendure/asset-server-plugin@3.8.0(@types/node@22.20.5)(supports-color@7.2.0)':
+  '@vendure/asset-server-plugin@3.8.1(@types/node@22.20.5)(supports-color@7.2.0)':
     dependencies:
       '@types/express': 5.0.6
       express: 5.3.0(supports-color@7.2.0)
@@ -9475,9 +9475,9 @@ snapshots:
       - '@types/node'
       - supports-color
 
-  '@vendure/common@3.8.0': {}
+  '@vendure/common@3.8.1': {}
 
-  '@vendure/core@3.8.0(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)':
+  '@vendure/core@3.8.1(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3))(typescript@5.9.3)':
     dependencies:
       '@apollo/server': 5.5.1(graphql@16.15.0)(supports-color@7.2.0)
       '@as-integrations/express5': 1.1.2(@apollo/server@5.5.1(graphql@16.15.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))
@@ -9490,7 +9490,7 @@ snapshots:
       '@nestjs/platform-express': 12.4.0(@nestjs/common@12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.4.0)(rxjs@7.8.2)(supports-color@7.2.0)
       '@nestjs/typeorm': 12.0.3(@nestjs/common@12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.4.0)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.31(better-sqlite3@11.10.0)(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.24))(@types/node@22.20.5)(typescript@5.9.3)))
       '@types/express': 5.0.6
-      '@vendure/common': 3.8.0
+      '@vendure/common': 3.8.1
       bcrypt: 6.0.0
       cookie-session: 2.1.1(supports-color@7.2.0)
       cron-time-generator: 2.0.3
@@ -9555,7 +9555,7 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@vendure/dashboard@3.8.0(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/extensions@3.33.0(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/pm@3.33.0))(@types/node@22.20.5)(csstype@3.2.3)(esbuild@0.28.2)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.0)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.1)':
+  '@vendure/dashboard@3.8.1(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/extensions@3.33.0(@tiptap/core@3.33.0(@tiptap/pm@3.33.0))(@tiptap/pm@3.33.0))(@types/node@22.20.5)(csstype@3.2.3)(esbuild@0.28.2)(eslint@9.39.5(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.0)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.1)':
     dependencies:
       '@babel/core': 7.29.13(supports-color@7.2.0)
       '@babel/preset-react': 7.29.7(@babel/core@7.29.13(supports-color@7.2.0))(supports-color@7.2.0)
@@ -9685,10 +9685,10 @@ snapshots:
       - yaml
       - yup
 
-  '@vendure/testing@3.8.0':
+  '@vendure/testing@3.8.1':
     dependencies:
       '@graphql-typed-document-node/core': 3.2.0(graphql@16.15.0)
-      '@vendure/common': 3.8.0
+      '@vendure/common': 3.8.1
       faker: 4.1.0
       graphql: 16.15.0
       graphql-tag: 2.12.7(graphql@16.15.0)
