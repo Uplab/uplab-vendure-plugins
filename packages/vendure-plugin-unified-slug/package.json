@@ -94,7 +94,7 @@
     "@vendure/dashboard": "3.8.0",
     "@vendure/testing": "3.8.0",
     "jsdom": "^26.1.0",
-    "lucide-react": "^0.475.0",
+    "lucide-react": "^0.577.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-hook-form": "^7.86.0",
